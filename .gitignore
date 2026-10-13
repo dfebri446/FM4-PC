@@ -27,6 +27,7 @@
 !/outputs/FM4-analysis/runtime-module-lifecycle.patch
 !/outputs/FM4-build/Build.ps1
 !/outputs/FM4-build/README.txt
+!/outputs/FM4-build/STATUS.txt
 !/outputs/FM4-build/dump-image.cpp
 !/outputs/FM4-build/fm4_bounds.toml
 !/outputs/FM4-build/fm4_callbacks.toml

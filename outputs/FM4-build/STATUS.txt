@@ -1,0 +1,108 @@
+STATUS FM4 RECOMPILATION - 13 Oktober 2026
+========================================
+Baseline kode: d1fa29a (workflow setup/generate/build/run).
+
+Tahap saat ini: build eksperimental yang sudah dapat menjalankan game dan telah
+melewati beberapa uji gameplay pada build pengembangan sebelumnya. Belum dapat
+disebut full port yang seluruh fitur, tampilan, dan stabilitasnya terverifikasi.
+
+Penting: hasil uji build portable terbaru dan hasil gameplay historis di bawah
+berasal dari binary/profil/pengaturan yang berbeda. Keberhasilan historis tidak
+otomatis membuktikan bahwa semua fitur itu sudah diuji ulang pada binary baru.
+
+SUDAH DIVERIFIKASI PADA BUILD PORTABLE TERBARU
+--------------------------------------------
+- Setup mengambil SDK pada commit tetap, menerapkan patch runtime/GPU, membangun
+  delapan shader resolve SDK, lalu membangun dan memasang SDK secara lokal.
+- Generate dan build berjalan dari salinan bersih berkas Git, tanpa memakai
+  folder kode hasil recompilation lama. Generate/build ulang juga berhasil.
+- Executable utama, DLL XMediaFacade dan SpeechFacade, runtime, serta plugin
+  GPU berhasil dibangun. Seluruhnya tetap merupakan keluaran lokal di BuildRoot.
+- Sebanyak 271 tabel switch dibentuk kembali dari executable milik pengguna.
+  Hasilnya cocok dengan konfigurasi sebelumnya. Set registrasi fungsi juga
+  cocok: utama 50.233, XMedia 3.212, Speech 6.715. Ini bukan bukti bahwa setiap
+  fungsi sudah pernah dieksekusi atau seluruh perilakunya benar.
+- Lima tes skrip dengan data sintetis lulus. Pemeriksaan instruksi lulus
+  295.650/295.650: 68.121 pemeriksaan float16 dan 227.529 pemeriksaan vektor.
+- Keempat paket Disc 2 berhasil diimpor ke profil uji baru.
+- Startup menampilkan logo dan video intro mobil. Proses tetap hidup selama
+  60 detik, kemudian ditutup atas permintaan penguji dengan exit code 0.
+- Tidak ada kode/aset asli FM4, kode hasil recompilation, binary game, save,
+  atau capture yang dimasukkan ke Git. Metadata integrasi dan source SDK
+  berlisensi tetap disertakan; isi game dibaca dari data lokal pengguna.
+
+Bukti ringkas yang ikut repo: verification.json di direktori ini.
+Pengujian dilakukan pada komputer Windows yang sama dengan pengembangan,
+bukan pada komputer fisik kedua. Uji startup bukan uji balapan penuh.
+
+SUDAH PERNAH BEKERJA PADA BUILD PENGEMBANGAN SEBELUMNYA
+-----------------------------------------------------
+- Menu utama, Free Play/Quick Race, menu karier dan World Tour pernah dibuka.
+  Gas, rem, mundur, kemudi, pergantian kamera dan Pause pernah merespons.
+- Balapan karier Road Atlanta dengan Ford Ka selesai; Continue berhasil dan
+  progres Amateur Division 3/5 serta saldo 1.775 CR terbaca setelah restart.
+- BMW M1 1981 dari Disc 2 pernah dipakai sampai finish dan Continue. Uji otomatis
+  tiga lap Sunset Peninsula Speedway juga selesai dan kembali ke pemilihan
+  lintasan. Waktu balapan mencakup jeda pengembangan, bukan benchmark performa.
+- Autovista Ferrari 458 Italia: melihat mobil, membuka panel, masuk/keluar
+  kokpit, mengganti cat, membuka mode foto dan kembali ke menu pernah berhasil.
+- Setelah perbaikan delete-on-close dan penggunaan shader sinkron, foto pertama
+  berhasil disimpan, ditimpa, dan dimuat berwarna pada dua sesi proses baru.
+  Cache shader saat pengujian tersebut tidak dikosongkan.
+- Karier Tsukuba dengan shader sinkron dapat dimuat. Rewind, Rewind Further,
+  Resume, gas/kemudi dan Pause pernah diuji; sesi ini belum menyelesaikan balapan.
+- Perbaikan integer texture/resolve dan layout MSAA menghasilkan bayangan asli
+  mobil yang terlihat pada pengujian tertentu serta menghilangkan pola piksel
+  teracak akibat layout yang tidak cocok. Kesetaraan visual penuh belum terbukti.
+
+Ringkasan historis bersumber dari laporan lokal FM4-analysis, antara lain
+automated-race-candidate-results.json, input-menu-recovery-results.json,
+automatic-disc2-speedway-results.json, automatic-autovista-results.json,
+photo-sync-clean-results.json, career-sync-rewind-results.json dan
+resolve-layout-fix-results.json. Laporan lengkap/capture tersebut tetap lokal
+dan tidak diperlukan untuk membangun dari clone.
+
+KETERBATASAN DAN MASALAH YANG MASIH ADA
+-------------------------------------
+- Kompatibilitas input saat ini dibatasi pada tiga XEX rilis Japan/Asia yang
+  hash-nya dicatat dalam pipeline.py. Region/revisi lain, executable modifikasi
+  dan title update ditolak. ISO harus diekstrak sendiri terlebih dahulu.
+- Workflow hanya mendukung Windows x64 dengan toolchain dan GPU yang sesuai.
+  Setup memeriksa prasyarat; tidak memasang Visual Studio, Python atau LLVM
+  secara otomatis. Clone saja belum merupakan paket game siap jalan.
+- Cahaya matahari/bloom terlalu terang masih teramati pada pengujian sebelumnya.
+  Noise warna, refleksi, tepi objek, seluruh kombinasi MSAA/skala resolusi dan
+  kesesuaian dengan Xbox asli belum seluruhnya terverifikasi.
+- Launcher portable masih mengaktifkan workaround bayangan. Uji historis yang
+  berhasil menampilkan bayangan asli tidak berarti workaround ini sudah
+  dilepas atau seluruh masalah bayangan telah selesai.
+- Shader sinkron menjadi bawaan untuk menghindari draw terlewat yang pernah
+  menyebabkan foto hitam. Dampak stutter/performa dan uji foto dengan cache
+  shader kosong masih perlu diperiksa. Keberhasilan overwrite sebelumnya belum
+  diulang sebagai uji fitur pada build portable baru.
+- Navigasi menu melalui input diagnostik kadang tidak konsisten. Menekan A
+  terbaca pada diagnostik belum selalu membuat UI berpindah. Fokus jendela dan
+  waktu idle belum terbukti sebagai akar masalah; belum ada perbaikan menyeluruh.
+- Pengemudi otomatis masih eksperimental: dapat menabrak pembatas, kehilangan
+  minimap dan gagal memulihkan arah. Bantuan Easy saja tidak menjamin finish.
+  Sistem ini bukan fitur autopilot siap pakai dalam workflow portable.
+- Masih ada fungsi layanan Xbox/runtime berupa stub. Tes instruksi sintetis
+  tidak membuktikan seluruh kernel, audio, timing, sinkronisasi atau shader benar.
+- Belum ada validasi lengkap semua mobil, lintasan, karier, Autovista, replay,
+  audio, Kinect, multiplayer/online, DLC di luar Disc 2, dan sesi bermain panjang.
+  Statusnya belum diverifikasi; tidak otomatis berarti semuanya rusak.
+- Save/progres historis berhasil dimuat, tetapi kompatibilitas semua save dan
+  migrasi profil antar-build/komputer belum dijamin. Workflow memakai profil
+  lokal tersendiri dan tidak menyalin save lama secara otomatis.
+
+VALIDASI BERIKUTNYA YANG DIPERLUKAN
+----------------------------------
+1. Clone dan jalankan seluruh workflow pada komputer Windows kedua.
+2. Pada binary portable baru, selesaikan balapan karier sampai hadiah/Continue,
+   restart, lalu periksa progres; ulangi juga balapan mobil Disc 2.
+3. Ulangi simpan/overwrite/muat foto setelah restart dan dengan cache shader kosong.
+4. Perluas pengujian tampilan, input, mode, perangkat GPU dan sesi panjang;
+   ukur performa serta selidiki cahaya berlebihan tanpa menganggapnya sudah beres.
+
+Catatan ini merupakan dokumentasi status, bukan laporan bahwa seluruh pengujian
+lanjutan sudah dilakukan atau instruksi untuk melanjutkannya secara otomatis.

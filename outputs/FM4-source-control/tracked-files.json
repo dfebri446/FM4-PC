@@ -46,6 +46,10 @@
       "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
     },
     {
+      "path": "outputs/FM4-build/STATUS.txt",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
       "path": "outputs/FM4-build/dump-image.cpp",
       "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
     },

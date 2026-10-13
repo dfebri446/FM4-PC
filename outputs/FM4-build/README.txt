@@ -5,6 +5,10 @@ This workflow rebuilds the current experimental FM4 integration from source.
 It does not turn FM4 into a complete or bug-free native port. Existing rendering,
 mode-coverage and performance limitations still apply.
 
+See STATUS.txt for what has been verified, historical gameplay results, known
+issues and remaining validation. verification.json records the latest clean
+build/startup test; it does not certify full gameplay compatibility.
+
 Supported input
 --------------
 Use your own extracted Japan/Asia Play Disc (media 633772A0). The three executable
