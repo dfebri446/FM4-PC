@@ -10,6 +10,10 @@
       "provenance": "Repository inventory/configuration"
     },
     {
+      "path": "README.md",
+      "provenance": "Project documentation; setup instructions and verified status summary"
+    },
+    {
       "path": "outputs/FM4-analysis/gpu-integer-formats.patch",
       "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
     },

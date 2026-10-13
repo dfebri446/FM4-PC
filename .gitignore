@@ -18,6 +18,7 @@
 !/outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/
 !/.gitattributes
 !/.gitignore
+!/README.md
 !/outputs/FM4-analysis/gpu-integer-formats.patch
 !/outputs/FM4-analysis/gpu-resolve-diagnostics.patch
 !/outputs/FM4-analysis/gpu-rov-full-counters.patch
