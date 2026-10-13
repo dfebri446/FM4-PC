@@ -83,11 +83,37 @@ def write_png(path, width, height, rgb, scale):
     path.write_bytes(png)
 
 
-def ppm_to_png(ppm, png, scale=2):
-    data = ppm.read_bytes()
-    parts = data.split(b'\n', 3)
+def read_ppm(ppm):
+    parts = ppm.read_bytes().split(b'\n', 3)
     width, height = map(int, parts[1].split())
-    write_png(png, width, height, parts[3], scale)
+    return width, height, parts[3]
+
+
+def ppm_to_png(ppm, png, scale=2):
+    write_png(png, *read_ppm(ppm), scale)
+
+
+def capture_stats(ppm):
+    """Luminance statistics of a capture: brightness, black and saturated share, histogram."""
+    _, _, rgb = read_ppm(ppm)
+    # Rec. 601 luma in integer form; every other pixel is enough for these statistics.
+    histogram = [0] * 256
+    for r, g, b in zip(rgb[0::6], rgb[1::6], rgb[2::6]):
+        histogram[(299 * r + 587 * g + 114 * b) // 1000] += 1
+    pixels = sum(histogram) or 1
+    return {
+        'luma_mean': round(sum(i * n for i, n in enumerate(histogram)) / pixels, 2),
+        'black_pct': round(100 * sum(histogram[:8]) / pixels, 2),
+        'saturated_pct': round(100 * sum(histogram[248:]) / pixels, 2),
+        'luma_hist16': [round(100 * sum(histogram[i:i + 16]) / pixels, 2) for i in range(0, 256, 16)],
+    }
+
+
+def percentile(values, fraction):
+    values = sorted(values)
+    if not values:
+        return None
+    return values[min(len(values) - 1, int(round(fraction * (len(values) - 1))))]
 
 
 def set_input(path, buttons=0, lt=0, rt=0, lx=0, ly=0):
@@ -282,25 +308,45 @@ def navigate(goal_name, process, input_file, capture, out, deadline, started):
         ocr.close()
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--build-root', required=True, help='BuildRoot used by Build.ps1')
-    parser.add_argument('--out', required=True, help='result directory, outside the repository')
-    parser.add_argument('--scenario', default='boot')
-    parser.add_argument('--goal', choices=sorted(GOALS), help='navigate with Jev instead of a timeline')
-    parser.add_argument('--goal-timeout', type=float, default=360)
-    parser.add_argument('--steps', help='JSON list of steps, overrides --scenario')
-    parser.add_argument('--arg', action='append', default=[], help='extra/override --cvar=value')
-    parser.add_argument('--tail', type=float, default=10, help='seconds to keep running after the last step')
-    parser.add_argument('--keep-ppm', action='store_true', help='keep full-resolution captures')
-    parser.add_argument('--measure', type=int, default=0, help='summarize only the last N perf seconds')
-    options = parser.parse_args()
+def summarize(perf, measure):
+    """Per-run statistics over the steady part of the perf trace."""
+    steady = perf[-measure:] if measure else (perf[len(perf) // 3:] if len(perf) > 6 else perf)
+    if not steady:
+        return {}
+    per_s = lambda p, value: value / p['window_ms'] * 1000
+    median = lambda values: round(statistics.median(values), 2)
+    frames = [f for p in steady for f in p.get('frame_ms', [])]
+    minutes = sum(p['window_ms'] for p in steady) / 60000
+    result = {
+        'fps_median': round(statistics.median([p['fps'] for p in steady]), 1),
+        'fps_min': round(min(p['fps'] for p in steady), 1),
+        'wait_ms_per_s_median': {k: round(statistics.median([per_s(p, p['wait_ms'][k]) for p in steady]), 1)
+                                 for k in steady[0]['wait_ms']},
+        # Wall time of the command processor thread not spent waiting.
+        'cp_busy_ms_per_s_median': round(statistics.median(
+            [per_s(p, p['window_ms'] - sum(p['wait_ms'].values())) for p in steady]), 1),
+        'readbacks_per_s_median': round(statistics.median([p['readbacks'] for p in steady]), 1),
+        'draws_per_s_median': round(statistics.median([p['draws'] for p in steady]), 1),
+    }
+    if frames:
+        result.update({
+            'frame_ms_p50': round(percentile(frames, 0.50), 2),
+            'frame_ms_p95': round(percentile(frames, 0.95), 2),
+            'frame_ms_p99': round(percentile(frames, 0.99), 2),
+            'hitch_50ms_per_min': round(sum(f > 50 for f in frames) / minutes, 2),
+            'hitch_100ms_per_min': round(sum(f > 100 for f in frames) / minutes, 2),
+        })
+    if 'counts' in steady[0]:
+        frames_in = lambda p: max(1, len(p.get('frame_ms', [])))
+        result['counts_per_s_median'] = {k: median([per_s(p, p['counts'][k]) for p in steady])
+                                         for k in steady[0]['counts']}
+        result['counts_per_frame_median'] = {k: median([p['counts'][k] / frames_in(p) for p in steady])
+                                             for k in steady[0]['counts']}
+    return result
 
+
+def run_once(options, out):
     root = Path(options.build_root)
-    out = Path(options.out).resolve()
-    # Captures and logs show game content; they must never land in the repository.
-    if out == REPO or REPO in out.parents:
-        parser.error('--out must be outside the repository, for example <BuildRoot>/e2e/<name>')
     out.mkdir(parents=True, exist_ok=True)
     capture = out / 'capture'
     capture.mkdir(exist_ok=True)
@@ -308,20 +354,13 @@ def main():
         if old.is_file():
             old.unlink()
     state = json.loads((root / 'local.json').read_text())
-    disc1 = state['disc1']
     input_file = out / 'input.txt'
     set_input(input_file)
 
-    # Mirrors pipeline.py launch(); keep both in sync.
-    args = {
-        'game_data_root': disc1, 'user_data_root': str(root / 'user-data'),
-        'cache_root': str(root / 'cache'), 'allow_game_relative_writes': 'false',
-        'headless': 'false', 'fullscreen': 'false', 'render_target_path_d3d12': 'rov',
-        'readback_resolve': 'full', 'gpu_allow_invalid_fetch_constants': 'true',
-        'async_shader_compilation': 'false', 'rov_occlusion_awaited_report_divisor': '2',
-        'input_backend': 'sdl', 'mnk_mode': 'true', 'mnk_mouse': 'false',
-        'log_file': str(out / 'runtime.log'),
-    }
+    # Same cvars as Build.ps1 -Action run.
+    sys.path.insert(0, str(HERE.parent))
+    import pipeline
+    args = {k: str(v) for k, v in pipeline.launch_cvars(root, state['disc1'], out / 'runtime.log').items()}
     for item in options.arg:
         key, value = item.lstrip('-').split('=', 1)
         args[key] = value
@@ -370,9 +409,11 @@ def main():
         stderr.close()
 
     frames = sorted(capture.glob('frame-*.ppm'))
+    final_stats = None
     if frames:
         # Keep the final capture under a stable name for checkpoints.
         ppm_to_png(frames[-1], out / 'final.png')
+        final_stats = capture_stats(frames[-1])
     for frame in frames:
         ppm_to_png(frame, frame.with_suffix('.png'))
         if not options.keep_ppm:
@@ -380,7 +421,6 @@ def main():
 
     perf = [json.loads(line) for line in (out / 'perf.jsonl').read_text().splitlines()] \
         if (out / 'perf.jsonl').is_file() else []
-    steady = perf[-options.measure:] if options.measure else (perf[len(perf) // 3:] if len(perf) > 6 else perf)
     log_text = (out / 'runtime.log').read_text(encoding='utf-8', errors='replace') \
         if (out / 'runtime.log').is_file() else ''
     errors = {}
@@ -390,20 +430,84 @@ def main():
             key = re.sub(r'0x[0-9A-Fa-f]+|\d+', '#', key)
             errors[key] = errors.get(key, 0) + 1
     summary = {
-        'crashed': crashed, 'goal': options.goal, 'goal_reached': goal_reached,
+        'crashed': crashed, 'goal': options.goal, 'goal_reached': goal_reached, 'args': options.arg,
         'seconds': round(time.time() - started, 1), 'timeline': timeline,
         'frames_captured': len(frames), 'perf_windows': len(perf),
-        'fps_median': round(statistics.median([p['fps'] for p in steady]), 1) if steady else None,
-        'fps_min': round(min(p['fps'] for p in steady), 1) if steady else None,
-        'wait_ms_per_s_median': {k: round(statistics.median([p['wait_ms'][k] / p['window_ms'] * 1000 for p in steady]), 1)
-                                 for k in steady[0]['wait_ms']} if steady else {},
-        'readbacks_per_s_median': round(statistics.median([p['readbacks'] for p in steady]), 1) if steady else None,
-        'draws_per_s_median': round(statistics.median([p['draws'] for p in steady]), 1) if steady else None,
+        **summarize(perf, options.measure),
+        'final_capture': final_stats,
+        'errors': errors,
         'top_errors': sorted(errors.items(), key=lambda kv: -kv[1])[:10],
     }
     (out / 'summary.json').write_text(json.dumps(summary, indent=2))
-    print(json.dumps(summary, indent=2))
-    if crashed or goal_reached is False:
+    return summary
+
+
+def aggregate(runs):
+    """Combines repeated runs: median of medians, minimum of minimums, union of errors."""
+    ok = [r for r in runs if 'fps_median' in r]
+    median = lambda values: round(statistics.median(values), 2) if values else None
+    pick = lambda key: [r[key] for r in ok if r.get(key) is not None]
+    nested = lambda key: {k: median([r[key][k] for r in ok if key in r]) for k in ok[0].get(key, {})} if ok else {}
+    errors = {}
+    for run in runs:
+        for key, count in run.get('errors', {}).items():
+            errors[key] = errors.get(key, 0) + count
+    summary = {
+        'repeat': len(runs),
+        'runs': [dict(crashed=r['crashed'], goal_reached=r['goal_reached'], fps_median=r.get('fps_median'))
+                 for r in runs],
+        'crashed': next((r['crashed'] for r in runs if r['crashed']), None),
+        'goal': runs[0]['goal'], 'args': runs[0]['args'],
+        'goal_reached': None if runs[0]['goal_reached'] is None else all(r['goal_reached'] for r in runs),
+        'fps_median': median(pick('fps_median')),
+        'fps_min': min(pick('fps_min'), default=None),
+        'cp_busy_ms_per_s_median': median(pick('cp_busy_ms_per_s_median')),
+        'readbacks_per_s_median': median(pick('readbacks_per_s_median')),
+        'draws_per_s_median': median(pick('draws_per_s_median')),
+        'wait_ms_per_s_median': nested('wait_ms_per_s_median'),
+        'counts_per_s_median': nested('counts_per_s_median'),
+        'counts_per_frame_median': nested('counts_per_frame_median'),
+        'final_captures': [r['final_capture'] for r in runs],
+        'errors': errors,
+        'top_errors': sorted(errors.items(), key=lambda kv: -kv[1])[:10],
+    }
+    for key in ('frame_ms_p50', 'frame_ms_p95', 'frame_ms_p99', 'hitch_50ms_per_min', 'hitch_100ms_per_min'):
+        summary[key] = median(pick(key))
+    return summary
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--build-root', required=True, help='BuildRoot used by Build.ps1')
+    parser.add_argument('--out', required=True, help='result directory, outside the repository')
+    parser.add_argument('--scenario', default='boot')
+    parser.add_argument('--goal', choices=sorted(GOALS), help='navigate with Jev instead of a timeline')
+    parser.add_argument('--goal-timeout', type=float, default=360)
+    parser.add_argument('--steps', help='JSON list of steps, overrides --scenario')
+    parser.add_argument('--arg', action='append', default=[], help='extra/override --cvar=value')
+    parser.add_argument('--tail', type=float, default=10, help='seconds to keep running after the last step')
+    parser.add_argument('--keep-ppm', action='store_true', help='keep full-resolution captures')
+    parser.add_argument('--measure', type=int, default=0, help='summarize only the last N perf seconds')
+    parser.add_argument('--repeat', type=int, default=1,
+                        help='run N times into <out>/run1..runN and aggregate into <out>/summary.json')
+    options = parser.parse_args()
+
+    out = Path(options.out).resolve()
+    # Captures and logs show game content; they must never land in the repository.
+    if out == REPO or REPO in out.parents:
+        parser.error('--out must be outside the repository, for example <BuildRoot>/e2e/<name>')
+    if options.repeat <= 1:
+        summary = run_once(options, out)
+    else:
+        runs = []
+        for index in range(1, options.repeat + 1):
+            runs.append(run_once(options, out / f'run{index}'))
+            print(f'run{index}: fps_median={runs[-1].get("fps_median")} crashed={runs[-1]["crashed"]}',
+                  flush=True)
+        summary = aggregate(runs)
+        (out / 'summary.json').write_text(json.dumps(summary, indent=2))
+    print(json.dumps({k: v for k, v in summary.items() if k != 'errors'}, indent=2))
+    if summary['crashed'] or summary['goal_reached'] is False:
         sys.exit(1)
 
 

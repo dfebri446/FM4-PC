@@ -33,6 +33,7 @@
 !/outputs/FM4-build/STATUS.txt
 !/outputs/FM4-build/dump-image.cpp
 !/outputs/FM4-build/e2e/README.txt
+!/outputs/FM4-build/e2e/compare.py
 !/outputs/FM4-build/e2e/e2e.py
 !/outputs/FM4-build/e2e/jev.py
 !/outputs/FM4-build/e2e/ocr-server.ps1

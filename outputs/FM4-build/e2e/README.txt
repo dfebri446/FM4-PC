@@ -53,8 +53,49 @@ Performance trace
 -----------------
 sdk-extra/src/graphics/util/perf_trace.h (wired by sdk.patch) writes one JSON
 line per second when REX_PERF_TRACE_FILE is set; otherwise it does nothing.
-Fields: fps (guest swaps), frame_max_ms, draws, copies (resolves), readbacks,
-readback_kb, and wait_ms per cause for the GPU command-processor thread:
-guest_idle (waiting for guest commands, i.e. CPU-bound), frame_latency
-(GPU-bound), resolve_readback, occlusion, memexport and other.
+Fields: fps (guest swaps), frame_max_ms, frame_ms (every frame in the window),
+draws, copies (resolves), readbacks, readback_kb, and wait_ms per cause for the
+GPU command-processor thread: guest_idle (waiting for guest commands, i.e.
+CPU-bound), frame_latency (GPU-bound), resolve_readback, occlusion, memexport
+and other. counts holds events per window: occlusion_awaited/unawaited (ROV
+occlusion snapshots whose report the guest spins on, or not), viz_queries,
+viz_draws (draws conditional on a viz query), bin_selects (SET_BIN_SELECT and
+_LO; tiling), predicated_run/predicated_skipped (bin-predicated packets).
 Compare stall times as well as FPS: FPS varies with what happens in a race.
+
+summary.json adds frame_ms_p50/p95/p99, hitch_50ms_per_min and
+hitch_100ms_per_min, cp_busy_ms_per_s_median (window minus all waits: wall time
+the command-processor thread works), counts per second and per frame, and
+final_capture statistics of the last capture (mean luma, % black < 8,
+% saturated > 247, 16-bin luma histogram).
+
+Comparing runs
+--------------
+Single runs vary by about 10-20% in FPS. Measure each configuration with
+--repeat 3: runs go to <out>\run1..run3 and <out>\summary.json aggregates them
+(median of medians, minimum of minimums, union of errors). A/B a cvar on the
+same binary with --arg, for example --arg=--readback_resolve=fast. Then:
+
+  python outputs\FM4-build\e2e\compare.py <BuildRoot>\e2e\baseline-v2 <BuildRoot>\e2e\candidate
+
+compare.py prints the differences and a verdict and exits 1 on FAIL: crash,
+goal not reached, median FPS down > 5%, frame p99 up > 20%, or an error key
+that the baseline does not have. A wait cause up > 20% or different capture
+statistics only WARN; races are not deterministic, so check captures by eye.
+
+SDK development loop
+--------------------
+For performance work on the SDK, edit the BuildRoot copy directly instead of
+re-running setup:
+1. Edit <BuildRoot>\sdk-source.
+2. cmake --build <BuildRoot>\sdk-build, then cmake --install <BuildRoot>\sdk-build
+   (inside a VS x64 developer shell with LLVM on PATH, as Build.ps1 sets up).
+3. Build.ps1 -Action build -BuildRoot <BuildRoot>: incremental game build,
+   copies the SDK DLLs, runs the instruction tests, writes build-result.json.
+4. Before committing, regenerate the tracked patch and extra files:
+     git -C <BuildRoot>\sdk-source diff -- . ':(exclude)src/graphics/shaders/bytecode' > outputs\FM4-build\sdk.patch
+   and copy changed files that sdk.patch does not carry (for example
+   src/graphics/util/perf_trace.h) to outputs\FM4-build\sdk-extra.
+Only setup checks the sdk.patch digest (.fm4-patch-sha256). Do not re-run setup
+on a development BuildRoot; verify a clean setup in a new BuildRoot at the end
+of each stage.

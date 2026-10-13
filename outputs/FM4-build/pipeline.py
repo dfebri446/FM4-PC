@@ -192,20 +192,24 @@ def launch(root):
     env['FM4_SHADOW_WORKAROUND']='1'
     if disc2:
         env['FM4_DISC2_ROOT']=str(disc2)
-    args=[root/'game-build/fm4_rex.exe',f'--game_data_root={disc1}',
-          f'--user_data_root={root / "user-data"}',f'--cache_root={root / "cache"}',
-          '--allow_game_relative_writes=false','--headless=false','--fullscreen=false',
-          '--render_target_path_d3d12=rov','--readback_resolve=full',
-          '--gpu_allow_invalid_fetch_constants=true','--async_shader_compilation=false',
-          '--rov_occlusion_awaited_report_divisor=2',
-          '--input_backend=sdl','--mnk_mode=true','--mnk_mouse=false',
-          '--keybind_right_trigger=W','--keybind_left_trigger=S',
-          '--keybind_lstick_left=A','--keybind_lstick_right=D',
-          '--keybind_a=Space','--keybind_b=Backspace','--keybind_start=Return',
-          '--keybind_back=Tab','--keybind_dpad_up=Up','--keybind_dpad_down=Down',
-          '--keybind_dpad_left=Left','--keybind_dpad_right=Right',
-          f'--log_file={root / "logs/runtime.log"}']
+    cvars=launch_cvars(root,disc1,root/'logs/runtime.log')
+    args=[root/'game-build/fm4_rex.exe']+[f'--{k}={v}' for k,v in cvars.items()]
     run(args,cwd=root,env=env,log=root/'logs/play.log')
+
+def launch_cvars(root,disc1,log_file):
+    """Launcher cvars, shared with e2e/e2e.py. New performance defaults go here once they pass e2e."""
+    return {'game_data_root':disc1,'user_data_root':root/'user-data','cache_root':root/'cache',
+            'allow_game_relative_writes':'false','headless':'false','fullscreen':'false',
+            'render_target_path_d3d12':'rov','readback_resolve':'full',
+            'gpu_allow_invalid_fetch_constants':'true','async_shader_compilation':'false',
+            'rov_occlusion_awaited_report_divisor':'2',
+            'input_backend':'sdl','mnk_mode':'true','mnk_mouse':'false',
+            'keybind_right_trigger':'W','keybind_left_trigger':'S',
+            'keybind_lstick_left':'A','keybind_lstick_right':'D',
+            'keybind_a':'Space','keybind_b':'Backspace','keybind_start':'Return',
+            'keybind_back':'Tab','keybind_dpad_up':'Up','keybind_dpad_down':'Down',
+            'keybind_dpad_left':'Left','keybind_dpad_right':'Right',
+            'log_file':log_file}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
