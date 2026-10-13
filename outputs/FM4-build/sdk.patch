@@ -64,10 +64,21 @@ index da8e432..2905617 100644
    uint32_t ExecutePrimaryBuffer(uint32_t start_index, uint32_t end_index);
    virtual void OnPrimaryBufferEnd() {}
 diff --git a/include/rex/graphics/d3d12/command_processor.h b/include/rex/graphics/d3d12/command_processor.h
-index 96d362b..44b4fd7 100644
+index 96d362b..9508bf9 100644
 --- a/include/rex/graphics/d3d12/command_processor.h
 +++ b/include/rex/graphics/d3d12/command_processor.h
-@@ -147,6 +147,7 @@ class D3D12CommandProcessor : public CommandProcessor {
+@@ -14,7 +14,10 @@
+ #include <algorithm>
+ #include <array>
+ #include <atomic>
++#include <condition_variable>
+ #include <deque>
++#include <mutex>
++#include <thread>
+ #include <memory>
+ #include <optional>
+ #include <string>
+@@ -147,6 +150,7 @@ class D3D12CommandProcessor : public CommandProcessor {
  
      kGammaRampTableSRV,
      kGammaRampPWLSRV,
@@ -75,7 +86,7 @@ index 96d362b..44b4fd7 100644
  
      // Beyond this point, SRVs are accessible to shaders through an unbounded
      // range - no descriptors of other types bound to shaders alongside
-@@ -211,6 +212,8 @@ class D3D12CommandProcessor : public CommandProcessor {
+@@ -211,6 +215,8 @@ class D3D12CommandProcessor : public CommandProcessor {
                   uint32_t frontbuffer_height) override;
  
    void OnPrimaryBufferEnd() override;
@@ -84,7 +95,7 @@ index 96d362b..44b4fd7 100644
  
    Shader* LoadShader(xenos::ShaderType shader_type, uint32_t guest_address,
                       const uint32_t* host_address, uint32_t dword_count) override;
-@@ -372,14 +375,20 @@ class D3D12CommandProcessor : public CommandProcessor {
+@@ -372,14 +378,20 @@ class D3D12CommandProcessor : public CommandProcessor {
    // Returns a buffer for reading GPU data back to the CPU. Assuming
    // synchronizing immediately after use. Always in COPY_DEST state.
    ID3D12Resource* RequestReadbackBuffer(uint32_t size);
@@ -110,7 +121,7 @@ index 96d362b..44b4fd7 100644
    };
    void EvictOldReadbackBuffers(std::unordered_map<uint64_t, ReadbackBuffer>& buffer_map);
    static constexpr uint32_t kReadbackBufferSizeIncrement = 16 * 1024 * 1024;
-@@ -403,6 +412,36 @@ class D3D12CommandProcessor : public CommandProcessor {
+@@ -403,6 +415,36 @@ class D3D12CommandProcessor : public CommandProcessor {
    }
  
    bool InitializeOcclusionQueryResources();
@@ -147,7 +158,35 @@ index 96d362b..44b4fd7 100644
    void ShutdownOcclusionQueryResources();
    bool BeginGuestOcclusionQuery(uint32_t sample_count_address);
    bool EndGuestOcclusionQuery(uint32_t sample_count_address,
-@@ -652,6 +691,55 @@ class D3D12CommandProcessor : public CommandProcessor {
+@@ -459,6 +501,27 @@ class D3D12CommandProcessor : public CommandProcessor {
+   ID3D12GraphicsCommandList1* command_list_1_ = nullptr;
+   DeferredCommandList deferred_command_list_;
+ 
++  // d3d12_submit_thread: non-swap submissions are replayed into command_list_
++  // and executed by a worker thread in submission order, which also signals
++  // submission_fence_. Swap submissions and shutdown flush the worker first,
++  // because the presenter signals its own fence right after the swap.
++  struct SubmitJob {
++    std::unique_ptr<DeferredCommandList> list;
++    ID3D12CommandAllocator* allocator;
++    uint64_t submission;
++  };
++  std::thread submit_thread_;
++  std::mutex submit_mutex_;
++  std::condition_variable submit_request_cond_;
++  std::condition_variable submit_done_cond_;
++  std::deque<SubmitJob> submit_jobs_;
++  std::vector<std::unique_ptr<DeferredCommandList>> submit_free_lists_;
++  bool submit_busy_ = false;
++  bool submit_shutdown_ = false;
++  void SubmitThreadMain();
++  void FlushSubmitThread();
++  void ShutdownSubmitThread();
++
+   bool debug_markers_enabled_ = false;
+ 
+   // Viewport info caching - avoids redundant GetHostViewportInfo recalculation
+@@ -652,6 +715,55 @@ class D3D12CommandProcessor : public CommandProcessor {
    Microsoft::WRL::ComPtr<ID3D12QueryHeap> occlusion_query_heap_;
    Microsoft::WRL::ComPtr<ID3D12Resource> occlusion_query_readback_;
    uint64_t* occlusion_query_readback_mapping_ = nullptr;
@@ -203,6 +242,20 @@ index 96d362b..44b4fd7 100644
    uint32_t occlusion_query_cursor_ = 0;
    bool occlusion_query_resources_available_ = false;
    struct ActiveOcclusionQuery {
+diff --git a/include/rex/graphics/d3d12/deferred_command_list.h b/include/rex/graphics/d3d12/deferred_command_list.h
+index 7f1eb7f..64f374a 100644
+--- a/include/rex/graphics/d3d12/deferred_command_list.h
++++ b/include/rex/graphics/d3d12/deferred_command_list.h
+@@ -34,6 +34,9 @@ class DeferredCommandList {
+ 
+   void Reset();
+   void Execute(ID3D12GraphicsCommandList* command_list, ID3D12GraphicsCommandList1* command_list_1);
++  // Exchanges the recorded commands, so a finished list can be handed to the
++  // submission thread while recording continues into this object.
++  void Swap(DeferredCommandList& other) { command_stream_.swap(other.command_stream_); }
+ 
+   D3D12_RECT* ClearDepthStencilViewAllocatedRects(D3D12_CPU_DESCRIPTOR_HANDLE depth_stencil_view,
+                                                   D3D12_CLEAR_FLAGS clear_flags, FLOAT depth,
 diff --git a/include/rex/graphics/format/dxbc.h b/include/rex/graphics/format/dxbc.h
 index a5eaa8f..1a0d05b 100644
 --- a/include/rex/graphics/format/dxbc.h
@@ -344,6 +397,19 @@ index b7f66e2..bde7ef9 100644
  
    uint32_t bytes_per_block() const { return block_width * block_height * bits_per_pixel / 8; }
  
+diff --git a/include/rex/graphics/shared_memory.h b/include/rex/graphics/shared_memory.h
+index 4d85a2b..b646ae3 100644
+--- a/include/rex/graphics/shared_memory.h
++++ b/include/rex/graphics/shared_memory.h
+@@ -160,6 +160,8 @@ class SharedMemory {
+   // Ranges that need to be uploaded, generated by GetRangesToUpload (a
+   // persistently allocated vector).
+   std::vector<std::pair<uint32_t, uint32_t>> upload_ranges_;
++  // Reused by RequestRanges to avoid a heap allocation per request.
++  std::vector<std::pair<uint32_t, uint32_t>> merged_ranges_;
+ 
+   // Mutex between the guest memory subsystem and the command processor, to be
+   // locked when checking or updating validity of pages/ranges and when firing
 diff --git a/include/rex/input/input_system.h b/include/rex/input/input_system.h
 index 1cb3faa..07b2e13 100644
 --- a/include/rex/input/input_system.h
@@ -611,7 +677,7 @@ index a744375..f9c54a7 100644
      REXGPU_INFO("Begin viz query ID {:02X}", id);
    } else {
 diff --git a/src/graphics/d3d12/command_processor.cpp b/src/graphics/d3d12/command_processor.cpp
-index 19874a5..b4ecc2d 100644
+index 19874a5..0666490 100644
 --- a/src/graphics/d3d12/command_processor.cpp
 +++ b/src/graphics/d3d12/command_processor.cpp
 @@ -11,10 +11,14 @@
@@ -629,7 +695,7 @@ index 19874a5..b4ecc2d 100644
  #include <rex/assert.h>
  #include <rex/cvar.h>
  #include <rex/dbg.h>
-@@ -47,8 +51,98 @@ REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
+@@ -47,8 +51,103 @@ REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
                      "Submit command list when PM4 primary buffer ends")
      .lifecycle(rex::cvar::Lifecycle::kHotReload);
  
@@ -656,6 +722,11 @@ index 19874a5..b4ecc2d 100644
 +                    "host occlusion queries, like the ROV path. Off uses begin/end pairs at "
 +                    "one address, which titles writing QueryBatch-style reports break")
 +    .lifecycle(rex::cvar::Lifecycle::kHotReload);
++
++REXCVAR_DEFINE_BOOL(d3d12_submit_thread, false, "GPU/D3D12",
++                    "Replay and execute command lists on a separate thread, taking the "
++                    "D3D12 recording cost off the command processor thread")
++    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 +
 +REXCVAR_DEFINE_INT32(async_shader_draw_wait_us, 0, "GPU/D3D12",
 +                     "With async_shader_compilation, how long a draw waits for its pipeline "
@@ -728,7 +799,7 @@ index 19874a5..b4ecc2d 100644
  // Generated with `xb buildshaders`.
  namespace shaders {
  #include "../shaders/bytecode/d3d12_5_1/apply_gamma_pwl_cs.h"
-@@ -152,8 +246,38 @@ void D3D12CommandProcessor::InitializeShaderStorage(const std::filesystem::path&
+@@ -152,8 +251,38 @@ void D3D12CommandProcessor::InitializeShaderStorage(const std::filesystem::path&
  
  bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffer* reader,
                                                                 uint32_t packet, uint32_t count) {
@@ -768,7 +839,7 @@ index 19874a5..b4ecc2d 100644
    }
  
    const uint32_t kQueryFinished = rex::byte_swap(0xFFFFFEED);
-@@ -195,10 +319,12 @@ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffe
+@@ -195,10 +324,12 @@ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffe
    if (!is_end) {
      if (active_occlusion_query_.valid &&
          active_occlusion_query_.sample_count_address != sample_count_addr) {
@@ -781,7 +852,7 @@ index 19874a5..b4ecc2d 100644
        return write_fallback_result();
      }
      return true;
-@@ -206,14 +332,17 @@ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffe
+@@ -206,14 +337,17 @@ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffe
  
    if (!active_occlusion_query_.valid ||
        active_occlusion_query_.sample_count_address != sample_count_addr) {
@@ -799,7 +870,7 @@ index 19874a5..b4ecc2d 100644
    return true;
  }
  
-@@ -364,7 +493,7 @@ ID3D12RootSignature* D3D12CommandProcessor::GetRootSignature(const DxbcShader* v
+@@ -364,7 +498,7 @@ ID3D12RootSignature* D3D12CommandProcessor::GetRootSignature(const DxbcShader* v
    }
  
    // Shared memory and, if ROVs are used, EDRAM.
@@ -808,7 +879,7 @@ index 19874a5..b4ecc2d 100644
    {
      auto& parameter = parameters[kRootParameter_Bindful_SharedMemoryAndEdram];
      parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-@@ -392,6 +521,11 @@ ID3D12RootSignature* D3D12CommandProcessor::GetRootSignature(const DxbcShader* v
+@@ -392,6 +526,11 @@ ID3D12RootSignature* D3D12CommandProcessor::GetRootSignature(const DxbcShader* v
            UINT(DxbcShaderTranslator::UAVRegister::kEdram);
        shared_memory_and_edram_ranges[2].RegisterSpace = 0;
        shared_memory_and_edram_ranges[2].OffsetInDescriptorsFromTableStart = 2;
@@ -820,7 +891,19 @@ index 19874a5..b4ecc2d 100644
      }
    }
  
-@@ -1101,7 +1235,7 @@ bool D3D12CommandProcessor::SetupContext() {
+@@ -866,6 +1005,11 @@ bool D3D12CommandProcessor::SetupContext() {
+   ID3D12Device* device = provider.GetDevice();
+   ID3D12CommandQueue* direct_queue = provider.GetDirectQueue();
+ 
++  if (REXCVAR_GET(d3d12_submit_thread)) {
++    submit_shutdown_ = false;
++    submit_thread_ = std::thread([this]() { SubmitThreadMain(); });
++  }
++
+   fence_completion_event_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+   if (fence_completion_event_ == nullptr) {
+     REXGPU_ERROR("Failed to create the fence completion event");
+@@ -1101,7 +1245,7 @@ bool D3D12CommandProcessor::SetupContext() {
        root_bindless_sampler_range.OffsetInDescriptorsFromTableStart = 0;
      }
      // View heap.
@@ -829,7 +912,7 @@ index 19874a5..b4ecc2d 100644
      {
        auto& parameter = root_parameters_bindless[kRootParameter_Bindless_ViewHeap];
        parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-@@ -1119,6 +1253,10 @@ bool D3D12CommandProcessor::SetupContext() {
+@@ -1119,6 +1263,10 @@ bool D3D12CommandProcessor::SetupContext() {
          range.BaseShaderRegister = UINT(DxbcShaderTranslator::UAVRegister::kEdram);
          range.RegisterSpace = 0;
          range.OffsetInDescriptorsFromTableStart = UINT(SystemBindlessView::kEdramR32UintUAV);
@@ -840,7 +923,7 @@ index 19874a5..b4ecc2d 100644
        }
        // Used UAV and SRV ranges must not overlap on Nvidia Fermi, so textures
        // have OffsetInDescriptorsFromTableStart after all static descriptors of
-@@ -1619,6 +1757,11 @@ bool D3D12CommandProcessor::SetupContext() {
+@@ -1619,6 +1767,11 @@ bool D3D12CommandProcessor::SetupContext() {
    }
  
    occlusion_query_resources_available_ = InitializeOcclusionQueryResources();
@@ -852,7 +935,11 @@ index 19874a5..b4ecc2d 100644
  
    // Just not to expose uninitialized memory.
    std::memset(&system_constants_, 0, sizeof(system_constants_));
-@@ -1630,12 +1773,13 @@ void D3D12CommandProcessor::ShutdownContext() {
+@@ -1627,15 +1780,17 @@ bool D3D12CommandProcessor::SetupContext() {
+ }
+ 
+ void D3D12CommandProcessor::ShutdownContext() {
++  ShutdownSubmitThread();
    AwaitAllQueueOperationsCompletion();
    InvalidateAllVertexBufferResidency();
    ShutdownOcclusionQueryResources();
@@ -867,7 +954,7 @@ index 19874a5..b4ecc2d 100644
        if (readback.buffers[i]) {
          if (readback.mapped_data[i]) {
            readback.buffers[i]->Unmap(0, nullptr);
-@@ -1652,7 +1796,7 @@ void D3D12CommandProcessor::ShutdownContext() {
+@@ -1652,7 +1807,7 @@ void D3D12CommandProcessor::ShutdownContext() {
    readback_buffers_.clear();
    for (auto& memexport_readback_pair : memexport_readback_buffers_) {
      auto& readback = memexport_readback_pair.second;
@@ -876,7 +963,7 @@ index 19874a5..b4ecc2d 100644
        if (readback.buffers[i]) {
          if (readback.mapped_data[i]) {
            readback.buffers[i]->Unmap(0, nullptr);
-@@ -1894,6 +2038,9 @@ void D3D12CommandProcessor::OnGammaRampPWLValueWritten() {
+@@ -1894,6 +2049,9 @@ void D3D12CommandProcessor::OnGammaRampPWLValueWritten() {
  void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbuffer_width,
                                        uint32_t frontbuffer_height) {
    SCOPE_profile_cpu_f("gpu");
@@ -886,7 +973,7 @@ index 19874a5..b4ecc2d 100644
    vertex_buffers_in_sync_[0] = 0;
    vertex_buffers_in_sync_[1] = 0;
  
-@@ -2261,6 +2408,9 @@ void D3D12CommandProcessor::OnPrimaryBufferEnd() {
+@@ -2261,6 +2419,9 @@ void D3D12CommandProcessor::OnPrimaryBufferEnd() {
        CanEndSubmissionImmediately()) {
      EndSubmission(false);
    }
@@ -896,7 +983,7 @@ index 19874a5..b4ecc2d 100644
  }
  
  Shader* D3D12CommandProcessor::LoadShader(xenos::ShaderType shader_type, uint32_t guest_address,
-@@ -2274,6 +2424,8 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
+@@ -2274,6 +2435,8 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
  #if XE_GPU_FINE_GRAINED_DRAW_SCOPES
    SCOPE_profile_cpu_f("gpu");
  #endif  // XE_GPU_FINE_GRAINED_DRAW_SCOPES
@@ -905,7 +992,7 @@ index 19874a5..b4ecc2d 100644
  
    ID3D12Device* device = GetD3D12Provider().GetDevice();
    const RegisterFile& regs = *register_file_;
-@@ -2333,9 +2485,11 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
+@@ -2333,9 +2496,11 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
  
    // Process primitives.
    PrimitiveProcessor::ProcessingResult primitive_processing_result;
@@ -917,7 +1004,7 @@ index 19874a5..b4ecc2d 100644
    if (!primitive_processing_result.host_draw_vertex_count) {
      // Nothing to draw.
      return true;
-@@ -2364,10 +2518,12 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
+@@ -2364,10 +2529,12 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
    uint32_t normalized_color_mask =
        pixel_shader ? draw_util::GetNormalizedColorMask(regs, pixel_shader->writes_color_targets())
                     : 0;
@@ -930,7 +1017,7 @@ index 19874a5..b4ecc2d 100644
  
    // Create the pipeline (for this, need the actually used render target formats
    // from the render target cache), translating the shaders - doing this now to
-@@ -2392,22 +2548,41 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
+@@ -2392,22 +2559,41 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
    }
    void* pipeline_handle;
    ID3D12RootSignature* root_signature;
@@ -973,7 +1060,7 @@ index 19874a5..b4ecc2d 100644
  
    // Bind the pipeline after configuring it and doing everything that may bind
    // other pipelines.
-@@ -2464,6 +2639,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
+@@ -2464,6 +2650,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
  
    // Update system constants before uploading them.
    // TODO(Triang3l): With ROV, pass the disabled render target mask for safety.
@@ -981,7 +1068,7 @@ index 19874a5..b4ecc2d 100644
    UpdateSystemConstantValues(memexport_used, primitive_polygonal,
                               primitive_processing_result.line_loop_closing_index,
                               primitive_processing_result.host_shader_index_endian, viewport_info,
-@@ -2473,9 +2649,11 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
+@@ -2473,9 +2660,11 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
    if (!UpdateBindings(vertex_shader, pixel_shader, root_signature, memexport_used)) {
      return false;
    }
@@ -993,7 +1080,7 @@ index 19874a5..b4ecc2d 100644
    const Shader::ConstantRegisterMap& constant_map_vertex = vertex_shader->constant_register_map();
    for (uint32_t i = 0; i < rex::countof(constant_map_vertex.vertex_fetch_bitmap); ++i) {
      uint32_t vfetch_bits_remaining = constant_map_vertex.vertex_fetch_bitmap[i];
-@@ -2524,6 +2702,8 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
+@@ -2524,6 +2713,8 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
      }
    }
  
@@ -1002,7 +1089,7 @@ index 19874a5..b4ecc2d 100644
    // Gather memexport ranges and ensure the heaps for them are resident, and
    // also load the data surrounding the export and to fill the regions that
    // won't be modified by the shaders.
-@@ -2731,6 +2911,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
+@@ -2731,6 +2922,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
  }
  
  bool D3D12CommandProcessor::IssueDraw_MemexportReadbackFullPath(uint32_t total_size) {
@@ -1010,7 +1097,7 @@ index 19874a5..b4ecc2d 100644
    if (!total_size || memexport_ranges_.empty()) {
      return true;
    }
-@@ -2874,24 +3055,42 @@ bool D3D12CommandProcessor::IssueCopy() {
+@@ -2874,24 +3066,42 @@ bool D3D12CommandProcessor::IssueCopy() {
  #if XE_GPU_FINE_GRAINED_DRAW_SCOPES
    SCOPE_profile_cpu_f("gpu");
  #endif  // XE_GPU_FINE_GRAINED_DRAW_SCOPES
@@ -1057,7 +1144,7 @@ index 19874a5..b4ecc2d 100644
  
    if (!written_length) {
      return true;
-@@ -3072,21 +3271,46 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
+@@ -3072,21 +3282,46 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
    ReadbackResolveMode readback_mode = GetReadbackResolveMode(REXCVAR_GET(d3d12_readback_resolve));
    bool use_delayed_sync =
        readback_mode == ReadbackResolveMode::kFast || readback_mode == ReadbackResolveMode::kSome;
@@ -1115,7 +1202,7 @@ index 19874a5..b4ecc2d 100644
    }
  
    bool should_copy = (readback_mode == ReadbackResolveMode::kSome) ? is_cache_miss : true;
-@@ -3095,10 +3319,11 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
+@@ -3095,10 +3330,11 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
      uint8_t* destination = memory_->TranslatePhysical(written_address);
      if (destination) {
        std::memcpy(destination, static_cast<uint8_t*>(rb.mapped_data[read_index]), written_length);
@@ -1129,7 +1216,7 @@ index 19874a5..b4ecc2d 100644
    return true;
  }
  
-@@ -3118,7 +3343,9 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
+@@ -3118,7 +3354,9 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
                      SUCCEEDED(queue_operations_since_submission_fence_->SetEventOnCompletion(
                          fence_value, fence_completion_event_)))) {
          PROFILE_CMD_BUFFER_STALL();
@@ -1139,7 +1226,7 @@ index 19874a5..b4ecc2d 100644
          queue_operations_done_since_submission_signal_ = false;
        } else {
          REXGPU_ERROR(
-@@ -3137,7 +3364,9 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
+@@ -3137,7 +3375,9 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
      if (SUCCEEDED(
              submission_fence_->SetEventOnCompletion(await_submission, fence_completion_event_))) {
        PROFILE_CMD_BUFFER_STALL();
@@ -1149,7 +1236,7 @@ index 19874a5..b4ecc2d 100644
        submission_completed_ = submission_fence_->GetCompletedValue();
      }
    }
-@@ -3149,6 +3378,8 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
+@@ -3149,6 +3389,8 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
      return;
    }
  
@@ -1158,7 +1245,7 @@ index 19874a5..b4ecc2d 100644
    // Reclaim command allocators.
    while (command_allocator_submitted_first_) {
      if (command_allocator_submitted_first_->last_usage_submission > submission_completed_) {
-@@ -3277,8 +3508,12 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
+@@ -3277,8 +3519,12 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
    // Check the fence - needed for all kinds of submissions (to reclaim transient
    // resources early) and specifically for frames (not to queue too many), and
    // await the availability of the current frame.
@@ -1173,7 +1260,7 @@ index 19874a5..b4ecc2d 100644
    // TODO(Triang3l): If failed to await (completed submission < awaited frame
    // submission), do something like dropping the draw command that wanted to
    // open the frame.
-@@ -3295,6 +3530,7 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
+@@ -3295,6 +3541,7 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
      }
    }
  
@@ -1181,7 +1268,7 @@ index 19874a5..b4ecc2d 100644
    if (!submission_open_) {
      submission_open_ = true;
  
-@@ -3330,6 +3566,7 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
+@@ -3330,6 +3577,7 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
    }
  
    if (is_opening_frame) {
@@ -1189,7 +1276,7 @@ index 19874a5..b4ecc2d 100644
      frame_open_ = true;
  
      // Reset bindings that depend on the data stored in the pools.
-@@ -3368,6 +3605,13 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
+@@ -3368,6 +3616,13 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
      texture_cache_->BeginFrame();
    }
  
@@ -1203,7 +1290,7 @@ index 19874a5..b4ecc2d 100644
    return true;
  }
  
-@@ -3414,7 +3658,15 @@ bool D3D12CommandProcessor::EndSubmission(bool is_swap) {
+@@ -3414,7 +3669,15 @@ bool D3D12CommandProcessor::EndSubmission(bool is_swap) {
      // destroyed between frames.
      SubmitBarriers();
  
@@ -1219,7 +1306,67 @@ index 19874a5..b4ecc2d 100644
  
      // Submit the deferred command list.
      // Only one deferred command list must be executed in the same
-@@ -3652,6 +3904,9 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
+@@ -3423,12 +3686,41 @@ bool D3D12CommandProcessor::EndSubmission(bool is_swap) {
+     // happens between Xenia submissions.
+     ID3D12CommandAllocator* command_allocator =
+         command_allocator_writable_first_->command_allocator;
+-    command_allocator->Reset();
+-    command_list_->Reset(command_allocator, nullptr);
+-    deferred_command_list_.Execute(command_list_, command_list_1_);
+-    command_list_->Close();
+-    ID3D12CommandList* execute_command_lists[] = {command_list_};
+-    direct_queue->ExecuteCommandLists(1, execute_command_lists);
++    const bool on_submit_thread = submit_thread_.joinable() && !is_swap;
++    if (on_submit_thread) {
++      SubmitJob job;
++      {
++        std::lock_guard<std::mutex> lock(submit_mutex_);
++        if (!submit_free_lists_.empty()) {
++          job.list = std::move(submit_free_lists_.back());
++          submit_free_lists_.pop_back();
++        }
++      }
++      if (!job.list) {
++        job.list = std::make_unique<DeferredCommandList>(*this);
++      }
++      job.list->Swap(deferred_command_list_);
++      job.allocator = command_allocator;
++      job.submission = submission_current_;
++      {
++        std::lock_guard<std::mutex> lock(submit_mutex_);
++        submit_jobs_.push_back(std::move(job));
++      }
++      submit_request_cond_.notify_one();
++    } else {
++      FlushSubmitThread();
++      command_allocator->Reset();
++      command_list_->Reset(command_allocator, nullptr);
++      uint64_t perf_start = perf_trace::ZoneStart();
++      deferred_command_list_.Execute(command_list_, command_list_1_);
++      perf_trace::ZoneEnd(perf_trace::Zone::kSubmitRecord, perf_start);
++      perf_start = perf_trace::ZoneStart();
++      command_list_->Close();
++      ID3D12CommandList* execute_command_lists[] = {command_list_};
++      direct_queue->ExecuteCommandLists(1, execute_command_lists);
++      perf_trace::ZoneEnd(perf_trace::Zone::kSubmitExecute, perf_start);
++    }
++    perf_trace::Increment(perf_trace::Count::kSubmissions);
+     command_allocator_writable_first_->last_usage_submission = submission_current_;
+     if (command_allocator_submitted_last_) {
+       command_allocator_submitted_last_->next = command_allocator_writable_first_;
+@@ -3442,7 +3734,10 @@ bool D3D12CommandProcessor::EndSubmission(bool is_swap) {
+       command_allocator_writable_last_ = nullptr;
+     }
+ 
+-    direct_queue->Signal(submission_fence_, submission_current_++);
++    if (!on_submit_thread) {
++      direct_queue->Signal(submission_fence_, submission_current_);
++    }
++    ++submission_current_;
+ 
+     submission_open_ = false;
+ 
+@@ -3652,6 +3947,9 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
  
    // Flags.
    uint32_t flags = 0;
@@ -1229,7 +1376,7 @@ index 19874a5..b4ecc2d 100644
    // Whether shared memory is an SRV or a UAV. Because a resource can't be in a
    // read-write (UAV) and a read-only (SRV, IBV) state at once, if any shader in
    // the pipeline uses memexport, the shared memory buffer must be a UAV.
-@@ -3830,6 +4085,9 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
+@@ -3830,6 +4128,9 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
      uint32_t texture_signs_mask = uint32_t(0b11111111) << texture_signs_shift;
      dirty |= (texture_signs_uint & texture_signs_mask) != texture_signs_shifted;
      texture_signs_uint = (texture_signs_uint & ~texture_signs_mask) | texture_signs_shifted;
@@ -1239,7 +1386,7 @@ index 19874a5..b4ecc2d 100644
      textures_resolution_scaled |=
          uint32_t(texture_cache_->IsActiveTextureResolutionScaled(texture_index)) << texture_index;
    }
-@@ -4488,7 +4746,7 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+@@ -4488,7 +4789,7 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
      if (edram_rov_used) {
        // + EDRAM UAV in two tables (with the shared memory SRV and with the
        // shared memory UAV).
@@ -1248,7 +1395,7 @@ index 19874a5..b4ecc2d 100644
      }
      D3D12_CPU_DESCRIPTOR_HANDLE view_cpu_handle;
      D3D12_GPU_DESCRIPTOR_HANDLE view_gpu_handle;
-@@ -4541,6 +4799,9 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+@@ -4541,6 +4842,9 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
          render_target_cache_->WriteEdramUintPow2UAVDescriptor(view_cpu_handle, 2);
          view_cpu_handle.ptr += descriptor_size_view;
          view_gpu_handle.ptr += descriptor_size_view;
@@ -1258,7 +1405,7 @@ index 19874a5..b4ecc2d 100644
        }
        // Null SRV + UAV + EDRAM.
        gpu_handle_shared_memory_uav_and_edram_ = view_gpu_handle;
-@@ -4554,6 +4815,9 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+@@ -4554,6 +4858,9 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
          render_target_cache_->WriteEdramUintPow2UAVDescriptor(view_cpu_handle, 2);
          view_cpu_handle.ptr += descriptor_size_view;
          view_gpu_handle.ptr += descriptor_size_view;
@@ -1268,7 +1415,7 @@ index 19874a5..b4ecc2d 100644
        }
        current_graphics_root_up_to_date_ &= ~(1u << kRootParameter_Bindful_SharedMemoryAndEdram);
      }
-@@ -4759,7 +5023,7 @@ void D3D12CommandProcessor::EvictOldReadbackBuffers(
+@@ -4759,7 +5066,7 @@ void D3D12CommandProcessor::EvictOldReadbackBuffers(
        ++it;
        continue;
      }
@@ -1277,7 +1424,7 @@ index 19874a5..b4ecc2d 100644
        if (readback.buffers[i]) {
          if (readback.mapped_data[i]) {
            readback.buffers[i]->Unmap(0, nullptr);
-@@ -4804,12 +5068,18 @@ ID3D12Resource* D3D12CommandProcessor::RequestReadbackBuffer(uint32_t size) {
+@@ -4804,12 +5111,18 @@ ID3D12Resource* D3D12CommandProcessor::RequestReadbackBuffer(uint32_t size) {
  
  bool D3D12CommandProcessor::InitializeOcclusionQueryResources() {
    active_occlusion_query_ = {};
@@ -1296,7 +1443,7 @@ index 19874a5..b4ecc2d 100644
    ID3D12Device* device = GetD3D12Provider().GetDevice();
    if (!device) {
      return false;
-@@ -4864,6 +5134,377 @@ void D3D12CommandProcessor::ShutdownOcclusionQueryResources() {
+@@ -4864,6 +5177,425 @@ void D3D12CommandProcessor::ShutdownOcclusionQueryResources() {
    occlusion_query_readback_mapping_ = nullptr;
    occlusion_query_readback_.Reset();
    occlusion_query_heap_.Reset();
@@ -1521,6 +1668,54 @@ index 19874a5..b4ecc2d 100644
 +
 +bool D3D12CommandProcessor::PollIdleWork() { return FlushROVOcclusionSnapshots(); }
 +
++void D3D12CommandProcessor::SubmitThreadMain() {
++  ID3D12CommandQueue* direct_queue = GetD3D12Provider().GetDirectQueue();
++  std::unique_lock<std::mutex> lock(submit_mutex_);
++  while (true) {
++    submit_request_cond_.wait(lock, [this]() { return submit_shutdown_ || !submit_jobs_.empty(); });
++    if (submit_jobs_.empty()) {
++      return;
++    }
++    SubmitJob job = std::move(submit_jobs_.front());
++    submit_jobs_.pop_front();
++    submit_busy_ = true;
++    lock.unlock();
++    // The allocator is only reused after this submission's fence value, which
++    // is signaled below, so it is free to reset here.
++    job.allocator->Reset();
++    command_list_->Reset(job.allocator, nullptr);
++    job.list->Execute(command_list_, command_list_1_);
++    command_list_->Close();
++    ID3D12CommandList* execute_command_lists[] = {command_list_};
++    direct_queue->ExecuteCommandLists(1, execute_command_lists);
++    direct_queue->Signal(submission_fence_, job.submission);
++    job.list->Reset();
++    lock.lock();
++    submit_free_lists_.push_back(std::move(job.list));
++    submit_busy_ = false;
++    if (submit_jobs_.empty()) {
++      submit_done_cond_.notify_all();
++    }
++  }
++}
++
++void D3D12CommandProcessor::FlushSubmitThread() {
++  if (!submit_thread_.joinable()) return;
++  std::unique_lock<std::mutex> lock(submit_mutex_);
++  submit_done_cond_.wait(lock, [this]() { return submit_jobs_.empty() && !submit_busy_; });
++}
++
++void D3D12CommandProcessor::ShutdownSubmitThread() {
++  if (!submit_thread_.joinable()) return;
++  {
++    std::lock_guard<std::mutex> lock(submit_mutex_);
++    submit_shutdown_ = true;
++  }
++  submit_request_cond_.notify_all();
++  submit_thread_.join();
++  submit_free_lists_.clear();
++}
++
 +bool D3D12CommandProcessor::UseRTVOcclusionSnapshots() const {
 +  return REXCVAR_GET(rtv_occlusion_snapshots) && REXCVAR_GET(occlusion_query_enable) &&
 +         occlusion_query_resources_available_ && occlusion_query_heap_ &&
@@ -1674,7 +1869,7 @@ index 19874a5..b4ecc2d 100644
  }
  
  bool D3D12CommandProcessor::AcquireOcclusionQueryIndex(uint32_t& host_index_out) {
-@@ -4921,6 +5562,7 @@ bool D3D12CommandProcessor::BeginGuestOcclusionQuery(uint32_t sample_count_addre
+@@ -4921,6 +5653,7 @@ bool D3D12CommandProcessor::BeginGuestOcclusionQuery(uint32_t sample_count_addre
  
  bool D3D12CommandProcessor::EndGuestOcclusionQuery(
      uint32_t sample_count_address, xenos::xe_gpu_depth_sample_counts* sample_counts) {
@@ -2093,6 +2288,47 @@ index c456e1e..0721b53 100644
 +}
 +
  }  //  namespace rex::graphics
+diff --git a/src/graphics/shared_memory.cpp b/src/graphics/shared_memory.cpp
+index ec0df7c..6410582 100644
+--- a/src/graphics/shared_memory.cpp
++++ b/src/graphics/shared_memory.cpp
+@@ -19,6 +19,7 @@
+ #include <rex/graphics/shared_memory.h>
+ #include <rex/math.h>
+ #include <rex/memory.h>
++#include "util/perf_trace.h"
+ 
+ namespace rex::graphics {
+ 
+@@ -343,8 +344,8 @@ bool SharedMemory::RequestRanges(const std::pair<uint32_t, uint32_t>* ranges, si
+   }
+ 
+   // Some texture or buffer is empty, for example - safe to draw in this case.
+-  std::vector<std::pair<uint32_t, uint32_t>> merged_ranges;
+-  merged_ranges.reserve(count);
++  std::vector<std::pair<uint32_t, uint32_t>>& merged_ranges = merged_ranges_;
++  merged_ranges.clear();
+   for (size_t i = 0; i < count; ++i) {
+     uint32_t start = ranges[i].first;
+     uint32_t length = ranges[i].second;
+@@ -404,7 +405,9 @@ bool SharedMemory::RequestRanges(const std::pair<uint32_t, uint32_t>* ranges, si
+     upload_ranges_.emplace_back(page_start, page_count);
+   };
+   {
++    const uint64_t perf_lock_start = perf_trace::ZoneStart();
+     auto global_lock = global_critical_region_.Acquire();
++    perf_trace::ZoneEnd(perf_trace::Zone::kSharedMemoryLock, perf_lock_start);
+     for (const std::pair<uint32_t, uint32_t>& range : merged_ranges) {
+       uint32_t page_first = range.first >> page_size_log2_;
+       uint32_t page_last = (range.first + range.second - 1) >> page_size_log2_;
+@@ -465,6 +468,7 @@ bool SharedMemory::RequestRanges(const std::pair<uint32_t, uint32_t>* ranges, si
+     return true;
+   }
+ 
++  perf_trace::ZoneScope perf_zone(perf_trace::Zone::kSharedMemoryUpload);
+   return UploadRanges(upload_ranges_);
+ }
+ 
 diff --git a/src/graphics/util/draw.cpp b/src/graphics/util/draw.cpp
 index 305380e..4ba011f 100644
 --- a/src/graphics/util/draw.cpp

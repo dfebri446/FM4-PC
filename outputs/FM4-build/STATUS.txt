@@ -148,6 +148,15 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   detik, 2.100 draw per frame): draw 378 ms/s (vertex buffer 104, bindings 34,
   primitive 33, tekstur 28), submit command list 199, copy 51, swap 38, sisanya
   sekitar 260 untuk parsing PM4. Ini sasaran berikutnya untuk 60 fps stabil.
+- --d3d12_submit_thread=true (opsional, default off) memindahkan replay dan
+  eksekusi command list ke thread lain: submit di thread command processor
+  199 -> 32 ms/s, total sibuk 935 -> 900 ms/s, fps_mean 54,3 -> 55,7 (dalam
+  noise). Dengan setting ini GPU sibuk 17,2 ms per frame, di atas anggaran
+  16,7 ms untuk 60 fps, jadi sekarang GPU juga membatasi.
+  --d3d12_submit_on_primary_buffer_end=false: 56,6 fps, satu dari tiga run
+  gagal mencapai balapan; tidak dijadikan default.
+- Di jalur vertex buffer, upload memori guest ke GPU memakan 116 ms/s dan
+  lock global hanya 20 ms/s.
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------

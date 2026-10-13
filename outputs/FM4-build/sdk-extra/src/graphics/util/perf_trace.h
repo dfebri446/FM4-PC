@@ -35,6 +35,7 @@ enum class Count : uint32_t {
   kPredicatedSkipped,   // Predicated type-3 packet skipped by the bin check.
   kPipelineDrawsWaited,   // Async shaders: draw waited for its pipeline, then drawn.
   kPipelineDrawsDropped,  // Async shaders: draw dropped, pipeline not ready.
+  kSubmissions,           // Command lists submitted to the GPU queue.
   kCount
 };
 
@@ -51,6 +52,10 @@ enum class Zone : uint32_t {
   kCopy,
   kSubmit,
   kSwap,
+  kSharedMemoryLock,    // Acquiring the global lock in SharedMemory::RequestRanges.
+  kSharedMemoryUpload,  // Uploading invalidated guest memory to the GPU buffer.
+  kSubmitRecord,        // Replaying the deferred command list into the D3D12 one.
+  kSubmitExecute,       // Close + ExecuteCommandLists + Signal.
   kCount
 };
 
@@ -241,7 +246,7 @@ inline void OnSwap() {
                                             "viz_queries",       "viz_draws",
                                             "bin_selects",       "predicated_run",
                                             "predicated_skipped", "pipeline_draws_waited",
-                                            "pipeline_draws_dropped"};
+                                            "pipeline_draws_dropped", "submissions"};
   state->output << "},\"counts\":{";
   for (size_t i = 0; i < size_t(Count::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kCountNames[i] << "\":" << state->counts[i];
@@ -250,7 +255,9 @@ inline void OnSwap() {
                                            "draw_render_targets", "draw_pipeline",
                                            "draw_textures", "draw_bindings",
                                            "draw_vertex_buffers", "copy",
-                                           "submit",        "swap"};
+                                           "submit",        "swap",
+                                           "shared_memory_lock", "shared_memory_upload",
+                                           "submit_record", "submit_execute"};
   state->output << "},\"cpu_ms\":{";
   for (size_t i = 0; i < size_t(Zone::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kZoneNames[i] << "\":" << ms(state->zone_ticks[i]);
