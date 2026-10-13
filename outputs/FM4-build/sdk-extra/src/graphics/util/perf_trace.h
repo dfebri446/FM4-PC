@@ -38,6 +38,22 @@ enum class Count : uint32_t {
   kCount
 };
 
+// Wall time of command-processor work, inclusive (kDraw contains the kDraw*
+// parts; kSubmit may run inside kDraw or kCopy).
+enum class Zone : uint32_t {
+  kDraw,
+  kDrawPrimitives,
+  kDrawRenderTargets,
+  kDrawPipeline,
+  kDrawTextures,
+  kDrawBindings,
+  kDrawVertexBuffers,
+  kCopy,
+  kSubmit,
+  kSwap,
+  kCount
+};
+
 struct State {
   std::ofstream output;
   Wait cause = Wait::kOther;
@@ -47,6 +63,7 @@ struct State {
   uint64_t wait_ticks[size_t(Wait::kCount)]{};
   uint32_t waits[size_t(Wait::kCount)]{};
   uint32_t counts[size_t(Count::kCount)]{};
+  uint64_t zone_ticks[size_t(Zone::kCount)]{};
   std::vector<float> frame_ms;
   // GPU timestamps of frames that completed in this window.
   uint32_t gpu_frames = 0;
@@ -129,6 +146,20 @@ inline void CountReadback(uint32_t bytes) {
 inline void Increment(Count counter) {
   if (State* state = Get()) ++state->counts[size_t(counter)];
 }
+
+inline uint64_t ZoneStart() { return Get() ? Now() : 0; }
+inline void ZoneEnd(Zone zone, uint64_t start) {
+  if (State* state = Get(); state && start) state->zone_ticks[size_t(zone)] += Now() - start;
+}
+class ZoneScope {
+ public:
+  explicit ZoneScope(Zone zone) : zone_(zone), start_(ZoneStart()) {}
+  ~ZoneScope() { ZoneEnd(zone_, start_); }
+
+ private:
+  Zone zone_;
+  uint64_t start_;
+};
 
 // busy: sum of submission durations; resolve: sum of resolve durations; span:
 // first to last GPU timestamp of the frame, including idle gaps.
@@ -214,6 +245,15 @@ inline void OnSwap() {
   state->output << "},\"counts\":{";
   for (size_t i = 0; i < size_t(Count::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kCountNames[i] << "\":" << state->counts[i];
+  }
+  static const char* const kZoneNames[] = {"draw",          "draw_primitives",
+                                           "draw_render_targets", "draw_pipeline",
+                                           "draw_textures", "draw_bindings",
+                                           "draw_vertex_buffers", "copy",
+                                           "submit",        "swap"};
+  state->output << "},\"cpu_ms\":{";
+  for (size_t i = 0; i < size_t(Zone::kCount); ++i) {
+    state->output << (i ? "," : "") << '"' << kZoneNames[i] << "\":" << ms(state->zone_ticks[i]);
   }
   // Means per GPU frame, from timestamps read a few frames late.
   const double gpu_frames = state->gpu_frames ? double(state->gpu_frames) : 1.0;

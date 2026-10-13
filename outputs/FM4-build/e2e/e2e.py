@@ -119,6 +119,13 @@ def percentile(values, fraction):
 def set_input(path, buttons=0, lt=0, rt=0, lx=0, ly=0):
     tmp = path.with_suffix('.tmp')
     tmp.write_text(f'{buttons} {lt} {rt} {lx} {ly} 0 0\n')
+    # The game may be reading the file at this moment; Windows then refuses the replace.
+    for attempt in range(50):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.01)
     os.replace(tmp, path)
 
 
@@ -339,6 +346,10 @@ def summarize(perf, measure):
             'hitch_50ms_per_min': round(sum(f > 50 for f in frames) / minutes, 2),
             'hitch_100ms_per_min': round(sum(f > 100 for f in frames) / minutes, 2),
         })
+    if 'cpu_ms' in steady[0]:
+        # Command-processor wall time per work kind, inclusive (draw contains draw_*).
+        result['cpu_ms_per_s_median'] = {k: median([per_s(p, p['cpu_ms'][k]) for p in steady])
+                                         for k in steady[0]['cpu_ms']}
     gpu = [p['gpu'] for p in steady if p.get('gpu', {}).get('frames')]
     if gpu:
         # GPU time per frame from timestamps: busy (submissions), resolves, first-to-last span.
@@ -377,6 +388,8 @@ def run_once(options, out):
     env = {k: v for k, v in os.environ.items() if not k.startswith(('FM4_', 'REX_'))}
     env.update(FM4_SHADOW_WORKAROUND='1', FM4_CAPTURE_DIR=str(capture),
                FM4_TEST_INPUT_FILE=str(input_file), REX_PERF_TRACE_FILE=str(out / 'perf.jsonl'))
+    # Diagnostic variables, e.g. REX_RESOLVE_PUBLICATION_TRACE=<path>.
+    env.update(item.split('=', 1) for item in options.env)
     steps = [] if options.goal else (json.loads(options.steps) if options.steps else SCENARIOS[options.scenario])
 
     stderr = open(out / 'stderr.log', 'w', encoding='utf-8', errors='replace')
@@ -476,6 +489,7 @@ def aggregate(runs):
         'wait_ms_per_s_median': nested('wait_ms_per_s_median'),
         'counts_per_s_median': nested('counts_per_s_median'),
         'counts_per_frame_median': nested('counts_per_frame_median'),
+        'cpu_ms_per_s_median': nested('cpu_ms_per_s_median'),
         'final_captures': [r['final_capture'] for r in runs],
         'errors': errors,
         'top_errors': sorted(errors.items(), key=lambda kv: -kv[1])[:10],
@@ -511,6 +525,7 @@ def main():
     parser.add_argument('--scenario', default='boot')
     parser.add_argument('--goal', choices=sorted(GOALS), help='navigate with Jev instead of a timeline')
     parser.add_argument('--goal-timeout', type=float, default=360)
+    parser.add_argument('--env', action='append', default=[], help='extra NAME=value for the game process')
     parser.add_argument('--steps', help='JSON list of steps, overrides --scenario')
     parser.add_argument('--arg', action='append', default=[], help='extra/override --cvar=value')
     parser.add_argument('--tail', type=float, default=10, help='seconds to keep running after the last step')

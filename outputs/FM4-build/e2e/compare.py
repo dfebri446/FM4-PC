@@ -86,7 +86,7 @@ def hist_l1(bh, ch):
 
 def build_rows(b, c):
     rows = [row(k, b.get(k), c.get(k)) for k in SCALARS]
-    for key in ("wait_ms_per_s_median", "counts_per_frame_median"):
+    for key in ("wait_ms_per_s_median", "cpu_ms_per_s_median", "counts_per_frame_median"):
         bd, cd = b.get(key) or {}, c.get(key) or {}
         rows += [row(f"{key}.{k}", bd.get(k), cd.get(k)) for k in sorted(set(bd) | set(cd))]
     bc, cc = b.get("final_capture") or {}, c.get("final_capture") or {}

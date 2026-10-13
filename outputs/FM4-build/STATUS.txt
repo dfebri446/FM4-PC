@@ -131,8 +131,23 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
 - Timestamp GPU: dengan kombinasi di atas GPU sibuk sekitar 15,6 ms per frame
   (RTX 5070 Ti Laptop), resolve sekitar 0,2 ms. Thread command processor sibuk
   hampir penuh, jadi 60 fps stabil butuh pengurangan kerja GPU dan CPU (Tahap 2).
-- --render_target_path_d3d12=rtv saat ini macet di layar hitam setelah logo
-  (game tetap 60 fps tetapi tidak maju); jalur RTV belum dapat dipakai.
+- Jalur RTV (--render_target_path_d3d12=rtv) belum dapat dipakai. Report
+  occlusion FM4 kini dihitung sebagai snapshot kumulatif dengan query host
+  (rtv_occlusion_snapshots), sehingga intro dan layar judul tampil. Setelah
+  menu utama layar tetap hitam: enam resolve scene HDR 7e3 yang di-tiling
+  (1280x256/224, format tujuan 2_10_10_10) berisi nol di RTV, padahal sama
+  persis di ROV; resolve lainnya setara. --native_2x_msaa=false dan
+  --mrt_edram_used_range_clamp_to_min=false tidak mengubahnya. Perlu debugging
+  GPU (mis. RenderDoc) pada pemindahan render target host ke EDRAM.
+- Shader dengan cache kosong (--store_shaders=false): shader sinkron menambah
+  sedikit hitch saat memuat (sekitar 9 frame > 100 ms per run, terburuk 400-640
+  ms) tanpa menurunkan FPS balapan. Shader async membuang sekitar 2.000 draw
+  per run tanpa mengurangi hitch; dengan async_shader_draw_wait_us=2000 draw
+  yang dibuang turun ke sekitar 40. Shader sinkron tetap default.
+- Waktu thread command processor (default baru, sekitar 930 ms sibuk per
+  detik, 2.100 draw per frame): draw 378 ms/s (vertex buffer 104, bindings 34,
+  primitive 33, tekstur 28), submit command list 199, copy 51, swap 38, sisanya
+  sekitar 260 untuk parsing PM4. Ini sasaran berikutnya untuk 60 fps stabil.
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------
