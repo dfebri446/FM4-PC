@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "provenance": "Repository inventory/configuration"
+    },
+    {
+      "path": ".gitignore",
+      "provenance": "Repository inventory/configuration"
+    },
+    {
+      "path": "outputs/FM4-analysis/gpu-integer-formats.patch",
+      "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
+    },
+    {
+      "path": "outputs/FM4-analysis/gpu-resolve-diagnostics.patch",
+      "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
+    },
+    {
+      "path": "outputs/FM4-analysis/gpu-rov-full-counters.patch",
+      "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
+    },
+    {
+      "path": "outputs/FM4-analysis/gpu-rov-occlusion.patch",
+      "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
+    },
+    {
+      "path": "outputs/FM4-analysis/input-packet-merge.patch",
+      "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
+    },
+    {
+      "path": "outputs/FM4-analysis/runtime-delete-on-close.patch",
+      "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
+    },
+    {
+      "path": "outputs/FM4-analysis/runtime-module-lifecycle.patch",
+      "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
+    },
+    {
+      "path": "outputs/FM4-source-control/README.txt",
+      "provenance": "Repository policy/tooling or upstream license"
+    },
+    {
+      "path": "outputs/FM4-source-control/check-staged-content.py",
+      "provenance": "Repository policy/tooling or upstream license"
+    },
+    {
+      "path": "outputs/FM4-source-control/third-party-notices/ReXGlue-LICENSE.txt",
+      "provenance": "Repository policy/tooling or upstream license"
+    },
+    {
+      "path": "outputs/FM4-source-control/tracked-files.json",
+      "provenance": "Repository inventory/configuration"
+    },
+    {
+      "path": "work/fm4-rex/CMakeLists.txt",
+      "provenance": "Development build glue or diagnostic tooling"
+    },
+    {
+      "path": "work/fm4-rex/observe-frame.py",
+      "provenance": "Development build glue or diagnostic tooling"
+    },
+    {
+      "path": "work/fm4-rex/send-input.py",
+      "provenance": "Development build glue or diagnostic tooling"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-content-installer.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-crash-diagnostics.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-diagnostic-state.h",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-fiber-hooks.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-frame-capture.h",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-gpu-probe.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-instruction-fixes.h",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-jpeg-diagnostics.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-render-overrides.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-test-input.h",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-ui-diagnostics.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-vector-fixes.h",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4_rex_app.h",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/instruction-tests.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/main.cpp",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/vector-instruction-tests.h",
+      "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/tests/CMakeLists.txt",
+      "provenance": "Synthetic tests/oracle; no game input data"
+    },
+    {
+      "path": "work/fm4-rex/tests/make-vector-vectors.py",
+      "provenance": "Synthetic tests/oracle; no game input data"
+    },
+    {
+      "path": "work/fm4-rex/tests/texture-integer.cpp",
+      "provenance": "Synthetic tests/oracle; no game input data"
+    },
+    {
+      "path": "work/fm4-rex/tests/vector-vectors.h",
+      "provenance": "Synthetic tests/oracle; no game input data"
+    }
+  ]
+}

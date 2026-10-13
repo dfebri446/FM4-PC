@@ -1,0 +1,496 @@
+diff --git a/include/rex/graphics/d3d12/command_processor.h b/include/rex/graphics/d3d12/command_processor.h
+index 96d362b..cd2813f 100644
+--- a/include/rex/graphics/d3d12/command_processor.h
++++ b/include/rex/graphics/d3d12/command_processor.h
+@@ -147,6 +147,7 @@ class D3D12CommandProcessor : public CommandProcessor {
+ 
+     kGammaRampTableSRV,
+     kGammaRampPWLSRV,
++      kOcclusionCounterRawUAV,
+ 
+     // Beyond this point, SRVs are accessible to shaders through an unbounded
+     // range - no descriptors of other types bound to shaders alongside
+@@ -403,6 +404,9 @@ class D3D12CommandProcessor : public CommandProcessor {
+   }
+ 
+   bool InitializeOcclusionQueryResources();
++  bool InitializeROVOcclusionResources();
++  bool WriteROVOcclusionSnapshot(xenos::xe_gpu_depth_sample_counts* sample_counts);
++  void WriteROVOcclusionUAVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) const;
+   void ShutdownOcclusionQueryResources();
+   bool BeginGuestOcclusionQuery(uint32_t sample_count_address);
+   bool EndGuestOcclusionQuery(uint32_t sample_count_address,
+@@ -652,6 +656,12 @@ class D3D12CommandProcessor : public CommandProcessor {
+   Microsoft::WRL::ComPtr<ID3D12QueryHeap> occlusion_query_heap_;
+   Microsoft::WRL::ComPtr<ID3D12Resource> occlusion_query_readback_;
+   uint64_t* occlusion_query_readback_mapping_ = nullptr;
++  static constexpr uint32_t kROVOcclusionBuckets = 2048;
++  Microsoft::WRL::ComPtr<ID3D12Resource> rov_occlusion_counter_;
++  Microsoft::WRL::ComPtr<ID3D12Resource> rov_occlusion_zero_upload_;
++  bool rov_occlusion_initialized_ = false;
++  std::array<uint32_t, kROVOcclusionBuckets> rov_occlusion_previous_{};
++  uint64_t rov_occlusion_cumulative_samples_ = 0;
+   uint32_t occlusion_query_cursor_ = 0;
+   bool occlusion_query_resources_available_ = false;
+   struct ActiveOcclusionQuery {
+diff --git a/include/rex/graphics/format/dxbc.h b/include/rex/graphics/format/dxbc.h
+index a5eaa8f..1a0d05b 100644
+--- a/include/rex/graphics/format/dxbc.h
++++ b/include/rex/graphics/format/dxbc.h
+@@ -1443,6 +1443,7 @@ enum class Opcode : uint32_t {
+   kStoreRaw = 166,
+   kAtomicAnd = 169,
+   kAtomicOr = 170,
++  kAtomicIAdd = 173,
+   kEvalSampleIndex = 204,
+   kEvalCentroid = 205,
+ };
+@@ -2268,6 +2269,10 @@ class Assembler {
+                   const Src& value) {
+     EmitAtomicOp(Opcode::kAtomicOr, dest, address, address_components, value);
+   }
++  void OpAtomicIAdd(const Dest& dest, const Src& address, uint32_t address_components,
++                    const Src& value) {
++    EmitAtomicOp(Opcode::kAtomicIAdd, dest, address, address_components, value);
++  }
+   void OpEvalSampleIndex(const Dest& dest, const Src& value, const Src& sample_index) {
+     uint32_t dest_write_mask = dest.GetMask();
+     uint32_t operands_length =
+diff --git a/include/rex/graphics/pipeline/shader/dxbc_translator.h b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+index 0c16751..fc6f963 100644
+--- a/include/rex/graphics/pipeline/shader/dxbc_translator.h
++++ b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+@@ -111,7 +111,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     // If anything in this is structure is changed in a way not compatible with
+     // the previous layout, invalidate the pipeline storages by increasing this
+     // version number (0xYYYYMMDD)!
+-    static constexpr uint32_t kVersion = 0x20261013;
++    static constexpr uint32_t kVersion = 0x20261014;
+ 
+     enum class DepthStencilMode : uint32_t {
+       kNoModifiers,
+@@ -236,6 +236,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     // taking into account the potential relation with occlusion queries (but
+     // should be safe at least temporarily).
+     kSysFlag_ROVDepthStencilEarlyWrite_Shift,
++    kSysFlag_ROVOcclusionQuery_Shift,
+ 
+     kSysFlag_Count,
+ 
+@@ -260,6 +261,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     kSysFlag_ROVDepthWrite = 1u << kSysFlag_ROVDepthWrite_Shift,
+     kSysFlag_ROVStencilTest = 1u << kSysFlag_ROVStencilTest_Shift,
+     kSysFlag_ROVDepthStencilEarlyWrite = 1u << kSysFlag_ROVDepthStencilEarlyWrite_Shift,
++    kSysFlag_ROVOcclusionQuery = 1u << kSysFlag_ROVOcclusionQuery_Shift,
+   };
+   static_assert(kSysFlag_Count <= 32, "Too many flags in the system constants");
+ 
+@@ -508,6 +510,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+   enum class UAVRegister {
+     kSharedMemory,
+     kEdram,
++    kOcclusionCounter,
+   };
+ 
+   uint64_t GetDefaultVertexShaderModification(
+@@ -1158,6 +1161,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+   uint32_t uav_count_;
+   uint32_t uav_index_shared_memory_;
+   uint32_t uav_index_edram_;
++  uint32_t uav_index_occlusion_counter_;
+ 
+   std::vector<SamplerBinding> sampler_bindings_;
+ };
+diff --git a/src/graphics/d3d12/command_processor.cpp b/src/graphics/d3d12/command_processor.cpp
+index 7415fb5..c692102 100644
+--- a/src/graphics/d3d12/command_processor.cpp
++++ b/src/graphics/d3d12/command_processor.cpp
+@@ -11,7 +11,9 @@
+ 
+ #include <algorithm>
+ #include <cstdarg>
++#include <cstdlib>
+ #include <cstring>
++#include <fstream>
+ #include <sstream>
+ #include <utility>
+ 
+@@ -49,6 +51,34 @@ REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
+ 
+ namespace rex::graphics::d3d12 {
+ 
++namespace {
++// Optional, bounded packet evidence for query protocol investigations. Kept
++// separate from rotating runtime logs so the first failure isn't lost.
++void TraceOcclusionQuery(const char* stage, uint32_t address,
++                         const xenos::xe_gpu_depth_sample_counts* counts,
++                         bool enabled, bool resources, bool active,
++                         uint32_t active_address) {
++  static std::ofstream output = [] {
++    const char* path = std::getenv("REX_OCCLUSION_TRACE_FILE");
++    return path && *path ? std::ofstream(path, std::ios::app) : std::ofstream();
++  }();
++  static uint32_t sequence = 0;
++  if (!output.is_open() || sequence >= 20000) return;
++  output << "{\"sequence\":" << sequence++ << ",\"stage\":\"" << stage
++         << "\",\"address\":" << address << ",\"enabled\":" << enabled
++         << ",\"resources\":" << resources << ",\"active\":" << active
++         << ",\"active_address\":" << active_address << ",\"words\":[";
++  uint32_t words[8]{};
++  if (counts) std::memcpy(words, counts, sizeof(words));
++  for (unsigned i = 0; i < 8; ++i) {
++    if (i) output << ',';
++    output << words[i];
++  }
++  output << "]}\n";
++  output.flush();
++}
++}  // namespace
++
+ // Generated with `xb buildshaders`.
+ namespace shaders {
+ #include "../shaders/bytecode/d3d12_5_1/apply_gamma_pwl_cs.h"
+@@ -152,8 +182,29 @@ void D3D12CommandProcessor::InitializeShaderStorage(const std::filesystem::path&
+ 
+ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffer* reader,
+                                                                uint32_t packet, uint32_t count) {
++  const uint32_t trace_address = register_file_->values[XE_GPU_REG_RB_SAMPLE_COUNT_ADDR];
++  const auto* trace_counts =
++      memory_->TranslatePhysical<xenos::xe_gpu_depth_sample_counts*>(trace_address);
++  const auto trace = [&](const char* stage) {
++    TraceOcclusionQuery(stage, trace_address, trace_counts,
++                        REXCVAR_GET(occlusion_query_enable), occlusion_query_resources_available_,
++                        active_occlusion_query_.valid, active_occlusion_query_.sample_count_address);
++  };
++  trace("packet");
+   if (!REXCVAR_GET(occlusion_query_enable) || !occlusion_query_resources_available_) {
+-    return CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(reader, packet, count);
++    const bool result = CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(reader, packet, count);
++    trace("base-fallback-result");
++    return result;
++  }
++
++  if (render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock) {
++    assert_true(count == 1);
++    const uint32_t initiator = reader->ReadAndSwap<uint32_t>();
++    WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
++    auto* counts = memory_->TranslatePhysical<xenos::xe_gpu_depth_sample_counts*>(trace_address);
++    const bool result = counts && WriteROVOcclusionSnapshot(counts);
++    trace(result ? "rov-snapshot" : "rov-snapshot-failed");
++    return result;
+   }
+ 
+   const uint32_t kQueryFinished = rex::byte_swap(0xFFFFFEED);
+@@ -195,10 +246,12 @@ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffe
+   if (!is_end) {
+     if (active_occlusion_query_.valid &&
+         active_occlusion_query_.sample_count_address != sample_count_addr) {
++      trace("different-begin-address");
+       DisableHostOcclusionQueries();
+       return write_fallback_result();
+     }
+     if (!BeginGuestOcclusionQuery(sample_count_addr)) {
++      trace("begin-failed");
+       return write_fallback_result();
+     }
+     return true;
+@@ -206,14 +259,17 @@ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffe
+ 
+   if (!active_occlusion_query_.valid ||
+       active_occlusion_query_.sample_count_address != sample_count_addr) {
++    trace("end-without-matching-begin");
+     DisableHostOcclusionQueries();
+     return write_fallback_result();
+   }
+ 
+   if (!EndGuestOcclusionQuery(sample_count_addr, sample_counts)) {
++    trace("end-failed");
+     return write_fallback_result();
+   }
+ 
++  trace("host-result");
+   return true;
+ }
+ 
+@@ -364,7 +420,7 @@ ID3D12RootSignature* D3D12CommandProcessor::GetRootSignature(const DxbcShader* v
+   }
+ 
+   // Shared memory and, if ROVs are used, EDRAM.
+-  D3D12_DESCRIPTOR_RANGE shared_memory_and_edram_ranges[3];
++  D3D12_DESCRIPTOR_RANGE shared_memory_and_edram_ranges[4];
+   {
+     auto& parameter = parameters[kRootParameter_Bindful_SharedMemoryAndEdram];
+     parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+@@ -392,6 +448,11 @@ ID3D12RootSignature* D3D12CommandProcessor::GetRootSignature(const DxbcShader* v
+           UINT(DxbcShaderTranslator::UAVRegister::kEdram);
+       shared_memory_and_edram_ranges[2].RegisterSpace = 0;
+       shared_memory_and_edram_ranges[2].OffsetInDescriptorsFromTableStart = 2;
++      ++parameter.DescriptorTable.NumDescriptorRanges;
++      shared_memory_and_edram_ranges[3] = shared_memory_and_edram_ranges[2];
++      shared_memory_and_edram_ranges[3].BaseShaderRegister =
++          UINT(DxbcShaderTranslator::UAVRegister::kOcclusionCounter);
++      shared_memory_and_edram_ranges[3].OffsetInDescriptorsFromTableStart = 3;
+     }
+   }
+ 
+@@ -1101,7 +1162,7 @@ bool D3D12CommandProcessor::SetupContext() {
+       root_bindless_sampler_range.OffsetInDescriptorsFromTableStart = 0;
+     }
+     // View heap.
+-    D3D12_DESCRIPTOR_RANGE root_bindless_view_ranges[4];
++    D3D12_DESCRIPTOR_RANGE root_bindless_view_ranges[5];
+     {
+       auto& parameter = root_parameters_bindless[kRootParameter_Bindless_ViewHeap];
+       parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+@@ -1119,6 +1180,10 @@ bool D3D12CommandProcessor::SetupContext() {
+         range.BaseShaderRegister = UINT(DxbcShaderTranslator::UAVRegister::kEdram);
+         range.RegisterSpace = 0;
+         range.OffsetInDescriptorsFromTableStart = UINT(SystemBindlessView::kEdramR32UintUAV);
++        auto& counter_range = root_bindless_view_ranges[parameter.DescriptorTable.NumDescriptorRanges++];
++        counter_range = range;
++        counter_range.BaseShaderRegister = UINT(DxbcShaderTranslator::UAVRegister::kOcclusionCounter);
++        counter_range.OffsetInDescriptorsFromTableStart = UINT(SystemBindlessView::kOcclusionCounterRawUAV);
+       }
+       // Used UAV and SRV ranges must not overlap on Nvidia Fermi, so textures
+       // have OffsetInDescriptorsFromTableStart after all static descriptors of
+@@ -1619,6 +1684,10 @@ bool D3D12CommandProcessor::SetupContext() {
+   }
+ 
+   occlusion_query_resources_available_ = InitializeOcclusionQueryResources();
++  if (bindless_resources_used_) {
++    WriteROVOcclusionUAVDescriptor(provider.OffsetViewDescriptor(
++        view_bindless_heap_cpu_start_, uint32_t(SystemBindlessView::kOcclusionCounterRawUAV)));
++  }
+ 
+   // Just not to expose uninitialized memory.
+   std::memset(&system_constants_, 0, sizeof(system_constants_));
+@@ -3652,6 +3721,9 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
+ 
+   // Flags.
+   uint32_t flags = 0;
++  if (edram_rov_used && rov_occlusion_initialized_ && REXCVAR_GET(occlusion_query_enable)) {
++    flags |= DxbcShaderTranslator::kSysFlag_ROVOcclusionQuery;
++  }
+   // Whether shared memory is an SRV or a UAV. Because a resource can't be in a
+   // read-write (UAV) and a read-only (SRV, IBV) state at once, if any shader in
+   // the pipeline uses memexport, the shared memory buffer must be a UAV.
+@@ -4491,7 +4563,7 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+     if (edram_rov_used) {
+       // + EDRAM UAV in two tables (with the shared memory SRV and with the
+       // shared memory UAV).
+-      view_count_full_update += 2;
++      view_count_full_update += 4;
+     }
+     D3D12_CPU_DESCRIPTOR_HANDLE view_cpu_handle;
+     D3D12_GPU_DESCRIPTOR_HANDLE view_gpu_handle;
+@@ -4544,6 +4616,9 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+         render_target_cache_->WriteEdramUintPow2UAVDescriptor(view_cpu_handle, 2);
+         view_cpu_handle.ptr += descriptor_size_view;
+         view_gpu_handle.ptr += descriptor_size_view;
++        WriteROVOcclusionUAVDescriptor(view_cpu_handle);
++        view_cpu_handle.ptr += descriptor_size_view;
++        view_gpu_handle.ptr += descriptor_size_view;
+       }
+       // Null SRV + UAV + EDRAM.
+       gpu_handle_shared_memory_uav_and_edram_ = view_gpu_handle;
+@@ -4557,6 +4632,9 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+         render_target_cache_->WriteEdramUintPow2UAVDescriptor(view_cpu_handle, 2);
+         view_cpu_handle.ptr += descriptor_size_view;
+         view_gpu_handle.ptr += descriptor_size_view;
++        WriteROVOcclusionUAVDescriptor(view_cpu_handle);
++        view_cpu_handle.ptr += descriptor_size_view;
++        view_gpu_handle.ptr += descriptor_size_view;
+       }
+       current_graphics_root_up_to_date_ &= ~(1u << kRootParameter_Bindful_SharedMemoryAndEdram);
+     }
+@@ -4813,6 +4891,10 @@ bool D3D12CommandProcessor::InitializeOcclusionQueryResources() {
+   occlusion_query_readback_.Reset();
+   occlusion_query_readback_mapping_ = nullptr;
+ 
++  if (render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock) {
++    return InitializeROVOcclusionResources();
++  }
++
+   ID3D12Device* device = GetD3D12Provider().GetDevice();
+   if (!device) {
+     return false;
+@@ -4867,6 +4949,84 @@ void D3D12CommandProcessor::ShutdownOcclusionQueryResources() {
+   occlusion_query_readback_mapping_ = nullptr;
+   occlusion_query_readback_.Reset();
+   occlusion_query_heap_.Reset();
++  rov_occlusion_counter_.Reset();
++  rov_occlusion_zero_upload_.Reset();
++  rov_occlusion_initialized_ = false;
++  rov_occlusion_previous_.fill(0);
++  rov_occlusion_cumulative_samples_ = 0;
++}
++
++bool D3D12CommandProcessor::InitializeROVOcclusionResources() {
++  auto* device = GetD3D12Provider().GetDevice();
++  constexpr uint32_t bytes = kROVOcclusionBuckets * sizeof(uint32_t);
++  D3D12_RESOURCE_DESC desc;
++  ui::d3d12::util::FillBufferResourceDesc(desc, bytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
++  if (FAILED(device->CreateCommittedResource(&ui::d3d12::util::kHeapPropertiesDefault,
++      D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
++      IID_PPV_ARGS(&rov_occlusion_counter_)))) return false;
++  desc.Flags = D3D12_RESOURCE_FLAG_NONE;
++  if (FAILED(device->CreateCommittedResource(&ui::d3d12::util::kHeapPropertiesUpload,
++      D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
++      IID_PPV_ARGS(&rov_occlusion_zero_upload_)))) return false;
++  void* mapping = nullptr;
++  D3D12_RANGE no_read{0, 0};
++  if (FAILED(rov_occlusion_zero_upload_->Map(0, &no_read, &mapping))) return false;
++  std::memset(mapping, 0, bytes);
++  rov_occlusion_zero_upload_->Unmap(0, nullptr);
++  if (FAILED(device->CreateCommittedResource(&ui::d3d12::util::kHeapPropertiesReadback,
++      D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
++      IID_PPV_ARGS(&occlusion_query_readback_)))) return false;
++  D3D12_RANGE read_range{0, bytes};
++  if (FAILED(occlusion_query_readback_->Map(0, &read_range, &mapping))) return false;
++  occlusion_query_readback_mapping_ = static_cast<uint64_t*>(mapping);
++  rov_occlusion_initialized_ = false;
++  rov_occlusion_previous_.fill(0);
++  rov_occlusion_cumulative_samples_ = 0;
++  return true;
++}
++
++void D3D12CommandProcessor::WriteROVOcclusionUAVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) const {
++  ui::d3d12::util::CreateBufferRawUAV(GetD3D12Provider().GetDevice(), handle,
++      rov_occlusion_counter_.Get(), rov_occlusion_counter_ ? kROVOcclusionBuckets * sizeof(uint32_t) : 0);
++}
++
++bool D3D12CommandProcessor::WriteROVOcclusionSnapshot(xenos::xe_gpu_depth_sample_counts* counts) {
++  if (!rov_occlusion_counter_ || !occlusion_query_readback_mapping_ || !BeginSubmission(true)) return false;
++  constexpr uint32_t bytes = kROVOcclusionBuckets * sizeof(uint32_t);
++  if (!rov_occlusion_initialized_) {
++    deferred_command_list_.D3DCopyBufferRegion(rov_occlusion_counter_.Get(), 0,
++        rov_occlusion_zero_upload_.Get(), 0, bytes);
++    PushTransitionBarrier(rov_occlusion_counter_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
++        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
++    SubmitBarriers();
++    rov_occlusion_initialized_ = true;
++  } else {
++    PushTransitionBarrier(rov_occlusion_counter_.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
++        D3D12_RESOURCE_STATE_COPY_SOURCE);
++    SubmitBarriers();
++    deferred_command_list_.D3DCopyBufferRegion(occlusion_query_readback_.Get(), 0,
++        rov_occlusion_counter_.Get(), 0, bytes);
++    PushTransitionBarrier(rov_occlusion_counter_.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
++        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
++    SubmitBarriers();
++    if (!AwaitAllQueueOperationsCompletion()) return false;
++    const auto* values = reinterpret_cast<const uint32_t*>(occlusion_query_readback_mapping_);
++    for (uint32_t i = 0; i < kROVOcclusionBuckets; ++i) {
++      // Unsigned delta also handles an individual GPU bucket wrapping.
++      rov_occlusion_cumulative_samples_ += uint32_t(values[i] - rov_occlusion_previous_[i]);
++      rov_occlusion_previous_[i] = values[i];
++    }
++  }
++  // EVENT_WRITE_ZPD is a cumulative snapshot, not a same-address begin/end
++  // command. The guest subtracts two reports, including QueryBatch reports.
++  const uint32_t passed = uint32_t(NormalizeOcclusionSamples(rov_occlusion_cumulative_samples_));
++  const uint32_t lane_b = passed >> 1;
++  const uint32_t lane_a = passed - lane_b;
++  counts->Total_A = lane_a; counts->Total_B = lane_b;
++  counts->ZFail_A = 0; counts->ZFail_B = 0;
++  counts->StencilFail_A = 0; counts->StencilFail_B = 0;
++  counts->ZPass_A = lane_a; counts->ZPass_B = lane_b;
++  return true;
+ }
+ 
+ bool D3D12CommandProcessor::AcquireOcclusionQueryIndex(uint32_t& host_index_out) {
+diff --git a/src/graphics/pipeline/shader/dxbc_translator.cpp b/src/graphics/pipeline/shader/dxbc_translator.cpp
+index 412142f..5f38cf1 100644
+--- a/src/graphics/pipeline/shader/dxbc_translator.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator.cpp
+@@ -160,6 +160,7 @@ void DxbcShaderTranslator::Reset() {
+   uav_count_ = 0;
+   uav_index_shared_memory_ = kBindingIndexUnallocated;
+   uav_index_edram_ = kBindingIndexUnallocated;
++  uav_index_occlusion_counter_ = kBindingIndexUnallocated;
+ 
+   sampler_bindings_.clear();
+ 
+@@ -2321,6 +2322,10 @@ void DxbcShaderTranslator::WriteResourceDefinition() {
+   if (uav_index_edram_ != kBindingIndexUnallocated) {
+     name_ptr += dxbc::AppendAlignedString(shader_object_, "xe_edram");
+   }
++  uint32_t occlusion_counter_name_ptr = name_ptr;
++  if (uav_index_occlusion_counter_ != kBindingIndexUnallocated) {
++    name_ptr += dxbc::AppendAlignedString(shader_object_, "xe_occlusion_counter");
++  }
+ 
+   uint32_t bindings_position_dwords = uint32_t(shader_object_.size());
+ 
+@@ -2445,6 +2450,12 @@ void DxbcShaderTranslator::WriteResourceDefinition() {
+         uav.dimension = dxbc::RdefDimension::kUAVBuffer;
+         uav.sample_count = UINT32_MAX;
+         uav.bind_point = uint32_t(UAVRegister::kEdram);
++      } else if (i == uav_index_occlusion_counter_) {
++        uav.name_ptr = occlusion_counter_name_ptr;
++        uav.type = dxbc::RdefInputType::kUAVRWByteAddress;
++        uav.return_type = dxbc::ResourceReturnType::kMixed;
++        uav.dimension = dxbc::RdefDimension::kUAVBuffer;
++        uav.bind_point = uint32_t(UAVRegister::kOcclusionCounter);
+       } else {
+         assert_unhandled_case(i);
+       }
+@@ -3250,6 +3261,10 @@ void DxbcShaderTranslator::WriteShaderCode() {
+           dxbc::ResourceReturnTypeX4Token(dxbc::ResourceReturnType::kUInt),
+           dxbc::Src::U(dxbc::Src::Dcl, uav_index_edram_, uint32_t(UAVRegister::kEdram),
+                        uint32_t(UAVRegister::kEdram)));
++    } else if (i == uav_index_occlusion_counter_) {
++      ao_.OpDclUnorderedAccessViewRaw(
++          0, dxbc::Src::U(dxbc::Src::Dcl, i, uint32_t(UAVRegister::kOcclusionCounter),
++                          uint32_t(UAVRegister::kOcclusionCounter)));
+     } else {
+       assert_unhandled_case(i);
+     }
+diff --git a/src/graphics/pipeline/shader/dxbc_translator_om.cpp b/src/graphics/pipeline/shader/dxbc_translator_om.cpp
+index a7d508a..39cff37 100644
+--- a/src/graphics/pipeline/shader/dxbc_translator_om.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator_om.cpp
+@@ -1869,6 +1869,43 @@ void DxbcShaderTranslator::CompletePixelShader_WriteToROV() {
+   // system_temp_rov_params_.y (the depth / stencil sample address) is not
+   // needed anymore, can be used for color writing.
+ 
++  // Native D3D12 queries cannot see the depth/stencil tests performed in the
++  // ROV shader. Count the surviving guest samples here, after alpha-to-mask
++  // and both early/late depth paths. Zero-coverage early returns count zero.
++  a_.OpAnd(temp_x_dest, LoadFlagsSystemConstant(), dxbc::Src::LU(kSysFlag_ROVOcclusionQuery));
++  a_.OpIf(true, temp_x_src);
++  {
++    a_.OpAnd(temp_x_dest, dxbc::Src::R(system_temp_rov_params_, dxbc::Src::kXXXX),
++             dxbc::Src::LU(15));
++    // Population count of the four coverage bits.
++    a_.OpUShR(temp_y_dest, temp_x_src, dxbc::Src::LU(1));
++    a_.OpAnd(temp_y_dest, temp_y_src, dxbc::Src::LU(5));
++    a_.OpIAdd(temp_x_dest, temp_x_src, -temp_y_src);
++    a_.OpUShR(temp_y_dest, temp_x_src, dxbc::Src::LU(2));
++    a_.OpAnd(temp_x_dest, temp_x_src, dxbc::Src::LU(3));
++    a_.OpIAdd(temp_x_dest, temp_x_src, temp_y_src);
++    a_.OpIf(true, temp_x_src);
++    {
++      // 2048 independent buckets avoid serializing every pixel on one word.
++      // The CPU reduces them to the cumulative Xenos ZPass counter.
++      uint32_t position = PushSystemTemp();
++      a_.OpFToU(dxbc::Dest::R(position, 3), dxbc::Src::V1D(in_reg_ps_position_));
++      a_.OpUMAd(temp_y_dest, dxbc::Src::R(position, dxbc::Src::kYYYY),
++                 dxbc::Src::LU(64), dxbc::Src::R(position, dxbc::Src::kXXXX));
++      a_.OpAnd(temp_y_dest, temp_y_src, dxbc::Src::LU(2047));
++      a_.OpIShL(temp_y_dest, temp_y_src, dxbc::Src::LU(2));
++      if (uav_index_occlusion_counter_ == kBindingIndexUnallocated) {
++        uav_index_occlusion_counter_ = uav_count_++;
++      }
++      a_.OpAtomicIAdd(
++          dxbc::Dest::U(uav_index_occlusion_counter_, uint32_t(UAVRegister::kOcclusionCounter)),
++          temp_y_src, 1, temp_x_src);
++      PopSystemTemp();
++    }
++    a_.OpEndIf();
++  }
++  a_.OpEndIf();
++
+   if (!is_depth_only_pixel_shader_) {
+     // Check if any sample is still covered after depth testing and writing,
+     // skip color writing completely in this case.

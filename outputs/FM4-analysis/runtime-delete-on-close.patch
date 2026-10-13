@@ -1,0 +1,198 @@
+--- a/include/rex/filesystem/file.h
++++ b/include/rex/filesystem/file.h
+@@ -22,8 +22,10 @@
+ 
+ class File {
+  public:
+-  File(uint32_t file_access, Entry* entry) : file_access_(file_access), entry_(entry) {}
+-  virtual ~File() = default;
++  File(uint32_t file_access, Entry* entry);
++  virtual ~File();
++  File(const File&) = delete;
++  File& operator=(const File&) = delete;
+ 
+   virtual void Destroy() = 0;
+ 
+--- a/include/rex/filesystem/entry.h
++++ b/include/rex/filesystem/entry.h
+@@ -92,13 +92,13 @@
+   uint64_t create_timestamp() const { return create_timestamp_; }
+   uint64_t access_timestamp() const { return access_timestamp_; }
+   uint64_t write_timestamp() const { return write_timestamp_; }
+-  bool delete_on_close() const { return delete_on_close_; }
++  bool delete_on_close() const;
+ 
+   virtual bool SetAttributes([[maybe_unused]] uint64_t attributes) { return false; }
+   virtual bool SetCreateTimestamp([[maybe_unused]] uint64_t timestamp) { return false; }
+   virtual bool SetAccessTimestamp([[maybe_unused]] uint64_t timestamp) { return false; }
+   virtual bool SetWriteTimestamp([[maybe_unused]] uint64_t timestamp) { return false; }
+-  void SetForDeletion(bool delete_on_close) { delete_on_close_ = delete_on_close; }
++  X_STATUS SetForDeletion(bool delete_on_close);
+ 
+   bool is_read_only() const;
+ 
+@@ -165,6 +165,13 @@
+   uint64_t write_timestamp_;
+   std::vector<std::unique_ptr<Entry>> children_;
+   bool delete_on_close_ = false;
++
++ private:
++  friend class File;
++  void RetainFile();
++  void ReleaseFile();
++  bool HasOpenFiles() const;
++  size_t open_file_count_ = 0;
+ };
+ 
+ }  // namespace rex::filesystem
+--- /dev/null
++++ b/src/filesystem/file.cpp
+@@ -0,0 +1,15 @@
++#include <rex/filesystem/entry.h>
++#include <rex/filesystem/file.h>
++
++namespace rex::filesystem {
++
++File::File(uint32_t file_access, Entry* entry) : file_access_(file_access), entry_(entry) {
++  entry_->RetainFile();
++}
++
++File::~File() {
++  // Derived members (including the host handle) have already been destroyed.
++  entry_->ReleaseFile();
++}
++
++}  // namespace rex::filesystem
+--- a/src/filesystem/entry.cpp
++++ b/src/filesystem/entry.cpp
+@@ -35,6 +35,47 @@
+ 
+ Entry::~Entry() = default;
+ 
++bool Entry::delete_on_close() const {
++  auto global_lock = rex::thread::global_critical_region::AcquireDirect();
++  return delete_on_close_;
++}
++
++X_STATUS Entry::SetForDeletion(bool pending) {
++  auto global_lock = global_critical_region_.Acquire();
++  if (pending) {
++    if (!parent_ || is_read_only()) return X_STATUS_ACCESS_DENIED;
++    if ((attributes_ & kFileAttributeDirectory) && !children_.empty()) {
++      return static_cast<X_STATUS>(0xC0000101);  // STATUS_DIRECTORY_NOT_EMPTY
++    }
++  }
++  delete_on_close_ = pending;
++  return X_STATUS_SUCCESS;
++}
++
++void Entry::RetainFile() {
++  auto global_lock = global_critical_region_.Acquire();
++  ++open_file_count_;
++}
++
++void Entry::ReleaseFile() {
++  auto global_lock = global_critical_region_.Acquire();
++  assert_true(open_file_count_ != 0);
++  --open_file_count_;
++  if (!open_file_count_ && delete_on_close_ && parent_ &&
++      (!(attributes_ & kFileAttributeDirectory) || children_.empty())) {
++    // Delete may destroy this Entry. Do not access members afterwards.
++    Delete();
++  }
++}
++
++bool Entry::HasOpenFiles() const {
++  if (open_file_count_) return true;
++  for (const auto& child : children_) {
++    if (child->HasOpenFiles()) return true;
++  }
++  return false;
++}
++
+ void Entry::Dump(rex::string::StringBuffer* string_buffer, int indent) {
+   for (int i = 0; i < indent; ++i) {
+     string_buffer->Append(' ');
+@@ -92,7 +133,7 @@
+ 
+ Entry* Entry::CreateEntry(const std::string_view name, uint32_t attributes) {
+   auto global_lock = global_critical_region_.Acquire();
+-  if (is_read_only()) {
++  if (is_read_only() || delete_on_close_) {
+     return nullptr;
+   }
+   if (GetChild(name)) {
+@@ -117,6 +158,9 @@
+   if (entry->parent() != this) {
+     return false;
+   }
++  // Erasing an Entry also erases its descendants. Live File objects retain
++  // pointers to these entries even on hosts that permit unlinking open files.
++  if (entry->HasOpenFiles()) return false;
+   if (!DeleteEntryInternal(entry)) {
+     return false;
+   }
+--- a/src/filesystem/CMakeLists.txt
++++ b/src/filesystem/CMakeLists.txt
+@@ -1,6 +1,7 @@
+ add_library(rexfilesystem OBJECT
+     device.cpp
+     entry.cpp
++    file.cpp
+     virtual_file_system.cpp
+     devices/disc_image_device.cpp
+     devices/disc_image_entry.cpp
+--- a/src/filesystem/devices/host_path_entry.cpp
++++ b/src/filesystem/devices/host_path_entry.cpp
+@@ -51,6 +51,9 @@
+ }
+ 
+ X_STATUS HostPathEntry::Open(uint32_t desired_access, File** out_file) {
++  auto global_lock = global_critical_region_.Acquire();
++  *out_file = nullptr;
++  if (delete_on_close()) return static_cast<X_STATUS>(0xC0000056);  // STATUS_DELETE_PENDING
+   if (is_read_only() &&
+       (desired_access & (FileAccess::kFileWriteData | FileAccess::kFileAppendData))) {
+     REXFS_ERROR("Attempting to open file for write access on read-only device");
+@@ -110,7 +113,9 @@
+   auto full_path = host_path_ / rex::to_path(entry->name());
+   std::error_code ec;  // avoid exception on remove/remove_all failure
+   if (entry->attributes() & kFileAttributeDirectory) {
+-    // Delete entire directory and contents.
++    // Disposition deletion must not recursively erase unexpected host files.
++    if (entry->delete_on_close()) return std::filesystem::remove(full_path, ec);
++    // Explicit VFS tree deletion retains its recursive behavior.
+     auto removed = std::filesystem::remove_all(full_path, ec);
+     return removed >= 1 && removed != static_cast<std::uintmax_t>(-1);
+   } else {
+--- a/src/filesystem/virtual_file_system.cpp
++++ b/src/filesystem/virtual_file_system.cpp
+@@ -196,6 +196,7 @@
+                                      FileDisposition creation_disposition, uint32_t desired_access,
+                                      bool is_directory, bool is_non_directory, File** out_file,
+                                      FileAction* out_action) {
++  auto global_lock = global_critical_region_.Acquire();
+   // TODO(gibbed): should 'is_directory' remain as a bool or should it be
+   // flipped to a generic FileAttributeFlags?
+ 
+@@ -230,6 +231,9 @@
+   }
+ 
+   if (entry) {
++    if (entry->delete_on_close()) {
++      return static_cast<X_STATUS>(0xC0000056);  // STATUS_DELETE_PENDING
++    }
+     if (entry->attributes() & kFileAttributeDirectory && is_non_directory) {
+       return X_STATUS_FILE_IS_A_DIRECTORY;
+     }
+--- a/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp
+@@ -278,7 +278,7 @@
+     case XFileDispositionInformation: {
+       auto info = info_ptr.as<X_FILE_DISPOSITION_INFORMATION*>();
+       bool delete_on_close = info->delete_file ? true : false;
+-      file->entry()->SetForDeletion(delete_on_close);
++      result = file->entry()->SetForDeletion(delete_on_close);
+       out_length = 0;
+       REXKRNL_WARN("NtSetInformationFile set deleting flag for {} on close to: {}", file->name(),
+                    delete_on_close);

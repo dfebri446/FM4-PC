@@ -1,0 +1,103 @@
+diff --git a/include/rex/input/input_system.h b/include/rex/input/input_system.h
+index 1cb3faa..07b2e13 100644
+--- a/include/rex/input/input_system.h
++++ b/include/rex/input/input_system.h
+@@ -10,6 +10,7 @@
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
+ 
++#include <array>
+ #include <memory>
+ #include <vector>
+ 
+@@ -65,6 +66,11 @@ class InputSystem : public system::IInputSystem {
+   // does not renumber pad two.
+   std::vector<DeviceInfo> devices_;
+   std::vector<InputDriver*> device_owners_;
++
++  // Host-device packet counters are independent. Publish one counter for each
++  // merged guest controller, advancing only when its visible state changes.
++  std::array<X_INPUT_STATE, kMaxGuestUsers> merged_states_ = {};
++  std::array<bool, kMaxGuestUsers> merged_states_valid_ = {};
+ };
+ 
+ /// Create a default InputSystem with SDL + NOP drivers.
+diff --git a/src/input/input_system.cpp b/src/input/input_system.cpp
+index 813bb1c..d03ee81 100644
+--- a/src/input/input_system.cpp
++++ b/src/input/input_system.cpp
+@@ -11,6 +11,8 @@
+ 
+ #include <algorithm>
+ #include <cmath>
++#include <cstring>
++#include <map>
+ 
+ #include <rex/dbg.h>
+ #include <rex/input/device_assignment.h>
+@@ -28,6 +30,8 @@ REXCVAR_DEFINE_STRING(input_backend, "sdl", "Input", "Input backend: sdl, xinput
+     .allowed({"sdl", "xinput"});
+ 
+ REXCVAR_DEFINE_BOOL(guide_button, false, "Input", "Enable guide button pass-through");
++REXCVAR_DEFINE_BOOL(input_diagnostics, false, "Input",
++                    "Log bounded source and merged controller button changes");
+ namespace rex::input {
+ 
+ namespace {
+@@ -214,7 +218,7 @@ X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,
+ 
+ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
+   SCOPE_profile_cpu_f("hid");
+-  if (!assignment_) {
++  if (!assignment_ || user_index >= kMaxGuestUsers) {
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
+ 
+@@ -233,6 +237,18 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
+     if (driver->GetDeviceState(id, &state) != X_ERROR_SUCCESS) {
+       continue;
+     }
++    if (REXCVAR_GET(input_diagnostics)) {
++      static thread_local std::map<DeviceId, uint16_t> last_buttons;
++      static thread_local unsigned logged = 0;
++      const auto buttons = uint16_t(state.gamepad.buttons);
++      auto found = last_buttons.find(id);
++      if ((found == last_buttons.end() || found->second != buttons) && logged < 128) {
++        ++logged;
++        REXLOG_INFO("Input source: user={} id={:X} packet={} buttons={:04X}",
++                    user_index, uint64_t(id), uint32_t(state.packet_number), buttons);
++      }
++      last_buttons[id] = buttons;
++    }
+     active_devices_.Observe(user_index, id, state.gamepad);
+     if (!any) {
+       merged = state;
+@@ -243,8 +259,28 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
+   }
+ 
+   if (!any) {
++    merged_states_valid_[user_index] = false;
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
++  auto& previous = merged_states_[user_index];
++  uint32_t packet = previous.packet_number;
++  const bool state_changed = !merged_states_valid_[user_index] ||
++      std::memcmp(&previous.gamepad, &merged.gamepad, sizeof(merged.gamepad)) != 0;
++  if (state_changed) {
++    ++packet;
++  }
++  merged.packet_number = packet;
++  if (REXCVAR_GET(input_diagnostics) && state_changed) {
++    static thread_local unsigned logged = 0;
++    if (logged++ < 128)
++      REXLOG_INFO("Input merged: user={} packet={} buttons={:04X} output={} lt={} rt={} sticks=[{},{},{},{}]",
++                  user_index, packet, uint16_t(merged.gamepad.buttons), out_state != nullptr,
++                  merged.gamepad.left_trigger, merged.gamepad.right_trigger,
++                  int16_t(merged.gamepad.thumb_lx), int16_t(merged.gamepad.thumb_ly),
++                  int16_t(merged.gamepad.thumb_rx), int16_t(merged.gamepad.thumb_ry));
++  }
++  previous = merged;
++  merged_states_valid_[user_index] = true;
+   if (out_state) {
+     *out_state = merged;
+   }

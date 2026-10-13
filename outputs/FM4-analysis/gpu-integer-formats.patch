@@ -1,0 +1,343 @@
+diff --git a/include/rex/graphics/pipeline/shader/dxbc_translator.h b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+index 3b0fd61..0c16751 100644
+--- a/include/rex/graphics/pipeline/shader/dxbc_translator.h
++++ b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+@@ -111,7 +111,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     // If anything in this is structure is changed in a way not compatible with
+     // the previous layout, invalidate the pipeline storages by increasing this
+     // version number (0xYYYYMMDD)!
+-    static constexpr uint32_t kVersion = 0x20260226;
++    static constexpr uint32_t kVersion = 0x20261013;
+ 
+     enum class DepthStencilMode : uint32_t {
+       kNoModifiers,
+@@ -388,6 +388,10 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     // The constant blend factor for the respective modes.
+     float edram_blend_constant[4];
+ 
++    // Five bits per sampled component: width minus one, then signedness.
++    // Appended to preserve offsets used by existing helper shaders.
++    uint32_t texture_integer_scale_bits[32];
++
+    private:
+     friend class DxbcShaderTranslator;
+ 
+@@ -440,6 +444,8 @@ class DxbcShaderTranslator : public ShaderTranslator {
+ 
+       kEdramBlendConstant,
+ 
++      kTextureIntegerScaleBits,
++
+       kCount,
+     };
+     static_assert(uint32_t(Index::kCount) <= 64,
+diff --git a/include/rex/graphics/pipeline/texture/cache.h b/include/rex/graphics/pipeline/texture/cache.h
+index d26cd4f..ef9ad48 100644
+--- a/include/rex/graphics/pipeline/texture/cache.h
++++ b/include/rex/graphics/pipeline/texture/cache.h
+@@ -121,6 +121,10 @@ class TextureCache {
+     const TextureBinding* binding = GetValidTextureBinding(fetch_constant_index);
+     return binding ? binding->swizzled_signs : kSwizzledSignsUnsigned;
+   }
++  uint32_t GetActiveIntegerScaleBits(uint32_t fetch_constant_index) const {
++    const TextureBinding* binding = GetValidTextureBinding(fetch_constant_index);
++    return binding ? binding->integer_scale_bits : 0;
++  }
+   bool IsActiveTextureResolutionScaled(uint32_t fetch_constant_index) const {
+     const TextureBinding* binding = GetValidTextureBinding(fetch_constant_index);
+     if (!binding) {
+@@ -452,6 +456,7 @@ class TextureCache {
+ 
+   struct TextureBinding {
+     TextureKey key;
++    uint32_t integer_scale_bits;
+     // Destination swizzle merged with guest to host format swizzle.
+     uint32_t host_swizzle;
+     // Packed TextureSign values, 2 bit per each component, with guest-side
+diff --git a/include/rex/graphics/pipeline/texture/info.h b/include/rex/graphics/pipeline/texture/info.h
+index b7f66e2..bde7ef9 100644
+--- a/include/rex/graphics/pipeline/texture/info.h
++++ b/include/rex/graphics/pipeline/texture/info.h
+@@ -126,6 +126,12 @@ struct FormatInfo {
+   uint32_t block_width;
+   uint32_t block_height;
+   uint32_t bits_per_pixel;
++  uint8_t component_bits[4];
++  bool fixed;
++
++  // Restore integer units after normalized host sampling and swizzling.
++  uint32_t GetIntegerScaleBits(uint32_t num_format, uint32_t host_swizzle,
++                               uint8_t swizzled_signs) const;
+ 
+   uint32_t bytes_per_block() const { return block_width * block_height * bits_per_pixel / 8; }
+ 
+diff --git a/src/graphics/d3d12/command_processor.cpp b/src/graphics/d3d12/command_processor.cpp
+index 19874a5..7415fb5 100644
+--- a/src/graphics/d3d12/command_processor.cpp
++++ b/src/graphics/d3d12/command_processor.cpp
+@@ -3830,6 +3830,9 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
+     uint32_t texture_signs_mask = uint32_t(0b11111111) << texture_signs_shift;
+     dirty |= (texture_signs_uint & texture_signs_mask) != texture_signs_shifted;
+     texture_signs_uint = (texture_signs_uint & ~texture_signs_mask) | texture_signs_shifted;
++    uint32_t integer_scale_bits = texture_cache_->GetActiveIntegerScaleBits(texture_index);
++    dirty |= system_constants_.texture_integer_scale_bits[texture_index] != integer_scale_bits;
++    system_constants_.texture_integer_scale_bits[texture_index] = integer_scale_bits;
+     textures_resolution_scaled |=
+         uint32_t(texture_cache_->IsActiveTextureResolutionScaled(texture_index)) << texture_index;
+   }
+diff --git a/src/graphics/pipeline/shader/dxbc_translator.cpp b/src/graphics/pipeline/shader/dxbc_translator.cpp
+index 2c31a0e..412142f 100644
+--- a/src/graphics/pipeline/shader/dxbc_translator.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator.cpp
+@@ -1982,6 +1982,7 @@ const DxbcShaderTranslator::SystemConstantRdef DxbcShaderTranslator::system_cons
+     {"xe_edram_rt_blend_factors_ops", ShaderRdefTypeIndex::kUint4, sizeof(uint32_t) * 4},
+ 
+     {"xe_edram_blend_constant", ShaderRdefTypeIndex::kFloat4, sizeof(float) * 4},
++    {"xe_texture_integer_scale_bits", ShaderRdefTypeIndex::kUint4Array8, sizeof(uint32_t) * 32},
+ };
+ 
+ void DxbcShaderTranslator::WriteResourceDefinition() {
+diff --git a/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp b/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp
+index 31de175..9ba6d0b 100644
+--- a/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp
+@@ -1941,6 +1941,40 @@ void DxbcShaderTranslator::ProcessTextureFetchInstruction(
+         a_.OpBreak();
+         a_.OpEndSwitch();
+       }
++      // num_format is applied after signedness. A fixed-point format's host
++      // view returns normalized values, so for an integer num_format restore
++      // the guest integer range here.
++      uint32_t integer_scale_bits_temp = PushSystemTemp();
++      uint32_t integer_scale_temp = PushSystemTemp();
++      dxbc::Dest integer_scale_bits_dest(dxbc::Dest::R(
++          integer_scale_bits_temp, used_result_nonzero_components));
++      dxbc::Src integer_scale_bits_src(dxbc::Src::R(integer_scale_bits_temp));
++      dxbc::Dest integer_scale_dest(
++          dxbc::Dest::R(integer_scale_temp, used_result_nonzero_components));
++      dxbc::Src integer_scale_src(dxbc::Src::R(integer_scale_temp));
++      dxbc::Src integer_scale_bits_packed = LoadSystemConstant(
++          SystemConstants::Index::kTextureIntegerScaleBits,
++          offsetof(SystemConstants, texture_integer_scale_bits) +
++              sizeof(uint32_t) * tfetch_index,
++          dxbc::Src::kXXXX);
++      // Uniform early out. Zero means leave the sample alone. Only integer
++      // num_format on fixed textures has scale bits.
++      a_.OpIf(true, integer_scale_bits_packed);
++      a_.OpUBFE(integer_scale_bits_dest, dxbc::Src::LU(5),
++                dxbc::Src::LU(0, 5, 10, 15), integer_scale_bits_packed);
++      a_.OpAnd(integer_scale_dest, integer_scale_bits_src, dxbc::Src::LU(0xF));
++      a_.OpIAdd(integer_scale_dest, integer_scale_src, dxbc::Src::LU(1));
++      a_.OpUShR(integer_scale_bits_dest, integer_scale_bits_src,
++                dxbc::Src::LU(4));
++      a_.OpIAdd(integer_scale_dest, integer_scale_src, -integer_scale_bits_src);
++      a_.OpIShL(integer_scale_dest, dxbc::Src::LU(1), integer_scale_src);
++      a_.OpIAdd(integer_scale_dest, integer_scale_src, dxbc::Src::LI(-1));
++      a_.OpUToF(integer_scale_dest, integer_scale_src);
++      a_.OpMul(
++          dxbc::Dest::R(system_temp_result_, used_result_nonzero_components),
++          dxbc::Src::R(system_temp_result_), integer_scale_src);
++      a_.OpEndIf();
++      PopSystemTemp(2);
+     }
+     if (signs_temp != UINT32_MAX) {
+       PopSystemTemp();
+diff --git a/src/graphics/pipeline/texture/cache.cpp b/src/graphics/pipeline/texture/cache.cpp
+index 76f5600..37add91 100644
+--- a/src/graphics/pipeline/texture/cache.cpp
++++ b/src/graphics/pipeline/texture/cache.cpp
+@@ -492,6 +492,7 @@ void TextureCache::RequestTextures(uint32_t used_texture_mask) {
+     TextureBinding& binding = texture_bindings_[index];
+     xenos::xe_gpu_texture_fetch_t fetch = regs.GetTextureFetch(index);
+     TextureKey old_key = binding.key;
++    uint32_t old_integer_scale_bits = binding.integer_scale_bits;
+     uint8_t old_swizzled_signs = binding.swizzled_signs;
+     BindingInfoFromFetchConstant(fetch, binding.key, &binding.swizzled_signs);
+     texture_bindings_in_sync_ |= index_bit;
+@@ -504,6 +505,8 @@ void TextureCache::RequestTextures(uint32_t used_texture_mask) {
+     }
+     uint32_t old_host_swizzle = binding.host_swizzle;
+     binding.host_swizzle = GuestToHostSwizzle(fetch.swizzle, GetHostFormatSwizzle(binding.key));
++    binding.integer_scale_bits = FormatInfo::Get(fetch.format)->GetIntegerScaleBits(
++        fetch.num_format, binding.host_swizzle, binding.swizzled_signs);
+ 
+     // Check if need to load the unsigned and the signed versions of the texture
+     // (if the format is emulated with different host bit representations for
+@@ -513,7 +516,8 @@ void TextureCache::RequestTextures(uint32_t used_texture_mask) {
+     bool any_sign_was_signed = texture_util::IsAnySignSigned(old_swizzled_signs);
+     bool any_sign_is_not_signed = texture_util::IsAnySignNotSigned(binding.swizzled_signs);
+     bool any_sign_is_signed = texture_util::IsAnySignSigned(binding.swizzled_signs);
+-    if (key_changed || binding.host_swizzle != old_host_swizzle ||
++    if (key_changed || binding.integer_scale_bits != old_integer_scale_bits ||
++        binding.host_swizzle != old_host_swizzle ||
+         any_sign_is_not_signed != any_sign_was_not_signed ||
+         any_sign_is_signed != any_sign_was_signed) {
+       bindings_changed |= index_bit;
+diff --git a/src/graphics/pipeline/texture/info_formats.cpp b/src/graphics/pipeline/texture/info_formats.cpp
+index c456e1e..0721b53 100644
+--- a/src/graphics/pipeline/texture/info_formats.cpp
++++ b/src/graphics/pipeline/texture/info_formats.cpp
+@@ -17,77 +17,97 @@ namespace rex::graphics {
+ 
+ using namespace rex::graphics::xenos;
+ 
+-#define FORMAT_INFO(texture_format, format, block_width, block_height, bits_per_pixel) \
+-    {xenos::TextureFormat::texture_format, #texture_format, FormatType::format, block_width, block_height, bits_per_pixel}
++#define FORMAT_INFO(texture_format, format, block_width, block_height, bits_per_pixel, r, g, b, a, fixed) \
++    {xenos::TextureFormat::texture_format, #texture_format, FormatType::format, block_width, block_height, bits_per_pixel, {r, g, b, a}, fixed}
+ const FormatInfo* FormatInfo::Get(uint32_t gpu_format) {
+   static const FormatInfo format_infos[64] = {
+-      FORMAT_INFO(k_1_REVERSE                , kUncompressed, 1, 1, 1),
+-      FORMAT_INFO(k_1                        , kUncompressed, 1, 1, 1),
+-      FORMAT_INFO(k_8                        , kResolvable,   1, 1, 8),
+-      FORMAT_INFO(k_1_5_5_5                  , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_5_6_5                    , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_6_5_5                    , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_8_8_8_8                  , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_2_10_10_10               , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_8_A                      , kResolvable,   1, 1, 8),
+-      FORMAT_INFO(k_8_B                      , kResolvable,   1, 1, 8),
+-      FORMAT_INFO(k_8_8                      , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_Cr_Y1_Cb_Y0_REP          , kCompressed,   2, 1, 16),
+-      FORMAT_INFO(k_Y1_Cr_Y0_Cb_REP          , kCompressed,   2, 1, 16),
+-      FORMAT_INFO(k_16_16_EDRAM              , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_8_8_8_8_A                , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_4_4_4_4                  , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_10_11_11                 , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_11_11_10                 , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_DXT1                     , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_DXT2_3                   , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_DXT4_5                   , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_16_16_16_16_EDRAM        , kUncompressed, 1, 1, 64),
+-      FORMAT_INFO(k_24_8                     , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_24_8_FLOAT               , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_16                       , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_16_16                    , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_16_16_16_16              , kResolvable,   1, 1, 64),
+-      FORMAT_INFO(k_16_EXPAND                , kUncompressed, 1, 1, 16),
+-      FORMAT_INFO(k_16_16_EXPAND             , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_16_16_16_16_EXPAND       , kUncompressed, 1, 1, 64),
+-      FORMAT_INFO(k_16_FLOAT                 , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_16_16_FLOAT              , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_16_16_16_16_FLOAT        , kResolvable,   1, 1, 64),
+-      FORMAT_INFO(k_32                       , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_32_32                    , kUncompressed, 1, 1, 64),
+-      FORMAT_INFO(k_32_32_32_32              , kUncompressed, 1, 1, 128),
+-      FORMAT_INFO(k_32_FLOAT                 , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_32_32_FLOAT              , kResolvable,   1, 1, 64),
+-      FORMAT_INFO(k_32_32_32_32_FLOAT        , kResolvable,   1, 1, 128),
+-      FORMAT_INFO(k_32_AS_8                  , kCompressed,   4, 1, 8),
+-      FORMAT_INFO(k_32_AS_8_8                , kCompressed,   2, 1, 16),
+-      FORMAT_INFO(k_16_MPEG                  , kUncompressed, 1, 1, 16),
+-      FORMAT_INFO(k_16_16_MPEG               , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_8_INTERLACED             , kUncompressed, 1, 1, 8),
+-      FORMAT_INFO(k_32_AS_8_INTERLACED       , kCompressed,   4, 1, 8),
+-      FORMAT_INFO(k_32_AS_8_8_INTERLACED     , kCompressed,   1, 1, 16),
+-      FORMAT_INFO(k_16_INTERLACED            , kUncompressed, 1, 1, 16),
+-      FORMAT_INFO(k_16_MPEG_INTERLACED       , kUncompressed, 1, 1, 16),
+-      FORMAT_INFO(k_16_16_MPEG_INTERLACED    , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_DXN                      , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_8_8_8_8_AS_16_16_16_16   , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_DXT1_AS_16_16_16_16      , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_DXT2_3_AS_16_16_16_16    , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_DXT4_5_AS_16_16_16_16    , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_2_10_10_10_AS_16_16_16_16, kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_10_11_11_AS_16_16_16_16  , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_11_11_10_AS_16_16_16_16  , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_32_32_32_FLOAT           , kUncompressed, 1, 1, 96),
+-      FORMAT_INFO(k_DXT3A                    , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_DXT5A                    , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_CTX1                     , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_DXT3A_AS_1_1_1_1         , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_8_8_8_8_GAMMA_EDRAM      , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_2_10_10_10_FLOAT_EDRAM   , kUncompressed, 1, 1, 32),
++      FORMAT_INFO(k_1_REVERSE                , kUncompressed, 1, 1, 1, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_1                        , kUncompressed, 1, 1, 1, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_8                        , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_1_5_5_5                  , kResolvable,   1, 1, 16, 5, 5, 5, 1, true),
++      FORMAT_INFO(k_5_6_5                    , kResolvable,   1, 1, 16, 5, 6, 5, 0, true),
++      FORMAT_INFO(k_6_5_5                    , kResolvable,   1, 1, 16, 5, 5, 6, 0, true),
++      FORMAT_INFO(k_8_8_8_8                  , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
++      FORMAT_INFO(k_2_10_10_10               , kResolvable,   1, 1, 32, 10, 10, 10, 2, true),
++      FORMAT_INFO(k_8_A                      , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_8_B                      , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_8_8                      , kResolvable,   1, 1, 16, 8, 8, 0, 0, true),
++      FORMAT_INFO(k_Cr_Y1_Cb_Y0_REP          , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_Y1_Cr_Y0_Cb_REP          , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_EDRAM              , kUncompressed, 1, 1, 32, 16, 16, 0, 0, true),
++      FORMAT_INFO(k_8_8_8_8_A                , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
++      FORMAT_INFO(k_4_4_4_4                  , kResolvable,   1, 1, 16, 4, 4, 4, 4, true),
++      FORMAT_INFO(k_10_11_11                 , kResolvable,   1, 1, 32, 11, 11, 10, 0, true),
++      FORMAT_INFO(k_11_11_10                 , kResolvable,   1, 1, 32, 10, 11, 11, 0, true),
++      FORMAT_INFO(k_DXT1                     , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT2_3                   , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT4_5                   , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_16_16_EDRAM        , kUncompressed, 1, 1, 64, 16, 16, 16, 16, true),
++      FORMAT_INFO(k_24_8                     , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_24_8_FLOAT               , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16                       , kResolvable,   1, 1, 16, 16, 0, 0, 0, true),
++      FORMAT_INFO(k_16_16                    , kResolvable,   1, 1, 32, 16, 16, 0, 0, true),
++      FORMAT_INFO(k_16_16_16_16              , kResolvable,   1, 1, 64, 16, 16, 16, 16, true),
++      FORMAT_INFO(k_16_EXPAND                , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_EXPAND             , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_16_16_EXPAND       , kUncompressed, 1, 1, 64, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_FLOAT                 , kResolvable,   1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_FLOAT              , kResolvable,   1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_16_16_FLOAT        , kResolvable,   1, 1, 64, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32                       , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_32                    , kUncompressed, 1, 1, 64, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_32_32_32              , kUncompressed, 1, 1, 128, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_FLOAT                 , kResolvable,   1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_32_FLOAT              , kResolvable,   1, 1, 64, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_32_32_32_FLOAT        , kResolvable,   1, 1, 128, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_AS_8                  , kCompressed,   4, 1, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_AS_8_8                , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_MPEG                  , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_MPEG               , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_8_INTERLACED             , kUncompressed, 1, 1, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_AS_8_INTERLACED       , kCompressed,   4, 1, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_AS_8_8_INTERLACED     , kCompressed,   1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_INTERLACED            , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_MPEG_INTERLACED       , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_MPEG_INTERLACED    , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXN                      , kCompressed,   4, 4, 8, 8, 8, 0, 0, true),
++      FORMAT_INFO(k_8_8_8_8_AS_16_16_16_16   , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
++      FORMAT_INFO(k_DXT1_AS_16_16_16_16      , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT2_3_AS_16_16_16_16    , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT4_5_AS_16_16_16_16    , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_2_10_10_10_AS_16_16_16_16, kResolvable,   1, 1, 32, 10, 10, 10, 2, true),
++      FORMAT_INFO(k_10_11_11_AS_16_16_16_16  , kResolvable,   1, 1, 32, 11, 11, 10, 0, true),
++      FORMAT_INFO(k_11_11_10_AS_16_16_16_16  , kResolvable,   1, 1, 32, 10, 11, 11, 0, true),
++      FORMAT_INFO(k_32_32_32_FLOAT           , kUncompressed, 1, 1, 96, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT3A                    , kCompressed,   4, 4, 4, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_DXT5A                    , kCompressed,   4, 4, 4, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_CTX1                     , kCompressed,   4, 4, 4, 8, 8, 0, 0, true),
++      FORMAT_INFO(k_DXT3A_AS_1_1_1_1         , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_8_8_8_8_GAMMA_EDRAM      , kUncompressed, 1, 1, 32, 8, 8, 8, 8, true),
++      FORMAT_INFO(k_2_10_10_10_FLOAT_EDRAM   , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+   };
+   return &format_infos[gpu_format];
+ }
+ #undef FORMAT_INFO
+ 
++
++// Adapted from Xenia Canary d119505: 5 bits per output component.
++// Zero in a lane means scale 1, preserving constant 0/1 swizzles.
++uint32_t FormatInfo::GetIntegerScaleBits(uint32_t num_format, uint32_t host_swizzle,
++                                        uint8_t swizzled_signs) const {
++  if (!num_format || !fixed) return 0;
++  uint32_t packed = 0;
++  for (uint32_t i = 0; i < 4; ++i) {
++    uint32_t source = (host_swizzle >> (3 * i)) & 7;
++    if (source >= xenos::XE_GPU_TEXTURE_SWIZZLE_0) continue;
++    auto sign = xenos::TextureSign((swizzled_signs >> (2 * i)) & 3);
++    uint32_t width = component_bits[source];
++    if (!width || width > 16 || sign == xenos::TextureSign::kGamma) continue;
++    uint32_t lane = width - 1;
++    if (sign == xenos::TextureSign::kSigned) lane |= 16;
++    packed |= lane << (5 * i);
++  }
++  return packed;
++}
++
+ }  //  namespace rex::graphics

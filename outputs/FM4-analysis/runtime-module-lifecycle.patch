@@ -1,0 +1,67 @@
+diff --git a/include/rex/system/kernel_state.h b/include/rex/system/kernel_state.h
+index 9b9cf9e..d68b69a 100644
+--- a/include/rex/system/kernel_state.h
++++ b/include/rex/system/kernel_state.h
+@@ -396,6 +396,12 @@ class KernelState {
+   std::condition_variable_any dispatch_cond_;
+   std::list<std::function<void()>> dispatch_queue_;
+ 
++  // The VFS resolves a UserModule path to a device path, while recompiled
++  // libraries are keyed by their manifest guest path. Preserve the actual
++  // registration key across unload instead of deriving it from the VFS path.
++  // Guarded by global_critical_region_.
++  std::unordered_map<UserModule*, std::string> loaded_module_recompiled_keys_;
++
+   friend class XObject;
+ };
+ 
+diff --git a/src/system/kernel_state.cpp b/src/system/kernel_state.cpp
+index 697399c..7f0b36a 100644
+--- a/src/system/kernel_state.cpp
++++ b/src/system/kernel_state.cpp
+@@ -810,6 +810,9 @@ object_ref<UserModule> KernelState::LoadUserModule(const std::string_view raw_na
+ 
+   {
+     auto global_lock = global_critical_region_.Acquire();
++    if (recomp) {
++      loaded_module_recompiled_keys_.emplace(module.get(), recomp->guest_path);
++    }
+     user_modules_.push_back(module);
+   }
+ 
+@@ -853,7 +856,10 @@ void KernelState::UnloadUserModule(const object_ref<UserModule>& module, bool ca
+   {
+     auto global_lock = global_critical_region_.Acquire();
+ 
+-    auto recomp = FindRecompiledModule(module->path());
++    const auto loaded_key = loaded_module_recompiled_keys_.find(module.get());
++    auto recomp = FindRecompiledModule(loaded_key != loaded_module_recompiled_keys_.end()
++                                          ? loaded_key->second
++                                          : module->path());
+     if (recomp) {
+       const std::string& key = recomp->guest_path;
+       auto cleared_range = function_dispatcher_->UnregisterModule(key);
+@@ -880,6 +886,7 @@ void KernelState::UnloadUserModule(const object_ref<UserModule>& module, bool ca
+     }
+ 
+     if (found_module) {
++      loaded_module_recompiled_keys_.erase(module.get());
+       object_table()->ReleaseHandle(module->handle());
+     }
+   }
+diff --git a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
+index f102b56..271e91c 100644
+--- a/thirdparty/CMakeLists.txt
++++ b/thirdparty/CMakeLists.txt
+@@ -125,8 +125,9 @@ target_include_directories(aes128 PUBLIC
+ target_compile_options(aes128 PRIVATE -w)
+ 
+ # libmspack - LZX decompression (only lzxd.c needed for XEX decompression)
+-# Uses cabextract version which has all needed headers in one place
+-set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/cabextract/mspack")
++# Use the real files: cabextract/mspack consists of symlinks, which Git may
++# check out as plain-text path files on Windows without symlink support.
++set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/libmspack/mspack")
+ add_library(mspack STATIC
+     ${MSPACK_DIR}/lzxd.c
+ )

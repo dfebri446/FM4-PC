@@ -1,0 +1,75 @@
+diff --git a/src/graphics/util/draw.cpp b/src/graphics/util/draw.cpp
+index 305380e..ebf8fd8 100644
+--- a/src/graphics/util/draw.cpp
++++ b/src/graphics/util/draw.cpp
+@@ -10,7 +10,10 @@
+  */
+ 
+ #include <algorithm>
++#include <array>
++#include <bit>
+ #include <cmath>
++#include <set>
+ 
+ #include <rex/assert.h>
+ #include <rex/cvar.h>
+@@ -27,6 +30,8 @@
+ #include <rex/ui/graphics_util.h>
+ 
+ REXCVAR_DEFINE_BOOL(half_pixel_offset, true, "GPU", "Enable half pixel offset");
++REXCVAR_DEFINE_BOOL(resolve_diagnostics, false, "GPU",
++                    "Log at most 256 distinct resolve states on the GPU thread");
+ 
+ REXCVAR_DEFINE_BOOL(resolve_resolution_scale_fill_half_pixel_offset, true, "GPU",
+                     "Fill half pixel offset during resolution scale resolve");
+@@ -798,10 +803,11 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
+   // Most vertices have a negative half-pixel offset applied, which we reverse.
+   float half_pixel_offset =
+       regs.Get<reg::PA_SU_VTX_CNTL>().pix_center == xenos::PixelCenter::kD3DZero ? 0.5f : 0.0f;
++  float vertices[6];
+   int32_t vertices_fixed[6];
+   for (size_t i = 0; i < rex::countof(vertices_fixed); ++i) {
+-    vertices_fixed[i] = ui::FloatToD3D11Fixed16p8(xenos::GpuSwap(vertices_guest[i], fetch.endian) +
+-                                                  half_pixel_offset);
++    vertices[i] = xenos::GpuSwap(vertices_guest[i], fetch.endian);
++    vertices_fixed[i] = ui::FloatToD3D11Fixed16p8(vertices[i] + half_pixel_offset);
+   }
+   // Inclusive.
+   int32_t x0 = std::min(std::min(vertices_fixed[0], vertices_fixed[2]), vertices_fixed[4]);
+@@ -882,6 +888,36 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
+     y1 = y0 + int32_t(xenos::kMaxResolveSize);
+   }
+ 
++  if (REXCVAR_GET(resolve_diagnostics)) {
++    // Capture the values consumed by this resolve. A presenter-side register
++    // snapshot can mix different commands and cannot explain a failed draw.
++    const std::array<uint32_t, 16> key = {
++        regs[XE_GPU_REG_RB_COPY_CONTROL], regs[XE_GPU_REG_RB_SURFACE_INFO],
++        regs[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL], regs[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR],
++        regs[XE_GPU_REG_PA_SC_SCREEN_SCISSOR_TL], regs[XE_GPU_REG_PA_SC_SCREEN_SCISSOR_BR],
++        regs[XE_GPU_REG_PA_SC_WINDOW_OFFSET], regs[XE_GPU_REG_PA_SU_SC_MODE_CNTL],
++        regs[XE_GPU_REG_PA_SU_VTX_CNTL], regs[XE_GPU_REG_RB_COPY_DEST_INFO],
++        std::bit_cast<uint32_t>(vertices[0]), std::bit_cast<uint32_t>(vertices[1]),
++        std::bit_cast<uint32_t>(vertices[2]), std::bit_cast<uint32_t>(vertices[3]),
++        std::bit_cast<uint32_t>(vertices[4]), std::bit_cast<uint32_t>(vertices[5])};
++    static thread_local std::set<std::array<uint32_t, 16>> seen;
++    if (seen.size() < 256 && seen.insert(key).second) {
++      REXGPU_WARN(
++          "Resolve diagnostic #{}: empty={} src={} command={} pitch={} msaa={} "
++          "fetch={:08X} vertices=[{},{},{},{},{},{}] half_pixel={} "
++          "offset=[{},{}] offset_enable={} scissor=[{},{},{},{}] rect=[{},{},{},{}] "
++          "copy_control={:08X} dest_info={:08X} window_tl={:08X} window_br={:08X}",
++          seen.size(), x0 >= x1 || y0 >= y1, uint32_t(rb_copy_control.copy_src_select),
++          uint32_t(rb_copy_control.copy_command), uint32_t(rb_surface_info.surface_pitch),
++          uint32_t(rb_surface_info.msaa_samples), uint32_t(fetch.address * 4),
++          vertices[0], vertices[1], vertices[2], vertices[3], vertices[4], vertices[5],
++          half_pixel_offset, int32_t(pa_sc_window_offset.window_x_offset),
++          int32_t(pa_sc_window_offset.window_y_offset),
++          bool(regs.Get<reg::PA_SU_SC_MODE_CNTL>().vtx_window_offset_enable),
++          scissor.offset[0], scissor.offset[1], scissor_right, scissor_bottom,
++          x0, y0, x1, y1, key[0], key[9], key[2], key[3]);
++    }
++  }
+   assert_true(x0 < x1 && y0 < y1);
+   if (x0 >= x1 || y0 >= y1) {
+     REXGPU_ERROR("Resolve region is empty");

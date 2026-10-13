@@ -1,0 +1,291 @@
+diff --git a/include/rex/graphics/d3d12/command_processor.h b/include/rex/graphics/d3d12/command_processor.h
+index cd2813f..2d76584 100644
+--- a/include/rex/graphics/d3d12/command_processor.h
++++ b/include/rex/graphics/d3d12/command_processor.h
+@@ -656,12 +656,15 @@ class D3D12CommandProcessor : public CommandProcessor {
+   Microsoft::WRL::ComPtr<ID3D12QueryHeap> occlusion_query_heap_;
+   Microsoft::WRL::ComPtr<ID3D12Resource> occlusion_query_readback_;
+   uint64_t* occlusion_query_readback_mapping_ = nullptr;
+-  static constexpr uint32_t kROVOcclusionBuckets = 2048;
++  static constexpr uint32_t kROVOcclusionBuckets = DxbcShaderTranslator::kROVOcclusionBucketCount;
++  static constexpr uint32_t kROVOcclusionCounters =
++      uint32_t(DxbcShaderTranslator::ROVOcclusionCounter::kCount);
++  static constexpr uint32_t kROVOcclusionWords = kROVOcclusionBuckets * kROVOcclusionCounters;
+   Microsoft::WRL::ComPtr<ID3D12Resource> rov_occlusion_counter_;
+   Microsoft::WRL::ComPtr<ID3D12Resource> rov_occlusion_zero_upload_;
+   bool rov_occlusion_initialized_ = false;
+-  std::array<uint32_t, kROVOcclusionBuckets> rov_occlusion_previous_{};
+-  uint64_t rov_occlusion_cumulative_samples_ = 0;
++  std::array<uint32_t, kROVOcclusionWords> rov_occlusion_previous_{};
++  std::array<uint64_t, kROVOcclusionCounters> rov_occlusion_cumulative_samples_{};
+   uint32_t occlusion_query_cursor_ = 0;
+   bool occlusion_query_resources_available_ = false;
+   struct ActiveOcclusionQuery {
+diff --git a/include/rex/graphics/pipeline/shader/dxbc_translator.h b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+index fc6f963..45e7023 100644
+--- a/include/rex/graphics/pipeline/shader/dxbc_translator.h
++++ b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+@@ -111,7 +111,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     // If anything in this is structure is changed in a way not compatible with
+     // the previous layout, invalidate the pipeline storages by increasing this
+     // version number (0xYYYYMMDD)!
+-    static constexpr uint32_t kVersion = 0x20261014;
++    static constexpr uint32_t kVersion = 0x20261015;
+ 
+     enum class DepthStencilMode : uint32_t {
+       kNoModifiers,
+@@ -512,6 +512,9 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     kEdram,
+     kOcclusionCounter,
+   };
++  // Separate banks keep contended atomics spread across screen-space buckets.
++  static constexpr uint32_t kROVOcclusionBucketCount = 2048;
++  enum class ROVOcclusionCounter : uint32_t { kZPass, kZFail, kStencilFail, kCount };
+ 
+   uint64_t GetDefaultVertexShaderModification(
+       uint32_t dynamic_addressable_register_count,
+@@ -735,6 +738,8 @@ class DxbcShaderTranslator : public ShaderTranslator {
+   // unchanged or known that it's safe not to await kills/alphatest/AtoC),
+   // returns from the shader.
+   void ROV_DepthStencilTest();
++  void ROV_AddCoverageToOcclusionCounter(uint32_t mask_temp, uint32_t component,
++                                         ROVOcclusionCounter counter);
+   // Unpacks a 32bpp or a 64bpp color in packed_temp.packed_temp_components to
+   // color_temp, using 2 temporary VGPRs.
+   void ROV_UnpackColor(uint32_t rt_index, uint32_t packed_temp, uint32_t packed_temp_components,
+diff --git a/src/graphics/d3d12/command_processor.cpp b/src/graphics/d3d12/command_processor.cpp
+index c692102..b198a3c 100644
+--- a/src/graphics/d3d12/command_processor.cpp
++++ b/src/graphics/d3d12/command_processor.cpp
+@@ -4953,12 +4953,12 @@ void D3D12CommandProcessor::ShutdownOcclusionQueryResources() {
+   rov_occlusion_zero_upload_.Reset();
+   rov_occlusion_initialized_ = false;
+   rov_occlusion_previous_.fill(0);
+-  rov_occlusion_cumulative_samples_ = 0;
++  rov_occlusion_cumulative_samples_.fill(0);
+ }
+ 
+ bool D3D12CommandProcessor::InitializeROVOcclusionResources() {
+   auto* device = GetD3D12Provider().GetDevice();
+-  constexpr uint32_t bytes = kROVOcclusionBuckets * sizeof(uint32_t);
++  constexpr uint32_t bytes = kROVOcclusionWords * sizeof(uint32_t);
+   D3D12_RESOURCE_DESC desc;
+   ui::d3d12::util::FillBufferResourceDesc(desc, bytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+   if (FAILED(device->CreateCommittedResource(&ui::d3d12::util::kHeapPropertiesDefault,
+@@ -4981,18 +4981,18 @@ bool D3D12CommandProcessor::InitializeROVOcclusionResources() {
+   occlusion_query_readback_mapping_ = static_cast<uint64_t*>(mapping);
+   rov_occlusion_initialized_ = false;
+   rov_occlusion_previous_.fill(0);
+-  rov_occlusion_cumulative_samples_ = 0;
++  rov_occlusion_cumulative_samples_.fill(0);
+   return true;
+ }
+ 
+ void D3D12CommandProcessor::WriteROVOcclusionUAVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) const {
+   ui::d3d12::util::CreateBufferRawUAV(GetD3D12Provider().GetDevice(), handle,
+-      rov_occlusion_counter_.Get(), rov_occlusion_counter_ ? kROVOcclusionBuckets * sizeof(uint32_t) : 0);
++      rov_occlusion_counter_.Get(), rov_occlusion_counter_ ? kROVOcclusionWords * sizeof(uint32_t) : 0);
+ }
+ 
+ bool D3D12CommandProcessor::WriteROVOcclusionSnapshot(xenos::xe_gpu_depth_sample_counts* counts) {
+   if (!rov_occlusion_counter_ || !occlusion_query_readback_mapping_ || !BeginSubmission(true)) return false;
+-  constexpr uint32_t bytes = kROVOcclusionBuckets * sizeof(uint32_t);
++  constexpr uint32_t bytes = kROVOcclusionWords * sizeof(uint32_t);
+   if (!rov_occlusion_initialized_) {
+     deferred_command_list_.D3DCopyBufferRegion(rov_occlusion_counter_.Get(), 0,
+         rov_occlusion_zero_upload_.Get(), 0, bytes);
+@@ -5011,21 +5011,38 @@ bool D3D12CommandProcessor::WriteROVOcclusionSnapshot(xenos::xe_gpu_depth_sample
+     SubmitBarriers();
+     if (!AwaitAllQueueOperationsCompletion()) return false;
+     const auto* values = reinterpret_cast<const uint32_t*>(occlusion_query_readback_mapping_);
+-    for (uint32_t i = 0; i < kROVOcclusionBuckets; ++i) {
++    for (uint32_t i = 0; i < kROVOcclusionWords; ++i) {
+       // Unsigned delta also handles an individual GPU bucket wrapping.
+-      rov_occlusion_cumulative_samples_ += uint32_t(values[i] - rov_occlusion_previous_[i]);
++      rov_occlusion_cumulative_samples_[i / kROVOcclusionBuckets] +=
++          uint32_t(values[i] - rov_occlusion_previous_[i]);
+       rov_occlusion_previous_[i] = values[i];
+     }
+   }
+   // EVENT_WRITE_ZPD is a cumulative snapshot, not a same-address begin/end
+   // command. The guest subtracts two reports, including QueryBatch reports.
+-  const uint32_t passed = uint32_t(NormalizeOcclusionSamples(rov_occlusion_cumulative_samples_));
+-  const uint32_t lane_b = passed >> 1;
+-  const uint32_t lane_a = passed - lane_b;
+-  counts->Total_A = lane_a; counts->Total_B = lane_b;
+-  counts->ZFail_A = 0; counts->ZFail_B = 0;
+-  counts->StencilFail_A = 0; counts->StencilFail_B = 0;
+-  counts->ZPass_A = lane_a; counts->ZPass_B = lane_b;
++  using Counter = DxbcShaderTranslator::ROVOcclusionCounter;
++  const auto normalized = [&](Counter counter) {
++    return NormalizeOcclusionSamples(rov_occlusion_cumulative_samples_[uint32_t(counter)]);
++  };
++  const uint64_t passed = normalized(Counter::kZPass);
++  const uint64_t failed_depth = normalized(Counter::kZFail);
++  const uint64_t failed_stencil = normalized(Counter::kStencilFail);
++  const auto lane_b = [](uint64_t value) { return uint32_t(value) >> 1; };
++  const auto lane_a = [&](uint64_t value) { return uint32_t(value) - lane_b(value); };
++  const uint64_t total = passed + failed_depth + failed_stencil;
++  counts->Total_A = lane_a(total);
++  counts->Total_B = lane_b(total);
++  counts->ZFail_A = lane_a(failed_depth);
++  counts->ZFail_B = lane_b(failed_depth);
++  // Guest polling may wait on ZPass or StencilFail. Publish these completion
++  // lanes together after the other fields, as in the Xenos report ABI.
++  xenos::xe_gpu_depth_sample_counts completed{};
++  completed.ZPass_A = lane_a(passed);
++  completed.ZPass_B = lane_b(passed);
++  completed.StencilFail_A = lane_a(failed_stencil);
++  completed.StencilFail_B = lane_b(failed_stencil);
++  std::memcpy(&counts->ZPass_A, &completed.ZPass_A,
++              sizeof(completed) - offsetof(xenos::xe_gpu_depth_sample_counts, ZPass_A));
+   return true;
+ }
+ 
+diff --git a/src/graphics/pipeline/shader/dxbc_translator_om.cpp b/src/graphics/pipeline/shader/dxbc_translator_om.cpp
+index 39cff37..7212b27 100644
+--- a/src/graphics/pipeline/shader/dxbc_translator_om.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator_om.cpp
+@@ -363,6 +363,9 @@ void DxbcShaderTranslator::StartPixelShader_LoadROVParameters() {
+ 
+ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+   uint32_t temp = PushSystemTemp();
++  // Record rejection reasons before the early-depth quad return. Stencil
++  // rejection takes precedence when a sample fails both tests.
++  uint32_t failure_masks = PushSystemTemp(0b0011);
+   dxbc::Dest temp_x_dest(dxbc::Dest::R(temp, 0b0001));
+   dxbc::Src temp_x_src(dxbc::Src::R(temp, dxbc::Src::kXXXX));
+   dxbc::Dest temp_y_dest(dxbc::Dest::R(temp, 0b0010));
+@@ -673,6 +676,8 @@ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+     // Depth test has failed.
+     a_.OpElse();
+     {
++      a_.OpOr(dxbc::Dest::R(failure_masks, 0b0001),
++              dxbc::Src::R(failure_masks, dxbc::Src::kXXXX), dxbc::Src::LU(1 << i));
+       // Exclude the bit from the covered sample mask.
+       // sample_temp.x = old depth/stencil
+       // sample_temp.y = old depth
+@@ -805,6 +810,10 @@ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+       // Stencil test has failed.
+       a_.OpElse();
+       {
++        a_.OpAnd(dxbc::Dest::R(failure_masks, 0b0001),
++                 dxbc::Src::R(failure_masks, dxbc::Src::kXXXX), dxbc::Src::LU(~uint32_t(1 << i)));
++        a_.OpOr(dxbc::Dest::R(failure_masks, 0b0010),
++                dxbc::Src::R(failure_masks, dxbc::Src::kYYYY), dxbc::Src::LU(1 << i));
+         // Extract the stencil fail operation.
+         // sample_temp.x = old depth/stencil
+         // sample_temp.y = stencil operation
+@@ -1016,6 +1025,12 @@ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+               dxbc::Src::LI((i & 1) ? -int32_t(tile_width) + 2 - i : int32_t(tile_width)));
+   }
+ 
++  // Early failures must be counted before the shader can reject the quad.
++  // Late tests are already after discard / alpha-to-coverage. Each failure
++  // is counted once, while surviving samples are counted in the epilogue.
++  ROV_AddCoverageToOcclusionCounter(failure_masks, 0, ROVOcclusionCounter::kZFail);
++  ROV_AddCoverageToOcclusionCounter(failure_masks, 1, ROVOcclusionCounter::kStencilFail);
++
+   if (ROV_IsDepthStencilEarly()) {
+     // Check if safe to discard the whole 2x2 quad early, without running the
+     // translated pixel shader, by checking if coverage is 0 in all pixels in
+@@ -1054,7 +1069,51 @@ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+   // Close the large depth/stencil conditional.
+   a_.OpEndIf();
+ 
+-  // Release temp.
++  // Release failure_masks and temp.
++  PopSystemTemp(2);
++}
++
++void DxbcShaderTranslator::ROV_AddCoverageToOcclusionCounter(
++    uint32_t mask_temp, uint32_t component, ROVOcclusionCounter counter) {
++  uint32_t temp = PushSystemTemp();
++  dxbc::Dest count_dest(dxbc::Dest::R(temp, 0b0001));
++  dxbc::Src count_src(dxbc::Src::R(temp, dxbc::Src::kXXXX));
++  dxbc::Dest address_dest(dxbc::Dest::R(temp, 0b0010));
++  dxbc::Src address_src(dxbc::Src::R(temp, dxbc::Src::kYYYY));
++  a_.OpAnd(count_dest, LoadFlagsSystemConstant(), dxbc::Src::LU(kSysFlag_ROVOcclusionQuery));
++  a_.OpIf(true, count_src);
++  {
++    a_.OpAnd(count_dest, dxbc::Src::R(mask_temp).Select(component), dxbc::Src::LU(15));
++    a_.OpUShR(address_dest, count_src, dxbc::Src::LU(1));
++    a_.OpAnd(address_dest, address_src, dxbc::Src::LU(5));
++    a_.OpIAdd(count_dest, count_src, -address_src);
++    a_.OpUShR(address_dest, count_src, dxbc::Src::LU(2));
++    a_.OpAnd(count_dest, count_src, dxbc::Src::LU(3));
++    a_.OpIAdd(count_dest, count_src, address_src);
++    a_.OpIf(true, count_src);
++    {
++      uint32_t position = PushSystemTemp();
++      in_position_used_ |= 0b0011;
++      a_.OpFToU(dxbc::Dest::R(position, 3), dxbc::Src::V1D(in_reg_ps_position_));
++      a_.OpUMAd(address_dest, dxbc::Src::R(position, dxbc::Src::kYYYY),
++                dxbc::Src::LU(64), dxbc::Src::R(position, dxbc::Src::kXXXX));
++      a_.OpAnd(address_dest, address_src, dxbc::Src::LU(kROVOcclusionBucketCount - 1));
++      a_.OpIShL(address_dest, address_src, dxbc::Src::LU(2));
++      if (counter != ROVOcclusionCounter::kZPass) {
++        a_.OpIAdd(address_dest, address_src,
++                  dxbc::Src::LU(uint32_t(counter) * kROVOcclusionBucketCount * sizeof(uint32_t)));
++      }
++      if (uav_index_occlusion_counter_ == kBindingIndexUnallocated) {
++        uav_index_occlusion_counter_ = uav_count_++;
++      }
++      a_.OpAtomicIAdd(
++          dxbc::Dest::U(uav_index_occlusion_counter_, uint32_t(UAVRegister::kOcclusionCounter)),
++          address_src, 1, count_src);
++      PopSystemTemp();
++    }
++    a_.OpEndIf();
++  }
++  a_.OpEndIf();
+   PopSystemTemp();
+ }
+ 
+@@ -1869,42 +1928,10 @@ void DxbcShaderTranslator::CompletePixelShader_WriteToROV() {
+   // system_temp_rov_params_.y (the depth / stencil sample address) is not
+   // needed anymore, can be used for color writing.
+ 
+-  // Native D3D12 queries cannot see the depth/stencil tests performed in the
+-  // ROV shader. Count the surviving guest samples here, after alpha-to-mask
+-  // and both early/late depth paths. Zero-coverage early returns count zero.
+-  a_.OpAnd(temp_x_dest, LoadFlagsSystemConstant(), dxbc::Src::LU(kSysFlag_ROVOcclusionQuery));
+-  a_.OpIf(true, temp_x_src);
+-  {
+-    a_.OpAnd(temp_x_dest, dxbc::Src::R(system_temp_rov_params_, dxbc::Src::kXXXX),
+-             dxbc::Src::LU(15));
+-    // Population count of the four coverage bits.
+-    a_.OpUShR(temp_y_dest, temp_x_src, dxbc::Src::LU(1));
+-    a_.OpAnd(temp_y_dest, temp_y_src, dxbc::Src::LU(5));
+-    a_.OpIAdd(temp_x_dest, temp_x_src, -temp_y_src);
+-    a_.OpUShR(temp_y_dest, temp_x_src, dxbc::Src::LU(2));
+-    a_.OpAnd(temp_x_dest, temp_x_src, dxbc::Src::LU(3));
+-    a_.OpIAdd(temp_x_dest, temp_x_src, temp_y_src);
+-    a_.OpIf(true, temp_x_src);
+-    {
+-      // 2048 independent buckets avoid serializing every pixel on one word.
+-      // The CPU reduces them to the cumulative Xenos ZPass counter.
+-      uint32_t position = PushSystemTemp();
+-      a_.OpFToU(dxbc::Dest::R(position, 3), dxbc::Src::V1D(in_reg_ps_position_));
+-      a_.OpUMAd(temp_y_dest, dxbc::Src::R(position, dxbc::Src::kYYYY),
+-                 dxbc::Src::LU(64), dxbc::Src::R(position, dxbc::Src::kXXXX));
+-      a_.OpAnd(temp_y_dest, temp_y_src, dxbc::Src::LU(2047));
+-      a_.OpIShL(temp_y_dest, temp_y_src, dxbc::Src::LU(2));
+-      if (uav_index_occlusion_counter_ == kBindingIndexUnallocated) {
+-        uav_index_occlusion_counter_ = uav_count_++;
+-      }
+-      a_.OpAtomicIAdd(
+-          dxbc::Dest::U(uav_index_occlusion_counter_, uint32_t(UAVRegister::kOcclusionCounter)),
+-          temp_y_src, 1, temp_x_src);
+-      PopSystemTemp();
+-    }
+-    a_.OpEndIf();
+-  }
+-  a_.OpEndIf();
++  // Native queries cannot see ROV depth/stencil. Count surviving guest samples
++  // after alpha-to-coverage and early/late depth; failures were counted by the
++  // depth/stencil test before any early rejection.
++  ROV_AddCoverageToOcclusionCounter(system_temp_rov_params_, 0, ROVOcclusionCounter::kZPass);
+ 
+   if (!is_depth_only_pixel_shader_) {
+     // Check if any sample is still covered after depth testing and writing,
