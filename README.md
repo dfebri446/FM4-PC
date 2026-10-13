@@ -176,7 +176,7 @@ Hasil historis ini belum seluruhnya diuji ulang pada build portable terbaru. Det
 ## Keterbatasan saat ini
 
 - **Kompatibilitas terbatas:** Windows x64 dan revisi Japan/Asia yang diperiksa hash-nya. Belum mendukung setiap region atau title update.
-- **Grafis belum sepenuhnya akurat:** cahaya matahari/bloom berlebihan masih pernah teramati; noise, refleksi, tepi objek, kombinasi MSAA dan skala resolusi perlu pengujian lebih luas. Workaround bayangan masih aktif di launcher.
+- **Grafis belum sepenuhnya akurat:** silau matahari yang terlalu terang sudah diatasi dengan koreksi empiris pada query occlusion matahari (faktor 2, aktif di launcher), tetapi belum dibuktikan setara perangkat keras Xenos. Noise, refleksi, tepi objek, kombinasi MSAA dan skala resolusi perlu pengujian lebih luas. Workaround bayangan masih aktif di launcher.
 - **Shader sinkron:** dipakai untuk menghindari draw terlewat yang pernah menyebabkan foto hitam. Dampak stutter/performa dan foto dengan cache shader kosong belum tuntas diverifikasi.
 - **Input menu:** input diagnostik kadang terbaca tetapi belum membuat UI berpindah. Penyebab terkait fokus/waktu idle belum dipastikan. Pengemudi otomatis pengembangan bukan autopilot siap pakai.
 - **Runtime belum lengkap:** masih ada layanan Xbox berupa stub. Tes instruksi tidak membuktikan seluruh kernel, audio, timing atau sinkronisasi benar.

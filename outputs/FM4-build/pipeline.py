@@ -197,6 +197,7 @@ def launch(root):
           '--allow_game_relative_writes=false','--headless=false','--fullscreen=false',
           '--render_target_path_d3d12=rov','--readback_resolve=full',
           '--gpu_allow_invalid_fetch_constants=true','--async_shader_compilation=false',
+          '--rov_occlusion_awaited_report_divisor=2',
           '--input_backend=sdl','--mnk_mode=true','--mnk_mouse=false',
           '--keybind_right_trigger=W','--keybind_left_trigger=S',
           '--keybind_lstick_left=A','--keybind_lstick_right=D',

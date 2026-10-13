@@ -70,8 +70,14 @@ KETERBATASAN DAN MASALAH YANG MASIH ADA
 - Workflow hanya mendukung Windows x64 dengan toolchain dan GPU yang sesuai.
   Setup memeriksa prasyarat; tidak memasang Visual Studio, Python atau LLVM
   secara otomatis. Clone saja belum merupakan paket game siap jalan.
-- Cahaya matahari/bloom terlalu terang masih teramati pada pengujian sebelumnya.
-  Noise warna, refleksi, tepi objek, seluruh kombinasi MSAA/skala resolusi dan
+- Silau matahari terlalu terang (juga tembus ke kokpit) berasal dari query
+  occlusion matahari yang melaporkan sekitar dua kali sampel yang diharapkan
+  game. Launcher kini membagi dua hanya query yang ditunggu tersebut
+  (--rov_occlusion_awaited_report_divisor=2); query seluruh frame untuk
+  auto-exposure tidak diubah. Hasil uji visual 13 Oktober 2026: matahari tampil
+  dan silau wajar pada kamera belakang dan kokpit. Faktor 2 ditentukan secara
+  empiris, bukan dari perilaku perangkat keras Xenos yang sudah dibuktikan.
+- Noise warna, refleksi, tepi objek, seluruh kombinasi MSAA/skala resolusi dan
   kesesuaian dengan Xbox asli belum seluruhnya terverifikasi.
 - Launcher portable masih mengaktifkan workaround bayangan. Uji historis yang
   berhasil menampilkan bayangan asli tidak berarti workaround ini sudah
