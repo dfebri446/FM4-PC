@@ -1,0 +1,3 @@
+Xenia Canary 2372a54105d9d598ab5bc7ba94a72ef1bea4b271; integer resolve/fetch fix d119505289d540f61ae3d4ba6168f1145625277a. BSD license included.
+Local adaptations: include paths; XeEdramOffsetBytes uses the host-sample 1x1/1x2/2x2 layout produced by ReXGlue f5337cdc ROV, clear and dump paths, rather than upstream's newer 4x4 sample interleave. This applies to all full-resolve formats and resolution scales. Integer destination packing and fetch scaling remain enabled.
+Gamma bit 30 remains zero in ReXGlue, preserving the previous gamma path.

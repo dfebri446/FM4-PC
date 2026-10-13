@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.25)
+project(fm4_private_loader LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 23)
+find_package(rexglue 0.10.0 REQUIRED CONFIG)
+add_executable(fm4_dump ../dump-image.cpp)
+target_link_libraries(fm4_dump PRIVATE rex::runtime)
+rexglue_apply_target_settings(fm4_dump)

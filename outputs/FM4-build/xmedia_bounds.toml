@@ -1,0 +1,6 @@
+# Direct tail-call target from module startup at 0x880503B8.
+# Let CFG traversal infer its body after explicitly registering the entry.
+[functions]
+0x88055B60 = {}
+# Indirect callback observed during the first successful module attachment.
+0x88244AC0 = {}

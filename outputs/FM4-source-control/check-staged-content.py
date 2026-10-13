@@ -20,7 +20,7 @@ def check_blob(path, data, allowed):
         raise ValueError(f'Binary or oversized file: {path}')
     text = data.decode('utf-8-sig')
     if path.endswith(('.cpp', '.h', '.patch')):
-        if re.search(r'PPC_FUNC_IMPL\s*\(|PPC_FUNC\s*\(|__imp__sub_[0-9A-Fa-f]+\s*\([^;]*\)\s*\{', text):
+        if re.search(r'PPC_FUNC_IMPL\s*\(|PPC_FUNC\s*\(|DEFINE_REX_FUNC\s*\(|__imp__sub_[0-9A-Fa-f]+\s*\([^;]*\)\s*\{', text):
             raise ValueError(f'Possible translated guest function: {path}')
         if 'GIT binary patch' in text:
             raise ValueError(f'Binary patch: {path}')

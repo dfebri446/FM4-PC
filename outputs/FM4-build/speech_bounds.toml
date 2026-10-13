@@ -1,0 +1,3 @@
+# Shared backward branch target reached from 0x890E2CB4.
+[functions]
+0x890E2C98 = { share_registers = true }

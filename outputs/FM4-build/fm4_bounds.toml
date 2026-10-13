@@ -1,0 +1,33 @@
+# FM4 Japan/Asia Disc 1, media 633772A0.
+# Explicit thunks validated against original instructions and the previous CFG.
+# Keep the live register context across tail calls and shared code.
+skip_lr = false
+skip_msr = false
+non_argument_as_local = false
+non_volatile_as_local = false
+
+# CRT nonlocal control flow. Identified from the 1344-byte register save buffer
+# (SP +144, CR +304, LR +308, V64..V127 +320) and JPEG error handlers.
+# Native setjmp/longjmp must unwind the host stack as well as restore PPCContext.
+setjmp_address = 0x82762EC0
+longjmp_address = 0x82762A90
+
+[functions]
+0x825CAAF0 = { end = 0x825CAE30 }
+0x825CAF10 = { end = 0x825CAF64 }
+0x827E5038 = { size = 0x10 }
+0x827E5050 = { size = 0x08 }
+0x827E5058 = { size = 0x08 }
+0x827E5060 = { size = 0x08 }
+0x827E5068 = { size = 0x08 }
+0x827E5070 = { size = 0x0C }
+0x82805130 = { size = 0x08 }
+0x82805138 = { size = 0x08 }
+0x82805140 = { size = 0x08 }
+0x82805148 = { size = 0x14 }
+0x82A4E1A8 = { size = 0x18 }
+0x82A6AC10 = { size = 0x08 }
+# Conditional-return function: the branch at 0x82B03F94 returns to 0x82B03F84.
+0x82B03F10 = { end = 0x82B03FA0 }
+# Shared entry reached by an external branch inside another discovered range.
+0x82C7A460 = { end = 0x82C7A870, share_registers = true }

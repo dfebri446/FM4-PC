@@ -38,6 +38,162 @@
       "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
     },
     {
+      "path": "outputs/FM4-build/Build.ps1",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/README.txt",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/dump-image.cpp",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/fm4_bounds.toml",
+      "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
+    },
+    {
+      "path": "outputs/FM4-build/fm4_callbacks.toml",
+      "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
+    },
+    {
+      "path": "outputs/FM4-build/fm4_initializers.toml",
+      "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
+    },
+    {
+      "path": "outputs/FM4-build/fm4_prior_cfg.toml",
+      "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
+    },
+    {
+      "path": "outputs/FM4-build/guard-generated.py",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/loader/CMakeLists.txt",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/pipeline.py",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/prepare.py",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/rexglue.cmake",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/filesystem/file.cpp",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/LICENSE.xenia",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/PROVENANCE.txt",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/edram.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/endian.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/pixel_formats.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_16bpp.cs.xesl",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_16bpp.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_16bpp_scaled.cs.xesl",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_32bpp.cs.xesl",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_32bpp.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_32bpp_scaled.cs.xesl",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_64bpp.cs.xesl",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_64bpp.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_64bpp_scaled.cs.xesl",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_8bpp.cs.xesl",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_8bpp.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_8bpp_scaled.cs.xesl",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/texture_address.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/xesl.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk.patch",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/speech_bounds.toml",
+      "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
+    },
+    {
+      "path": "outputs/FM4-build/switch-recipes.json",
+      "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
+    },
+    {
+      "path": "outputs/FM4-build/test_pipeline.py",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/verification.json",
+      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/xmedia_bounds.toml",
+      "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
+    },
+    {
       "path": "outputs/FM4-source-control/README.txt",
       "provenance": "Repository policy/tooling or upstream license"
     },

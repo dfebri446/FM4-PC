@@ -1,4 +1,4 @@
-FM4 development: selected source-only checkpoint
+FM4 development: source-only repository
 ================================================
 
 This repository records reviewed integration code, diagnostic tools, synthetic
@@ -12,23 +12,26 @@ Included:
   vector-vectors.h is generated from a mathematical oracle, not a game dump.
 - CMake files and two local diagnostic helper scripts.
 - outputs/FM4-analysis: seven selected SDK source patches. They are historical
-  patches and are not guaranteed to cover every change in the local SDK checkout.
+  patches. The complete portable workflow uses ../FM4-build/sdk.patch instead.
 - ReXGlue/Xenia copyright and BSD license notice in third-party-notices.
 
 Excluded (kept on this computer, never staged for this checkpoint):
 - Original discs, ISO/XEX files, extracted assets, loaded images and memory dumps.
 - generated/, translated/disassembled game code, crash-function.cpp,
-  guard-generated.py, game-derived address/boundary tables and shader analysis.
+  original extracted tables and game shader analysis.
 - SDK checkout, executable/DLL/library files, build/cache directories.
 - Captures, screenshots, logs, traces, saves, user data and existing archives.
 - XenonRecomp-FM4-fixes.patch, pending a separate provenance/license review.
 
-This is NOT a self-contained buildable game release or a complete source backup.
-The application CMake file still refers to excluded local generated code and
-build helpers. Those references are intentionally retained. A fresh checkout
-needs separately obtained SDK dependencies and private game-derived inputs.
-The standalone tests CMake file can be used with an external SDK header tree;
-the texture-integer test additionally needs the relevant SDK implementation.
+The portable setup/generate/build/run workflow is documented in
+../FM4-build/README.txt. It downloads a pinned open-source SDK, applies the full
+SDK patch and regenerates private game source using the user's extracted discs.
+The tracked compiler-template transform (FM4-build/guard-generated.py) has been
+reviewed separately; it contains generic emitter transforms, not original game
+function bodies. Reviewed numeric function locations/bounds and switch recipes
+are included as integration metadata. Original switch contents are not included.
+This repository still does not contain a runnable game or a complete backup of
+the original development directory. Follow the portable workflow to rebuild.
 
 The root .gitignore ignores everything except individually reviewed paths.
 tracked-files.json records the inventory and provenance categories. Before
@@ -41,4 +44,4 @@ of licensing provenance; even a listed source file needs review when edited.
 No blanket license is assigned to the project by this checkpoint. Upstream
 SDK-derived portions remain subject to the included upstream license notice.
 No rights to FM4 game content are provided. No remote or upload is configured
-by this initialization. Gameplay development remains paused.
+by this workflow. Full gameplay compatibility remains incomplete.

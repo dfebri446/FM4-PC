@@ -1,0 +1,1395 @@
+diff --git a/include/rex/filesystem/entry.h b/include/rex/filesystem/entry.h
+index 3dc9a15..8dfb286 100644
+--- a/include/rex/filesystem/entry.h
++++ b/include/rex/filesystem/entry.h
+@@ -92,13 +92,13 @@ class Entry {
+   uint64_t create_timestamp() const { return create_timestamp_; }
+   uint64_t access_timestamp() const { return access_timestamp_; }
+   uint64_t write_timestamp() const { return write_timestamp_; }
+-  bool delete_on_close() const { return delete_on_close_; }
++  bool delete_on_close() const;
+ 
+   virtual bool SetAttributes([[maybe_unused]] uint64_t attributes) { return false; }
+   virtual bool SetCreateTimestamp([[maybe_unused]] uint64_t timestamp) { return false; }
+   virtual bool SetAccessTimestamp([[maybe_unused]] uint64_t timestamp) { return false; }
+   virtual bool SetWriteTimestamp([[maybe_unused]] uint64_t timestamp) { return false; }
+-  void SetForDeletion(bool delete_on_close) { delete_on_close_ = delete_on_close; }
++  X_STATUS SetForDeletion(bool delete_on_close);
+ 
+   bool is_read_only() const;
+ 
+@@ -165,6 +165,13 @@ class Entry {
+   uint64_t write_timestamp_;
+   std::vector<std::unique_ptr<Entry>> children_;
+   bool delete_on_close_ = false;
++
++ private:
++  friend class File;
++  void RetainFile();
++  void ReleaseFile();
++  bool HasOpenFiles() const;
++  size_t open_file_count_ = 0;
+ };
+ 
+ }  // namespace rex::filesystem
+diff --git a/include/rex/filesystem/file.h b/include/rex/filesystem/file.h
+index 1f22413..e7b6ce3 100644
+--- a/include/rex/filesystem/file.h
++++ b/include/rex/filesystem/file.h
+@@ -22,8 +22,10 @@ class Entry;
+ 
+ class File {
+  public:
+-  File(uint32_t file_access, Entry* entry) : file_access_(file_access), entry_(entry) {}
+-  virtual ~File() = default;
++  File(uint32_t file_access, Entry* entry);
++  virtual ~File();
++  File(const File&) = delete;
++  File& operator=(const File&) = delete;
+ 
+   virtual void Destroy() = 0;
+ 
+diff --git a/include/rex/graphics/d3d12/command_processor.h b/include/rex/graphics/d3d12/command_processor.h
+index 96d362b..2d76584 100644
+--- a/include/rex/graphics/d3d12/command_processor.h
++++ b/include/rex/graphics/d3d12/command_processor.h
+@@ -147,6 +147,7 @@ class D3D12CommandProcessor : public CommandProcessor {
+ 
+     kGammaRampTableSRV,
+     kGammaRampPWLSRV,
++      kOcclusionCounterRawUAV,
+ 
+     // Beyond this point, SRVs are accessible to shaders through an unbounded
+     // range - no descriptors of other types bound to shaders alongside
+@@ -403,6 +404,9 @@ class D3D12CommandProcessor : public CommandProcessor {
+   }
+ 
+   bool InitializeOcclusionQueryResources();
++  bool InitializeROVOcclusionResources();
++  bool WriteROVOcclusionSnapshot(xenos::xe_gpu_depth_sample_counts* sample_counts);
++  void WriteROVOcclusionUAVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) const;
+   void ShutdownOcclusionQueryResources();
+   bool BeginGuestOcclusionQuery(uint32_t sample_count_address);
+   bool EndGuestOcclusionQuery(uint32_t sample_count_address,
+@@ -652,6 +656,15 @@ class D3D12CommandProcessor : public CommandProcessor {
+   Microsoft::WRL::ComPtr<ID3D12QueryHeap> occlusion_query_heap_;
+   Microsoft::WRL::ComPtr<ID3D12Resource> occlusion_query_readback_;
+   uint64_t* occlusion_query_readback_mapping_ = nullptr;
++  static constexpr uint32_t kROVOcclusionBuckets = DxbcShaderTranslator::kROVOcclusionBucketCount;
++  static constexpr uint32_t kROVOcclusionCounters =
++      uint32_t(DxbcShaderTranslator::ROVOcclusionCounter::kCount);
++  static constexpr uint32_t kROVOcclusionWords = kROVOcclusionBuckets * kROVOcclusionCounters;
++  Microsoft::WRL::ComPtr<ID3D12Resource> rov_occlusion_counter_;
++  Microsoft::WRL::ComPtr<ID3D12Resource> rov_occlusion_zero_upload_;
++  bool rov_occlusion_initialized_ = false;
++  std::array<uint32_t, kROVOcclusionWords> rov_occlusion_previous_{};
++  std::array<uint64_t, kROVOcclusionCounters> rov_occlusion_cumulative_samples_{};
+   uint32_t occlusion_query_cursor_ = 0;
+   bool occlusion_query_resources_available_ = false;
+   struct ActiveOcclusionQuery {
+diff --git a/include/rex/graphics/format/dxbc.h b/include/rex/graphics/format/dxbc.h
+index a5eaa8f..1a0d05b 100644
+--- a/include/rex/graphics/format/dxbc.h
++++ b/include/rex/graphics/format/dxbc.h
+@@ -1443,6 +1443,7 @@ enum class Opcode : uint32_t {
+   kStoreRaw = 166,
+   kAtomicAnd = 169,
+   kAtomicOr = 170,
++  kAtomicIAdd = 173,
+   kEvalSampleIndex = 204,
+   kEvalCentroid = 205,
+ };
+@@ -2268,6 +2269,10 @@ class Assembler {
+                   const Src& value) {
+     EmitAtomicOp(Opcode::kAtomicOr, dest, address, address_components, value);
+   }
++  void OpAtomicIAdd(const Dest& dest, const Src& address, uint32_t address_components,
++                    const Src& value) {
++    EmitAtomicOp(Opcode::kAtomicIAdd, dest, address, address_components, value);
++  }
+   void OpEvalSampleIndex(const Dest& dest, const Src& value, const Src& sample_index) {
+     uint32_t dest_write_mask = dest.GetMask();
+     uint32_t operands_length =
+diff --git a/include/rex/graphics/pipeline/shader/dxbc_translator.h b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+index 3b0fd61..45e7023 100644
+--- a/include/rex/graphics/pipeline/shader/dxbc_translator.h
++++ b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+@@ -111,7 +111,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     // If anything in this is structure is changed in a way not compatible with
+     // the previous layout, invalidate the pipeline storages by increasing this
+     // version number (0xYYYYMMDD)!
+-    static constexpr uint32_t kVersion = 0x20260226;
++    static constexpr uint32_t kVersion = 0x20261015;
+ 
+     enum class DepthStencilMode : uint32_t {
+       kNoModifiers,
+@@ -236,6 +236,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     // taking into account the potential relation with occlusion queries (but
+     // should be safe at least temporarily).
+     kSysFlag_ROVDepthStencilEarlyWrite_Shift,
++    kSysFlag_ROVOcclusionQuery_Shift,
+ 
+     kSysFlag_Count,
+ 
+@@ -260,6 +261,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     kSysFlag_ROVDepthWrite = 1u << kSysFlag_ROVDepthWrite_Shift,
+     kSysFlag_ROVStencilTest = 1u << kSysFlag_ROVStencilTest_Shift,
+     kSysFlag_ROVDepthStencilEarlyWrite = 1u << kSysFlag_ROVDepthStencilEarlyWrite_Shift,
++    kSysFlag_ROVOcclusionQuery = 1u << kSysFlag_ROVOcclusionQuery_Shift,
+   };
+   static_assert(kSysFlag_Count <= 32, "Too many flags in the system constants");
+ 
+@@ -388,6 +390,10 @@ class DxbcShaderTranslator : public ShaderTranslator {
+     // The constant blend factor for the respective modes.
+     float edram_blend_constant[4];
+ 
++    // Five bits per sampled component: width minus one, then signedness.
++    // Appended to preserve offsets used by existing helper shaders.
++    uint32_t texture_integer_scale_bits[32];
++
+    private:
+     friend class DxbcShaderTranslator;
+ 
+@@ -440,6 +446,8 @@ class DxbcShaderTranslator : public ShaderTranslator {
+ 
+       kEdramBlendConstant,
+ 
++      kTextureIntegerScaleBits,
++
+       kCount,
+     };
+     static_assert(uint32_t(Index::kCount) <= 64,
+@@ -502,7 +510,11 @@ class DxbcShaderTranslator : public ShaderTranslator {
+   enum class UAVRegister {
+     kSharedMemory,
+     kEdram,
++    kOcclusionCounter,
+   };
++  // Separate banks keep contended atomics spread across screen-space buckets.
++  static constexpr uint32_t kROVOcclusionBucketCount = 2048;
++  enum class ROVOcclusionCounter : uint32_t { kZPass, kZFail, kStencilFail, kCount };
+ 
+   uint64_t GetDefaultVertexShaderModification(
+       uint32_t dynamic_addressable_register_count,
+@@ -726,6 +738,8 @@ class DxbcShaderTranslator : public ShaderTranslator {
+   // unchanged or known that it's safe not to await kills/alphatest/AtoC),
+   // returns from the shader.
+   void ROV_DepthStencilTest();
++  void ROV_AddCoverageToOcclusionCounter(uint32_t mask_temp, uint32_t component,
++                                         ROVOcclusionCounter counter);
+   // Unpacks a 32bpp or a 64bpp color in packed_temp.packed_temp_components to
+   // color_temp, using 2 temporary VGPRs.
+   void ROV_UnpackColor(uint32_t rt_index, uint32_t packed_temp, uint32_t packed_temp_components,
+@@ -1152,6 +1166,7 @@ class DxbcShaderTranslator : public ShaderTranslator {
+   uint32_t uav_count_;
+   uint32_t uav_index_shared_memory_;
+   uint32_t uav_index_edram_;
++  uint32_t uav_index_occlusion_counter_;
+ 
+   std::vector<SamplerBinding> sampler_bindings_;
+ };
+diff --git a/include/rex/graphics/pipeline/texture/cache.h b/include/rex/graphics/pipeline/texture/cache.h
+index d26cd4f..ef9ad48 100644
+--- a/include/rex/graphics/pipeline/texture/cache.h
++++ b/include/rex/graphics/pipeline/texture/cache.h
+@@ -121,6 +121,10 @@ class TextureCache {
+     const TextureBinding* binding = GetValidTextureBinding(fetch_constant_index);
+     return binding ? binding->swizzled_signs : kSwizzledSignsUnsigned;
+   }
++  uint32_t GetActiveIntegerScaleBits(uint32_t fetch_constant_index) const {
++    const TextureBinding* binding = GetValidTextureBinding(fetch_constant_index);
++    return binding ? binding->integer_scale_bits : 0;
++  }
+   bool IsActiveTextureResolutionScaled(uint32_t fetch_constant_index) const {
+     const TextureBinding* binding = GetValidTextureBinding(fetch_constant_index);
+     if (!binding) {
+@@ -452,6 +456,7 @@ class TextureCache {
+ 
+   struct TextureBinding {
+     TextureKey key;
++    uint32_t integer_scale_bits;
+     // Destination swizzle merged with guest to host format swizzle.
+     uint32_t host_swizzle;
+     // Packed TextureSign values, 2 bit per each component, with guest-side
+diff --git a/include/rex/graphics/pipeline/texture/info.h b/include/rex/graphics/pipeline/texture/info.h
+index b7f66e2..bde7ef9 100644
+--- a/include/rex/graphics/pipeline/texture/info.h
++++ b/include/rex/graphics/pipeline/texture/info.h
+@@ -126,6 +126,12 @@ struct FormatInfo {
+   uint32_t block_width;
+   uint32_t block_height;
+   uint32_t bits_per_pixel;
++  uint8_t component_bits[4];
++  bool fixed;
++
++  // Restore integer units after normalized host sampling and swizzling.
++  uint32_t GetIntegerScaleBits(uint32_t num_format, uint32_t host_swizzle,
++                               uint8_t swizzled_signs) const;
+ 
+   uint32_t bytes_per_block() const { return block_width * block_height * bits_per_pixel / 8; }
+ 
+diff --git a/include/rex/input/input_system.h b/include/rex/input/input_system.h
+index 1cb3faa..07b2e13 100644
+--- a/include/rex/input/input_system.h
++++ b/include/rex/input/input_system.h
+@@ -10,6 +10,7 @@
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
+ 
++#include <array>
+ #include <memory>
+ #include <vector>
+ 
+@@ -65,6 +66,11 @@ class InputSystem : public system::IInputSystem {
+   // does not renumber pad two.
+   std::vector<DeviceInfo> devices_;
+   std::vector<InputDriver*> device_owners_;
++
++  // Host-device packet counters are independent. Publish one counter for each
++  // merged guest controller, advancing only when its visible state changes.
++  std::array<X_INPUT_STATE, kMaxGuestUsers> merged_states_ = {};
++  std::array<bool, kMaxGuestUsers> merged_states_valid_ = {};
+ };
+ 
+ /// Create a default InputSystem with SDL + NOP drivers.
+diff --git a/include/rex/system/kernel_state.h b/include/rex/system/kernel_state.h
+index 9b9cf9e..d68b69a 100644
+--- a/include/rex/system/kernel_state.h
++++ b/include/rex/system/kernel_state.h
+@@ -396,6 +396,12 @@ class KernelState {
+   std::condition_variable_any dispatch_cond_;
+   std::list<std::function<void()>> dispatch_queue_;
+ 
++  // The VFS resolves a UserModule path to a device path, while recompiled
++  // libraries are keyed by their manifest guest path. Preserve the actual
++  // registration key across unload instead of deriving it from the VFS path.
++  // Guarded by global_critical_region_.
++  std::unordered_map<UserModule*, std::string> loaded_module_recompiled_keys_;
++
+   friend class XObject;
+ };
+ 
+diff --git a/src/filesystem/CMakeLists.txt b/src/filesystem/CMakeLists.txt
+index 577e4c9..ea7cd12 100644
+--- a/src/filesystem/CMakeLists.txt
++++ b/src/filesystem/CMakeLists.txt
+@@ -1,6 +1,7 @@
+ add_library(rexfilesystem OBJECT
+     device.cpp
+     entry.cpp
++    file.cpp
+     virtual_file_system.cpp
+     devices/disc_image_device.cpp
+     devices/disc_image_entry.cpp
+diff --git a/src/filesystem/devices/host_path_entry.cpp b/src/filesystem/devices/host_path_entry.cpp
+index d0dce00..62ce0b7 100644
+--- a/src/filesystem/devices/host_path_entry.cpp
++++ b/src/filesystem/devices/host_path_entry.cpp
+@@ -51,6 +51,9 @@ HostPathEntry* HostPathEntry::Create(Device* device, Entry* parent,
+ }
+ 
+ X_STATUS HostPathEntry::Open(uint32_t desired_access, File** out_file) {
++  auto global_lock = global_critical_region_.Acquire();
++  *out_file = nullptr;
++  if (delete_on_close()) return static_cast<X_STATUS>(0xC0000056);  // STATUS_DELETE_PENDING
+   if (is_read_only() &&
+       (desired_access & (FileAccess::kFileWriteData | FileAccess::kFileAppendData))) {
+     REXFS_ERROR("Attempting to open file for write access on read-only device");
+@@ -110,7 +113,9 @@ bool HostPathEntry::DeleteEntryInternal(Entry* entry) {
+   auto full_path = host_path_ / rex::to_path(entry->name());
+   std::error_code ec;  // avoid exception on remove/remove_all failure
+   if (entry->attributes() & kFileAttributeDirectory) {
+-    // Delete entire directory and contents.
++    // Disposition deletion must not recursively erase unexpected host files.
++    if (entry->delete_on_close()) return std::filesystem::remove(full_path, ec);
++    // Explicit VFS tree deletion retains its recursive behavior.
+     auto removed = std::filesystem::remove_all(full_path, ec);
+     return removed >= 1 && removed != static_cast<std::uintmax_t>(-1);
+   } else {
+diff --git a/src/filesystem/entry.cpp b/src/filesystem/entry.cpp
+index 163c257..a3fd107 100644
+--- a/src/filesystem/entry.cpp
++++ b/src/filesystem/entry.cpp
+@@ -35,6 +35,47 @@ Entry::Entry(Device* device, Entry* parent, const std::string_view path)
+ 
+ Entry::~Entry() = default;
+ 
++bool Entry::delete_on_close() const {
++  auto global_lock = rex::thread::global_critical_region::AcquireDirect();
++  return delete_on_close_;
++}
++
++X_STATUS Entry::SetForDeletion(bool pending) {
++  auto global_lock = global_critical_region_.Acquire();
++  if (pending) {
++    if (!parent_ || is_read_only()) return X_STATUS_ACCESS_DENIED;
++    if ((attributes_ & kFileAttributeDirectory) && !children_.empty()) {
++      return static_cast<X_STATUS>(0xC0000101);  // STATUS_DIRECTORY_NOT_EMPTY
++    }
++  }
++  delete_on_close_ = pending;
++  return X_STATUS_SUCCESS;
++}
++
++void Entry::RetainFile() {
++  auto global_lock = global_critical_region_.Acquire();
++  ++open_file_count_;
++}
++
++void Entry::ReleaseFile() {
++  auto global_lock = global_critical_region_.Acquire();
++  assert_true(open_file_count_ != 0);
++  --open_file_count_;
++  if (!open_file_count_ && delete_on_close_ && parent_ &&
++      (!(attributes_ & kFileAttributeDirectory) || children_.empty())) {
++    // Delete may destroy this Entry. Do not access members afterwards.
++    Delete();
++  }
++}
++
++bool Entry::HasOpenFiles() const {
++  if (open_file_count_) return true;
++  for (const auto& child : children_) {
++    if (child->HasOpenFiles()) return true;
++  }
++  return false;
++}
++
+ void Entry::Dump(rex::string::StringBuffer* string_buffer, int indent) {
+   for (int i = 0; i < indent; ++i) {
+     string_buffer->Append(' ');
+@@ -92,7 +133,7 @@ Entry* Entry::IterateChildren(const rex::filesystem::WildcardEngine& engine,
+ 
+ Entry* Entry::CreateEntry(const std::string_view name, uint32_t attributes) {
+   auto global_lock = global_critical_region_.Acquire();
+-  if (is_read_only()) {
++  if (is_read_only() || delete_on_close_) {
+     return nullptr;
+   }
+   if (GetChild(name)) {
+@@ -117,6 +158,9 @@ bool Entry::Delete(Entry* entry) {
+   if (entry->parent() != this) {
+     return false;
+   }
++  // Erasing an Entry also erases its descendants. Live File objects retain
++  // pointers to these entries even on hosts that permit unlinking open files.
++  if (entry->HasOpenFiles()) return false;
+   if (!DeleteEntryInternal(entry)) {
+     return false;
+   }
+diff --git a/src/filesystem/virtual_file_system.cpp b/src/filesystem/virtual_file_system.cpp
+index a1b4dad..b2a268c 100644
+--- a/src/filesystem/virtual_file_system.cpp
++++ b/src/filesystem/virtual_file_system.cpp
+@@ -196,6 +196,7 @@ X_STATUS VirtualFileSystem::OpenFile(Entry* root_entry, const std::string_view p
+                                      FileDisposition creation_disposition, uint32_t desired_access,
+                                      bool is_directory, bool is_non_directory, File** out_file,
+                                      FileAction* out_action) {
++  auto global_lock = global_critical_region_.Acquire();
+   // TODO(gibbed): should 'is_directory' remain as a bool or should it be
+   // flipped to a generic FileAttributeFlags?
+ 
+@@ -230,6 +231,9 @@ X_STATUS VirtualFileSystem::OpenFile(Entry* root_entry, const std::string_view p
+   }
+ 
+   if (entry) {
++    if (entry->delete_on_close()) {
++      return static_cast<X_STATUS>(0xC0000056);  // STATUS_DELETE_PENDING
++    }
+     if (entry->attributes() & kFileAttributeDirectory && is_non_directory) {
+       return X_STATUS_FILE_IS_A_DIRECTORY;
+     }
+diff --git a/src/graphics/d3d12/command_processor.cpp b/src/graphics/d3d12/command_processor.cpp
+index 19874a5..7eb3ec2 100644
+--- a/src/graphics/d3d12/command_processor.cpp
++++ b/src/graphics/d3d12/command_processor.cpp
+@@ -11,7 +11,9 @@
+ 
+ #include <algorithm>
+ #include <cstdarg>
++#include <cstdlib>
+ #include <cstring>
++#include <fstream>
+ #include <sstream>
+ #include <utility>
+ 
+@@ -49,6 +51,66 @@ REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
+ 
+ namespace rex::graphics::d3d12 {
+ 
++namespace {
++// Optional bounded publication timeline. Sampling is diagnostic only: a zero
++// sample does not prove that the entire resolved image is zero.
++void TraceResolvePublication(uint32_t address, uint32_t length, const uint8_t* bytes) {
++  static std::ofstream output = [] {
++    const char* path = std::getenv("REX_RESOLVE_PUBLICATION_TRACE");
++    return path && *path ? std::ofstream(path, std::ios::app) : std::ofstream();
++  }();
++  static uint32_t sequence = 0;
++  if (!output.is_open() || sequence >= 100000 || !length) return;
++  static const std::string arm_path = std::string(std::getenv("REX_RESOLVE_PUBLICATION_TRACE")) + ".arm";
++  static bool armed = false;
++  static ULONGLONG next_poll = 0;
++  if (!armed) {
++    const ULONGLONG now = GetTickCount64();
++    if (now < next_poll) return;
++    next_poll = now + 250;
++    armed = GetFileAttributesA(arm_path.c_str()) != INVALID_FILE_ATTRIBUTES;
++    if (!armed) return;
++  }
++  LARGE_INTEGER ticks{}, frequency{};
++  QueryPerformanceCounter(&ticks);
++  QueryPerformanceFrequency(&frequency);
++  unsigned nonzero_samples = 0;
++  for (unsigned i = 0; i < 64; ++i) {
++    nonzero_samples += bytes[(uint64_t(length - 1) * i) / 63] != 0;
++  }
++  output << "{\"sequence\":" << sequence++ << ",\"address\":" << address
++         << ",\"length\":" << length << ",\"ticks\":" << ticks.QuadPart
++         << ",\"frequency\":" << frequency.QuadPart
++         << ",\"nonzero_samples_of_64\":" << nonzero_samples << "}\n";
++  output.flush();
++}
++// Optional, bounded packet evidence for query protocol investigations. Kept
++// separate from rotating runtime logs so the first failure isn't lost.
++void TraceOcclusionQuery(const char* stage, uint32_t address,
++                         const xenos::xe_gpu_depth_sample_counts* counts,
++                         bool enabled, bool resources, bool active,
++                         uint32_t active_address) {
++  static std::ofstream output = [] {
++    const char* path = std::getenv("REX_OCCLUSION_TRACE_FILE");
++    return path && *path ? std::ofstream(path, std::ios::app) : std::ofstream();
++  }();
++  static uint32_t sequence = 0;
++  if (!output.is_open() || sequence >= 20000) return;
++  output << "{\"sequence\":" << sequence++ << ",\"stage\":\"" << stage
++         << "\",\"address\":" << address << ",\"enabled\":" << enabled
++         << ",\"resources\":" << resources << ",\"active\":" << active
++         << ",\"active_address\":" << active_address << ",\"words\":[";
++  uint32_t words[8]{};
++  if (counts) std::memcpy(words, counts, sizeof(words));
++  for (unsigned i = 0; i < 8; ++i) {
++    if (i) output << ',';
++    output << words[i];
++  }
++  output << "]}\n";
++  output.flush();
++}
++}  // namespace
++
+ // Generated with `xb buildshaders`.
+ namespace shaders {
+ #include "../shaders/bytecode/d3d12_5_1/apply_gamma_pwl_cs.h"
+@@ -152,8 +214,29 @@ void D3D12CommandProcessor::InitializeShaderStorage(const std::filesystem::path&
+ 
+ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffer* reader,
+                                                                uint32_t packet, uint32_t count) {
++  const uint32_t trace_address = register_file_->values[XE_GPU_REG_RB_SAMPLE_COUNT_ADDR];
++  const auto* trace_counts =
++      memory_->TranslatePhysical<xenos::xe_gpu_depth_sample_counts*>(trace_address);
++  const auto trace = [&](const char* stage) {
++    TraceOcclusionQuery(stage, trace_address, trace_counts,
++                        REXCVAR_GET(occlusion_query_enable), occlusion_query_resources_available_,
++                        active_occlusion_query_.valid, active_occlusion_query_.sample_count_address);
++  };
++  trace("packet");
+   if (!REXCVAR_GET(occlusion_query_enable) || !occlusion_query_resources_available_) {
+-    return CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(reader, packet, count);
++    const bool result = CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(reader, packet, count);
++    trace("base-fallback-result");
++    return result;
++  }
++
++  if (render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock) {
++    assert_true(count == 1);
++    const uint32_t initiator = reader->ReadAndSwap<uint32_t>();
++    WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
++    auto* counts = memory_->TranslatePhysical<xenos::xe_gpu_depth_sample_counts*>(trace_address);
++    const bool result = counts && WriteROVOcclusionSnapshot(counts);
++    trace(result ? "rov-snapshot" : "rov-snapshot-failed");
++    return result;
+   }
+ 
+   const uint32_t kQueryFinished = rex::byte_swap(0xFFFFFEED);
+@@ -195,10 +278,12 @@ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffe
+   if (!is_end) {
+     if (active_occlusion_query_.valid &&
+         active_occlusion_query_.sample_count_address != sample_count_addr) {
++      trace("different-begin-address");
+       DisableHostOcclusionQueries();
+       return write_fallback_result();
+     }
+     if (!BeginGuestOcclusionQuery(sample_count_addr)) {
++      trace("begin-failed");
+       return write_fallback_result();
+     }
+     return true;
+@@ -206,14 +291,17 @@ bool D3D12CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffe
+ 
+   if (!active_occlusion_query_.valid ||
+       active_occlusion_query_.sample_count_address != sample_count_addr) {
++    trace("end-without-matching-begin");
+     DisableHostOcclusionQueries();
+     return write_fallback_result();
+   }
+ 
+   if (!EndGuestOcclusionQuery(sample_count_addr, sample_counts)) {
++    trace("end-failed");
+     return write_fallback_result();
+   }
+ 
++  trace("host-result");
+   return true;
+ }
+ 
+@@ -364,7 +452,7 @@ ID3D12RootSignature* D3D12CommandProcessor::GetRootSignature(const DxbcShader* v
+   }
+ 
+   // Shared memory and, if ROVs are used, EDRAM.
+-  D3D12_DESCRIPTOR_RANGE shared_memory_and_edram_ranges[3];
++  D3D12_DESCRIPTOR_RANGE shared_memory_and_edram_ranges[4];
+   {
+     auto& parameter = parameters[kRootParameter_Bindful_SharedMemoryAndEdram];
+     parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+@@ -392,6 +480,11 @@ ID3D12RootSignature* D3D12CommandProcessor::GetRootSignature(const DxbcShader* v
+           UINT(DxbcShaderTranslator::UAVRegister::kEdram);
+       shared_memory_and_edram_ranges[2].RegisterSpace = 0;
+       shared_memory_and_edram_ranges[2].OffsetInDescriptorsFromTableStart = 2;
++      ++parameter.DescriptorTable.NumDescriptorRanges;
++      shared_memory_and_edram_ranges[3] = shared_memory_and_edram_ranges[2];
++      shared_memory_and_edram_ranges[3].BaseShaderRegister =
++          UINT(DxbcShaderTranslator::UAVRegister::kOcclusionCounter);
++      shared_memory_and_edram_ranges[3].OffsetInDescriptorsFromTableStart = 3;
+     }
+   }
+ 
+@@ -1101,7 +1194,7 @@ bool D3D12CommandProcessor::SetupContext() {
+       root_bindless_sampler_range.OffsetInDescriptorsFromTableStart = 0;
+     }
+     // View heap.
+-    D3D12_DESCRIPTOR_RANGE root_bindless_view_ranges[4];
++    D3D12_DESCRIPTOR_RANGE root_bindless_view_ranges[5];
+     {
+       auto& parameter = root_parameters_bindless[kRootParameter_Bindless_ViewHeap];
+       parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+@@ -1119,6 +1212,10 @@ bool D3D12CommandProcessor::SetupContext() {
+         range.BaseShaderRegister = UINT(DxbcShaderTranslator::UAVRegister::kEdram);
+         range.RegisterSpace = 0;
+         range.OffsetInDescriptorsFromTableStart = UINT(SystemBindlessView::kEdramR32UintUAV);
++        auto& counter_range = root_bindless_view_ranges[parameter.DescriptorTable.NumDescriptorRanges++];
++        counter_range = range;
++        counter_range.BaseShaderRegister = UINT(DxbcShaderTranslator::UAVRegister::kOcclusionCounter);
++        counter_range.OffsetInDescriptorsFromTableStart = UINT(SystemBindlessView::kOcclusionCounterRawUAV);
+       }
+       // Used UAV and SRV ranges must not overlap on Nvidia Fermi, so textures
+       // have OffsetInDescriptorsFromTableStart after all static descriptors of
+@@ -1619,6 +1716,10 @@ bool D3D12CommandProcessor::SetupContext() {
+   }
+ 
+   occlusion_query_resources_available_ = InitializeOcclusionQueryResources();
++  if (bindless_resources_used_) {
++    WriteROVOcclusionUAVDescriptor(provider.OffsetViewDescriptor(
++        view_bindless_heap_cpu_start_, uint32_t(SystemBindlessView::kOcclusionCounterRawUAV)));
++  }
+ 
+   // Just not to expose uninitialized memory.
+   std::memset(&system_constants_, 0, sizeof(system_constants_));
+@@ -3095,6 +3196,8 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
+     uint8_t* destination = memory_->TranslatePhysical(written_address);
+     if (destination) {
+       std::memcpy(destination, static_cast<uint8_t*>(rb.mapped_data[read_index]), written_length);
++      TraceResolvePublication(written_address, written_length,
++                              static_cast<const uint8_t*>(rb.mapped_data[read_index]));
+     }
+   }
+ 
+@@ -3652,6 +3755,9 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
+ 
+   // Flags.
+   uint32_t flags = 0;
++  if (edram_rov_used && rov_occlusion_initialized_ && REXCVAR_GET(occlusion_query_enable)) {
++    flags |= DxbcShaderTranslator::kSysFlag_ROVOcclusionQuery;
++  }
+   // Whether shared memory is an SRV or a UAV. Because a resource can't be in a
+   // read-write (UAV) and a read-only (SRV, IBV) state at once, if any shader in
+   // the pipeline uses memexport, the shared memory buffer must be a UAV.
+@@ -3830,6 +3936,9 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
+     uint32_t texture_signs_mask = uint32_t(0b11111111) << texture_signs_shift;
+     dirty |= (texture_signs_uint & texture_signs_mask) != texture_signs_shifted;
+     texture_signs_uint = (texture_signs_uint & ~texture_signs_mask) | texture_signs_shifted;
++    uint32_t integer_scale_bits = texture_cache_->GetActiveIntegerScaleBits(texture_index);
++    dirty |= system_constants_.texture_integer_scale_bits[texture_index] != integer_scale_bits;
++    system_constants_.texture_integer_scale_bits[texture_index] = integer_scale_bits;
+     textures_resolution_scaled |=
+         uint32_t(texture_cache_->IsActiveTextureResolutionScaled(texture_index)) << texture_index;
+   }
+@@ -4488,7 +4597,7 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+     if (edram_rov_used) {
+       // + EDRAM UAV in two tables (with the shared memory SRV and with the
+       // shared memory UAV).
+-      view_count_full_update += 2;
++      view_count_full_update += 4;
+     }
+     D3D12_CPU_DESCRIPTOR_HANDLE view_cpu_handle;
+     D3D12_GPU_DESCRIPTOR_HANDLE view_gpu_handle;
+@@ -4541,6 +4650,9 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+         render_target_cache_->WriteEdramUintPow2UAVDescriptor(view_cpu_handle, 2);
+         view_cpu_handle.ptr += descriptor_size_view;
+         view_gpu_handle.ptr += descriptor_size_view;
++        WriteROVOcclusionUAVDescriptor(view_cpu_handle);
++        view_cpu_handle.ptr += descriptor_size_view;
++        view_gpu_handle.ptr += descriptor_size_view;
+       }
+       // Null SRV + UAV + EDRAM.
+       gpu_handle_shared_memory_uav_and_edram_ = view_gpu_handle;
+@@ -4554,6 +4666,9 @@ bool D3D12CommandProcessor::UpdateBindings(const D3D12Shader* vertex_shader,
+         render_target_cache_->WriteEdramUintPow2UAVDescriptor(view_cpu_handle, 2);
+         view_cpu_handle.ptr += descriptor_size_view;
+         view_gpu_handle.ptr += descriptor_size_view;
++        WriteROVOcclusionUAVDescriptor(view_cpu_handle);
++        view_cpu_handle.ptr += descriptor_size_view;
++        view_gpu_handle.ptr += descriptor_size_view;
+       }
+       current_graphics_root_up_to_date_ &= ~(1u << kRootParameter_Bindful_SharedMemoryAndEdram);
+     }
+@@ -4810,6 +4925,10 @@ bool D3D12CommandProcessor::InitializeOcclusionQueryResources() {
+   occlusion_query_readback_.Reset();
+   occlusion_query_readback_mapping_ = nullptr;
+ 
++  if (render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock) {
++    return InitializeROVOcclusionResources();
++  }
++
+   ID3D12Device* device = GetD3D12Provider().GetDevice();
+   if (!device) {
+     return false;
+@@ -4864,6 +4983,101 @@ void D3D12CommandProcessor::ShutdownOcclusionQueryResources() {
+   occlusion_query_readback_mapping_ = nullptr;
+   occlusion_query_readback_.Reset();
+   occlusion_query_heap_.Reset();
++  rov_occlusion_counter_.Reset();
++  rov_occlusion_zero_upload_.Reset();
++  rov_occlusion_initialized_ = false;
++  rov_occlusion_previous_.fill(0);
++  rov_occlusion_cumulative_samples_.fill(0);
++}
++
++bool D3D12CommandProcessor::InitializeROVOcclusionResources() {
++  auto* device = GetD3D12Provider().GetDevice();
++  constexpr uint32_t bytes = kROVOcclusionWords * sizeof(uint32_t);
++  D3D12_RESOURCE_DESC desc;
++  ui::d3d12::util::FillBufferResourceDesc(desc, bytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
++  if (FAILED(device->CreateCommittedResource(&ui::d3d12::util::kHeapPropertiesDefault,
++      D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
++      IID_PPV_ARGS(&rov_occlusion_counter_)))) return false;
++  desc.Flags = D3D12_RESOURCE_FLAG_NONE;
++  if (FAILED(device->CreateCommittedResource(&ui::d3d12::util::kHeapPropertiesUpload,
++      D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
++      IID_PPV_ARGS(&rov_occlusion_zero_upload_)))) return false;
++  void* mapping = nullptr;
++  D3D12_RANGE no_read{0, 0};
++  if (FAILED(rov_occlusion_zero_upload_->Map(0, &no_read, &mapping))) return false;
++  std::memset(mapping, 0, bytes);
++  rov_occlusion_zero_upload_->Unmap(0, nullptr);
++  if (FAILED(device->CreateCommittedResource(&ui::d3d12::util::kHeapPropertiesReadback,
++      D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
++      IID_PPV_ARGS(&occlusion_query_readback_)))) return false;
++  D3D12_RANGE read_range{0, bytes};
++  if (FAILED(occlusion_query_readback_->Map(0, &read_range, &mapping))) return false;
++  occlusion_query_readback_mapping_ = static_cast<uint64_t*>(mapping);
++  rov_occlusion_initialized_ = false;
++  rov_occlusion_previous_.fill(0);
++  rov_occlusion_cumulative_samples_.fill(0);
++  return true;
++}
++
++void D3D12CommandProcessor::WriteROVOcclusionUAVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) const {
++  ui::d3d12::util::CreateBufferRawUAV(GetD3D12Provider().GetDevice(), handle,
++      rov_occlusion_counter_.Get(), rov_occlusion_counter_ ? kROVOcclusionWords * sizeof(uint32_t) : 0);
++}
++
++bool D3D12CommandProcessor::WriteROVOcclusionSnapshot(xenos::xe_gpu_depth_sample_counts* counts) {
++  if (!rov_occlusion_counter_ || !occlusion_query_readback_mapping_ || !BeginSubmission(true)) return false;
++  constexpr uint32_t bytes = kROVOcclusionWords * sizeof(uint32_t);
++  if (!rov_occlusion_initialized_) {
++    deferred_command_list_.D3DCopyBufferRegion(rov_occlusion_counter_.Get(), 0,
++        rov_occlusion_zero_upload_.Get(), 0, bytes);
++    PushTransitionBarrier(rov_occlusion_counter_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
++        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
++    SubmitBarriers();
++    rov_occlusion_initialized_ = true;
++  } else {
++    PushTransitionBarrier(rov_occlusion_counter_.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
++        D3D12_RESOURCE_STATE_COPY_SOURCE);
++    SubmitBarriers();
++    deferred_command_list_.D3DCopyBufferRegion(occlusion_query_readback_.Get(), 0,
++        rov_occlusion_counter_.Get(), 0, bytes);
++    PushTransitionBarrier(rov_occlusion_counter_.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
++        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
++    SubmitBarriers();
++    if (!AwaitAllQueueOperationsCompletion()) return false;
++    const auto* values = reinterpret_cast<const uint32_t*>(occlusion_query_readback_mapping_);
++    for (uint32_t i = 0; i < kROVOcclusionWords; ++i) {
++      // Unsigned delta also handles an individual GPU bucket wrapping.
++      rov_occlusion_cumulative_samples_[i / kROVOcclusionBuckets] +=
++          uint32_t(values[i] - rov_occlusion_previous_[i]);
++      rov_occlusion_previous_[i] = values[i];
++    }
++  }
++  // EVENT_WRITE_ZPD is a cumulative snapshot, not a same-address begin/end
++  // command. The guest subtracts two reports, including QueryBatch reports.
++  using Counter = DxbcShaderTranslator::ROVOcclusionCounter;
++  const auto normalized = [&](Counter counter) {
++    return NormalizeOcclusionSamples(rov_occlusion_cumulative_samples_[uint32_t(counter)]);
++  };
++  const uint64_t passed = normalized(Counter::kZPass);
++  const uint64_t failed_depth = normalized(Counter::kZFail);
++  const uint64_t failed_stencil = normalized(Counter::kStencilFail);
++  const auto lane_b = [](uint64_t value) { return uint32_t(value) >> 1; };
++  const auto lane_a = [&](uint64_t value) { return uint32_t(value) - lane_b(value); };
++  const uint64_t total = passed + failed_depth + failed_stencil;
++  counts->Total_A = lane_a(total);
++  counts->Total_B = lane_b(total);
++  counts->ZFail_A = lane_a(failed_depth);
++  counts->ZFail_B = lane_b(failed_depth);
++  // Guest polling may wait on ZPass or StencilFail. Publish these completion
++  // lanes together after the other fields, as in the Xenos report ABI.
++  xenos::xe_gpu_depth_sample_counts completed{};
++  completed.ZPass_A = lane_a(passed);
++  completed.ZPass_B = lane_b(passed);
++  completed.StencilFail_A = lane_a(failed_stencil);
++  completed.StencilFail_B = lane_b(failed_stencil);
++  std::memcpy(&counts->ZPass_A, &completed.ZPass_A,
++              sizeof(completed) - offsetof(xenos::xe_gpu_depth_sample_counts, ZPass_A));
++  return true;
+ }
+ 
+ bool D3D12CommandProcessor::AcquireOcclusionQueryIndex(uint32_t& host_index_out) {
+diff --git a/src/graphics/pipeline/shader/dxbc_translator.cpp b/src/graphics/pipeline/shader/dxbc_translator.cpp
+index 2c31a0e..5f38cf1 100644
+--- a/src/graphics/pipeline/shader/dxbc_translator.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator.cpp
+@@ -160,6 +160,7 @@ void DxbcShaderTranslator::Reset() {
+   uav_count_ = 0;
+   uav_index_shared_memory_ = kBindingIndexUnallocated;
+   uav_index_edram_ = kBindingIndexUnallocated;
++  uav_index_occlusion_counter_ = kBindingIndexUnallocated;
+ 
+   sampler_bindings_.clear();
+ 
+@@ -1982,6 +1983,7 @@ const DxbcShaderTranslator::SystemConstantRdef DxbcShaderTranslator::system_cons
+     {"xe_edram_rt_blend_factors_ops", ShaderRdefTypeIndex::kUint4, sizeof(uint32_t) * 4},
+ 
+     {"xe_edram_blend_constant", ShaderRdefTypeIndex::kFloat4, sizeof(float) * 4},
++    {"xe_texture_integer_scale_bits", ShaderRdefTypeIndex::kUint4Array8, sizeof(uint32_t) * 32},
+ };
+ 
+ void DxbcShaderTranslator::WriteResourceDefinition() {
+@@ -2320,6 +2322,10 @@ void DxbcShaderTranslator::WriteResourceDefinition() {
+   if (uav_index_edram_ != kBindingIndexUnallocated) {
+     name_ptr += dxbc::AppendAlignedString(shader_object_, "xe_edram");
+   }
++  uint32_t occlusion_counter_name_ptr = name_ptr;
++  if (uav_index_occlusion_counter_ != kBindingIndexUnallocated) {
++    name_ptr += dxbc::AppendAlignedString(shader_object_, "xe_occlusion_counter");
++  }
+ 
+   uint32_t bindings_position_dwords = uint32_t(shader_object_.size());
+ 
+@@ -2444,6 +2450,12 @@ void DxbcShaderTranslator::WriteResourceDefinition() {
+         uav.dimension = dxbc::RdefDimension::kUAVBuffer;
+         uav.sample_count = UINT32_MAX;
+         uav.bind_point = uint32_t(UAVRegister::kEdram);
++      } else if (i == uav_index_occlusion_counter_) {
++        uav.name_ptr = occlusion_counter_name_ptr;
++        uav.type = dxbc::RdefInputType::kUAVRWByteAddress;
++        uav.return_type = dxbc::ResourceReturnType::kMixed;
++        uav.dimension = dxbc::RdefDimension::kUAVBuffer;
++        uav.bind_point = uint32_t(UAVRegister::kOcclusionCounter);
+       } else {
+         assert_unhandled_case(i);
+       }
+@@ -3249,6 +3261,10 @@ void DxbcShaderTranslator::WriteShaderCode() {
+           dxbc::ResourceReturnTypeX4Token(dxbc::ResourceReturnType::kUInt),
+           dxbc::Src::U(dxbc::Src::Dcl, uav_index_edram_, uint32_t(UAVRegister::kEdram),
+                        uint32_t(UAVRegister::kEdram)));
++    } else if (i == uav_index_occlusion_counter_) {
++      ao_.OpDclUnorderedAccessViewRaw(
++          0, dxbc::Src::U(dxbc::Src::Dcl, i, uint32_t(UAVRegister::kOcclusionCounter),
++                          uint32_t(UAVRegister::kOcclusionCounter)));
+     } else {
+       assert_unhandled_case(i);
+     }
+diff --git a/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp b/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp
+index 31de175..9ba6d0b 100644
+--- a/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp
+@@ -1941,6 +1941,40 @@ void DxbcShaderTranslator::ProcessTextureFetchInstruction(
+         a_.OpBreak();
+         a_.OpEndSwitch();
+       }
++      // num_format is applied after signedness. A fixed-point format's host
++      // view returns normalized values, so for an integer num_format restore
++      // the guest integer range here.
++      uint32_t integer_scale_bits_temp = PushSystemTemp();
++      uint32_t integer_scale_temp = PushSystemTemp();
++      dxbc::Dest integer_scale_bits_dest(dxbc::Dest::R(
++          integer_scale_bits_temp, used_result_nonzero_components));
++      dxbc::Src integer_scale_bits_src(dxbc::Src::R(integer_scale_bits_temp));
++      dxbc::Dest integer_scale_dest(
++          dxbc::Dest::R(integer_scale_temp, used_result_nonzero_components));
++      dxbc::Src integer_scale_src(dxbc::Src::R(integer_scale_temp));
++      dxbc::Src integer_scale_bits_packed = LoadSystemConstant(
++          SystemConstants::Index::kTextureIntegerScaleBits,
++          offsetof(SystemConstants, texture_integer_scale_bits) +
++              sizeof(uint32_t) * tfetch_index,
++          dxbc::Src::kXXXX);
++      // Uniform early out. Zero means leave the sample alone. Only integer
++      // num_format on fixed textures has scale bits.
++      a_.OpIf(true, integer_scale_bits_packed);
++      a_.OpUBFE(integer_scale_bits_dest, dxbc::Src::LU(5),
++                dxbc::Src::LU(0, 5, 10, 15), integer_scale_bits_packed);
++      a_.OpAnd(integer_scale_dest, integer_scale_bits_src, dxbc::Src::LU(0xF));
++      a_.OpIAdd(integer_scale_dest, integer_scale_src, dxbc::Src::LU(1));
++      a_.OpUShR(integer_scale_bits_dest, integer_scale_bits_src,
++                dxbc::Src::LU(4));
++      a_.OpIAdd(integer_scale_dest, integer_scale_src, -integer_scale_bits_src);
++      a_.OpIShL(integer_scale_dest, dxbc::Src::LU(1), integer_scale_src);
++      a_.OpIAdd(integer_scale_dest, integer_scale_src, dxbc::Src::LI(-1));
++      a_.OpUToF(integer_scale_dest, integer_scale_src);
++      a_.OpMul(
++          dxbc::Dest::R(system_temp_result_, used_result_nonzero_components),
++          dxbc::Src::R(system_temp_result_), integer_scale_src);
++      a_.OpEndIf();
++      PopSystemTemp(2);
+     }
+     if (signs_temp != UINT32_MAX) {
+       PopSystemTemp();
+diff --git a/src/graphics/pipeline/shader/dxbc_translator_om.cpp b/src/graphics/pipeline/shader/dxbc_translator_om.cpp
+index a7d508a..7212b27 100644
+--- a/src/graphics/pipeline/shader/dxbc_translator_om.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator_om.cpp
+@@ -363,6 +363,9 @@ void DxbcShaderTranslator::StartPixelShader_LoadROVParameters() {
+ 
+ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+   uint32_t temp = PushSystemTemp();
++  // Record rejection reasons before the early-depth quad return. Stencil
++  // rejection takes precedence when a sample fails both tests.
++  uint32_t failure_masks = PushSystemTemp(0b0011);
+   dxbc::Dest temp_x_dest(dxbc::Dest::R(temp, 0b0001));
+   dxbc::Src temp_x_src(dxbc::Src::R(temp, dxbc::Src::kXXXX));
+   dxbc::Dest temp_y_dest(dxbc::Dest::R(temp, 0b0010));
+@@ -673,6 +676,8 @@ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+     // Depth test has failed.
+     a_.OpElse();
+     {
++      a_.OpOr(dxbc::Dest::R(failure_masks, 0b0001),
++              dxbc::Src::R(failure_masks, dxbc::Src::kXXXX), dxbc::Src::LU(1 << i));
+       // Exclude the bit from the covered sample mask.
+       // sample_temp.x = old depth/stencil
+       // sample_temp.y = old depth
+@@ -805,6 +810,10 @@ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+       // Stencil test has failed.
+       a_.OpElse();
+       {
++        a_.OpAnd(dxbc::Dest::R(failure_masks, 0b0001),
++                 dxbc::Src::R(failure_masks, dxbc::Src::kXXXX), dxbc::Src::LU(~uint32_t(1 << i)));
++        a_.OpOr(dxbc::Dest::R(failure_masks, 0b0010),
++                dxbc::Src::R(failure_masks, dxbc::Src::kYYYY), dxbc::Src::LU(1 << i));
+         // Extract the stencil fail operation.
+         // sample_temp.x = old depth/stencil
+         // sample_temp.y = stencil operation
+@@ -1016,6 +1025,12 @@ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+               dxbc::Src::LI((i & 1) ? -int32_t(tile_width) + 2 - i : int32_t(tile_width)));
+   }
+ 
++  // Early failures must be counted before the shader can reject the quad.
++  // Late tests are already after discard / alpha-to-coverage. Each failure
++  // is counted once, while surviving samples are counted in the epilogue.
++  ROV_AddCoverageToOcclusionCounter(failure_masks, 0, ROVOcclusionCounter::kZFail);
++  ROV_AddCoverageToOcclusionCounter(failure_masks, 1, ROVOcclusionCounter::kStencilFail);
++
+   if (ROV_IsDepthStencilEarly()) {
+     // Check if safe to discard the whole 2x2 quad early, without running the
+     // translated pixel shader, by checking if coverage is 0 in all pixels in
+@@ -1054,7 +1069,51 @@ void DxbcShaderTranslator::ROV_DepthStencilTest() {
+   // Close the large depth/stencil conditional.
+   a_.OpEndIf();
+ 
+-  // Release temp.
++  // Release failure_masks and temp.
++  PopSystemTemp(2);
++}
++
++void DxbcShaderTranslator::ROV_AddCoverageToOcclusionCounter(
++    uint32_t mask_temp, uint32_t component, ROVOcclusionCounter counter) {
++  uint32_t temp = PushSystemTemp();
++  dxbc::Dest count_dest(dxbc::Dest::R(temp, 0b0001));
++  dxbc::Src count_src(dxbc::Src::R(temp, dxbc::Src::kXXXX));
++  dxbc::Dest address_dest(dxbc::Dest::R(temp, 0b0010));
++  dxbc::Src address_src(dxbc::Src::R(temp, dxbc::Src::kYYYY));
++  a_.OpAnd(count_dest, LoadFlagsSystemConstant(), dxbc::Src::LU(kSysFlag_ROVOcclusionQuery));
++  a_.OpIf(true, count_src);
++  {
++    a_.OpAnd(count_dest, dxbc::Src::R(mask_temp).Select(component), dxbc::Src::LU(15));
++    a_.OpUShR(address_dest, count_src, dxbc::Src::LU(1));
++    a_.OpAnd(address_dest, address_src, dxbc::Src::LU(5));
++    a_.OpIAdd(count_dest, count_src, -address_src);
++    a_.OpUShR(address_dest, count_src, dxbc::Src::LU(2));
++    a_.OpAnd(count_dest, count_src, dxbc::Src::LU(3));
++    a_.OpIAdd(count_dest, count_src, address_src);
++    a_.OpIf(true, count_src);
++    {
++      uint32_t position = PushSystemTemp();
++      in_position_used_ |= 0b0011;
++      a_.OpFToU(dxbc::Dest::R(position, 3), dxbc::Src::V1D(in_reg_ps_position_));
++      a_.OpUMAd(address_dest, dxbc::Src::R(position, dxbc::Src::kYYYY),
++                dxbc::Src::LU(64), dxbc::Src::R(position, dxbc::Src::kXXXX));
++      a_.OpAnd(address_dest, address_src, dxbc::Src::LU(kROVOcclusionBucketCount - 1));
++      a_.OpIShL(address_dest, address_src, dxbc::Src::LU(2));
++      if (counter != ROVOcclusionCounter::kZPass) {
++        a_.OpIAdd(address_dest, address_src,
++                  dxbc::Src::LU(uint32_t(counter) * kROVOcclusionBucketCount * sizeof(uint32_t)));
++      }
++      if (uav_index_occlusion_counter_ == kBindingIndexUnallocated) {
++        uav_index_occlusion_counter_ = uav_count_++;
++      }
++      a_.OpAtomicIAdd(
++          dxbc::Dest::U(uav_index_occlusion_counter_, uint32_t(UAVRegister::kOcclusionCounter)),
++          address_src, 1, count_src);
++      PopSystemTemp();
++    }
++    a_.OpEndIf();
++  }
++  a_.OpEndIf();
+   PopSystemTemp();
+ }
+ 
+@@ -1869,6 +1928,11 @@ void DxbcShaderTranslator::CompletePixelShader_WriteToROV() {
+   // system_temp_rov_params_.y (the depth / stencil sample address) is not
+   // needed anymore, can be used for color writing.
+ 
++  // Native queries cannot see ROV depth/stencil. Count surviving guest samples
++  // after alpha-to-coverage and early/late depth; failures were counted by the
++  // depth/stencil test before any early rejection.
++  ROV_AddCoverageToOcclusionCounter(system_temp_rov_params_, 0, ROVOcclusionCounter::kZPass);
++
+   if (!is_depth_only_pixel_shader_) {
+     // Check if any sample is still covered after depth testing and writing,
+     // skip color writing completely in this case.
+diff --git a/src/graphics/pipeline/texture/cache.cpp b/src/graphics/pipeline/texture/cache.cpp
+index 76f5600..37add91 100644
+--- a/src/graphics/pipeline/texture/cache.cpp
++++ b/src/graphics/pipeline/texture/cache.cpp
+@@ -492,6 +492,7 @@ void TextureCache::RequestTextures(uint32_t used_texture_mask) {
+     TextureBinding& binding = texture_bindings_[index];
+     xenos::xe_gpu_texture_fetch_t fetch = regs.GetTextureFetch(index);
+     TextureKey old_key = binding.key;
++    uint32_t old_integer_scale_bits = binding.integer_scale_bits;
+     uint8_t old_swizzled_signs = binding.swizzled_signs;
+     BindingInfoFromFetchConstant(fetch, binding.key, &binding.swizzled_signs);
+     texture_bindings_in_sync_ |= index_bit;
+@@ -504,6 +505,8 @@ void TextureCache::RequestTextures(uint32_t used_texture_mask) {
+     }
+     uint32_t old_host_swizzle = binding.host_swizzle;
+     binding.host_swizzle = GuestToHostSwizzle(fetch.swizzle, GetHostFormatSwizzle(binding.key));
++    binding.integer_scale_bits = FormatInfo::Get(fetch.format)->GetIntegerScaleBits(
++        fetch.num_format, binding.host_swizzle, binding.swizzled_signs);
+ 
+     // Check if need to load the unsigned and the signed versions of the texture
+     // (if the format is emulated with different host bit representations for
+@@ -513,7 +516,8 @@ void TextureCache::RequestTextures(uint32_t used_texture_mask) {
+     bool any_sign_was_signed = texture_util::IsAnySignSigned(old_swizzled_signs);
+     bool any_sign_is_not_signed = texture_util::IsAnySignNotSigned(binding.swizzled_signs);
+     bool any_sign_is_signed = texture_util::IsAnySignSigned(binding.swizzled_signs);
+-    if (key_changed || binding.host_swizzle != old_host_swizzle ||
++    if (key_changed || binding.integer_scale_bits != old_integer_scale_bits ||
++        binding.host_swizzle != old_host_swizzle ||
+         any_sign_is_not_signed != any_sign_was_not_signed ||
+         any_sign_is_signed != any_sign_was_signed) {
+       bindings_changed |= index_bit;
+diff --git a/src/graphics/pipeline/texture/info_formats.cpp b/src/graphics/pipeline/texture/info_formats.cpp
+index c456e1e..0721b53 100644
+--- a/src/graphics/pipeline/texture/info_formats.cpp
++++ b/src/graphics/pipeline/texture/info_formats.cpp
+@@ -17,77 +17,97 @@ namespace rex::graphics {
+ 
+ using namespace rex::graphics::xenos;
+ 
+-#define FORMAT_INFO(texture_format, format, block_width, block_height, bits_per_pixel) \
+-    {xenos::TextureFormat::texture_format, #texture_format, FormatType::format, block_width, block_height, bits_per_pixel}
++#define FORMAT_INFO(texture_format, format, block_width, block_height, bits_per_pixel, r, g, b, a, fixed) \
++    {xenos::TextureFormat::texture_format, #texture_format, FormatType::format, block_width, block_height, bits_per_pixel, {r, g, b, a}, fixed}
+ const FormatInfo* FormatInfo::Get(uint32_t gpu_format) {
+   static const FormatInfo format_infos[64] = {
+-      FORMAT_INFO(k_1_REVERSE                , kUncompressed, 1, 1, 1),
+-      FORMAT_INFO(k_1                        , kUncompressed, 1, 1, 1),
+-      FORMAT_INFO(k_8                        , kResolvable,   1, 1, 8),
+-      FORMAT_INFO(k_1_5_5_5                  , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_5_6_5                    , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_6_5_5                    , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_8_8_8_8                  , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_2_10_10_10               , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_8_A                      , kResolvable,   1, 1, 8),
+-      FORMAT_INFO(k_8_B                      , kResolvable,   1, 1, 8),
+-      FORMAT_INFO(k_8_8                      , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_Cr_Y1_Cb_Y0_REP          , kCompressed,   2, 1, 16),
+-      FORMAT_INFO(k_Y1_Cr_Y0_Cb_REP          , kCompressed,   2, 1, 16),
+-      FORMAT_INFO(k_16_16_EDRAM              , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_8_8_8_8_A                , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_4_4_4_4                  , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_10_11_11                 , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_11_11_10                 , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_DXT1                     , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_DXT2_3                   , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_DXT4_5                   , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_16_16_16_16_EDRAM        , kUncompressed, 1, 1, 64),
+-      FORMAT_INFO(k_24_8                     , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_24_8_FLOAT               , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_16                       , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_16_16                    , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_16_16_16_16              , kResolvable,   1, 1, 64),
+-      FORMAT_INFO(k_16_EXPAND                , kUncompressed, 1, 1, 16),
+-      FORMAT_INFO(k_16_16_EXPAND             , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_16_16_16_16_EXPAND       , kUncompressed, 1, 1, 64),
+-      FORMAT_INFO(k_16_FLOAT                 , kResolvable,   1, 1, 16),
+-      FORMAT_INFO(k_16_16_FLOAT              , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_16_16_16_16_FLOAT        , kResolvable,   1, 1, 64),
+-      FORMAT_INFO(k_32                       , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_32_32                    , kUncompressed, 1, 1, 64),
+-      FORMAT_INFO(k_32_32_32_32              , kUncompressed, 1, 1, 128),
+-      FORMAT_INFO(k_32_FLOAT                 , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_32_32_FLOAT              , kResolvable,   1, 1, 64),
+-      FORMAT_INFO(k_32_32_32_32_FLOAT        , kResolvable,   1, 1, 128),
+-      FORMAT_INFO(k_32_AS_8                  , kCompressed,   4, 1, 8),
+-      FORMAT_INFO(k_32_AS_8_8                , kCompressed,   2, 1, 16),
+-      FORMAT_INFO(k_16_MPEG                  , kUncompressed, 1, 1, 16),
+-      FORMAT_INFO(k_16_16_MPEG               , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_8_INTERLACED             , kUncompressed, 1, 1, 8),
+-      FORMAT_INFO(k_32_AS_8_INTERLACED       , kCompressed,   4, 1, 8),
+-      FORMAT_INFO(k_32_AS_8_8_INTERLACED     , kCompressed,   1, 1, 16),
+-      FORMAT_INFO(k_16_INTERLACED            , kUncompressed, 1, 1, 16),
+-      FORMAT_INFO(k_16_MPEG_INTERLACED       , kUncompressed, 1, 1, 16),
+-      FORMAT_INFO(k_16_16_MPEG_INTERLACED    , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_DXN                      , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_8_8_8_8_AS_16_16_16_16   , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_DXT1_AS_16_16_16_16      , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_DXT2_3_AS_16_16_16_16    , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_DXT4_5_AS_16_16_16_16    , kCompressed,   4, 4, 8),
+-      FORMAT_INFO(k_2_10_10_10_AS_16_16_16_16, kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_10_11_11_AS_16_16_16_16  , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_11_11_10_AS_16_16_16_16  , kResolvable,   1, 1, 32),
+-      FORMAT_INFO(k_32_32_32_FLOAT           , kUncompressed, 1, 1, 96),
+-      FORMAT_INFO(k_DXT3A                    , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_DXT5A                    , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_CTX1                     , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_DXT3A_AS_1_1_1_1         , kCompressed,   4, 4, 4),
+-      FORMAT_INFO(k_8_8_8_8_GAMMA_EDRAM      , kUncompressed, 1, 1, 32),
+-      FORMAT_INFO(k_2_10_10_10_FLOAT_EDRAM   , kUncompressed, 1, 1, 32),
++      FORMAT_INFO(k_1_REVERSE                , kUncompressed, 1, 1, 1, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_1                        , kUncompressed, 1, 1, 1, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_8                        , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_1_5_5_5                  , kResolvable,   1, 1, 16, 5, 5, 5, 1, true),
++      FORMAT_INFO(k_5_6_5                    , kResolvable,   1, 1, 16, 5, 6, 5, 0, true),
++      FORMAT_INFO(k_6_5_5                    , kResolvable,   1, 1, 16, 5, 5, 6, 0, true),
++      FORMAT_INFO(k_8_8_8_8                  , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
++      FORMAT_INFO(k_2_10_10_10               , kResolvable,   1, 1, 32, 10, 10, 10, 2, true),
++      FORMAT_INFO(k_8_A                      , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_8_B                      , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_8_8                      , kResolvable,   1, 1, 16, 8, 8, 0, 0, true),
++      FORMAT_INFO(k_Cr_Y1_Cb_Y0_REP          , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_Y1_Cr_Y0_Cb_REP          , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_EDRAM              , kUncompressed, 1, 1, 32, 16, 16, 0, 0, true),
++      FORMAT_INFO(k_8_8_8_8_A                , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
++      FORMAT_INFO(k_4_4_4_4                  , kResolvable,   1, 1, 16, 4, 4, 4, 4, true),
++      FORMAT_INFO(k_10_11_11                 , kResolvable,   1, 1, 32, 11, 11, 10, 0, true),
++      FORMAT_INFO(k_11_11_10                 , kResolvable,   1, 1, 32, 10, 11, 11, 0, true),
++      FORMAT_INFO(k_DXT1                     , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT2_3                   , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT4_5                   , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_16_16_EDRAM        , kUncompressed, 1, 1, 64, 16, 16, 16, 16, true),
++      FORMAT_INFO(k_24_8                     , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_24_8_FLOAT               , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16                       , kResolvable,   1, 1, 16, 16, 0, 0, 0, true),
++      FORMAT_INFO(k_16_16                    , kResolvable,   1, 1, 32, 16, 16, 0, 0, true),
++      FORMAT_INFO(k_16_16_16_16              , kResolvable,   1, 1, 64, 16, 16, 16, 16, true),
++      FORMAT_INFO(k_16_EXPAND                , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_EXPAND             , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_16_16_EXPAND       , kUncompressed, 1, 1, 64, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_FLOAT                 , kResolvable,   1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_FLOAT              , kResolvable,   1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_16_16_FLOAT        , kResolvable,   1, 1, 64, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32                       , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_32                    , kUncompressed, 1, 1, 64, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_32_32_32              , kUncompressed, 1, 1, 128, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_FLOAT                 , kResolvable,   1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_32_FLOAT              , kResolvable,   1, 1, 64, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_32_32_32_FLOAT        , kResolvable,   1, 1, 128, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_AS_8                  , kCompressed,   4, 1, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_AS_8_8                , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_MPEG                  , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_MPEG               , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_8_INTERLACED             , kUncompressed, 1, 1, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_AS_8_INTERLACED       , kCompressed,   4, 1, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_32_AS_8_8_INTERLACED     , kCompressed,   1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_INTERLACED            , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_MPEG_INTERLACED       , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_16_16_MPEG_INTERLACED    , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXN                      , kCompressed,   4, 4, 8, 8, 8, 0, 0, true),
++      FORMAT_INFO(k_8_8_8_8_AS_16_16_16_16   , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
++      FORMAT_INFO(k_DXT1_AS_16_16_16_16      , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT2_3_AS_16_16_16_16    , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT4_5_AS_16_16_16_16    , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_2_10_10_10_AS_16_16_16_16, kResolvable,   1, 1, 32, 10, 10, 10, 2, true),
++      FORMAT_INFO(k_10_11_11_AS_16_16_16_16  , kResolvable,   1, 1, 32, 11, 11, 10, 0, true),
++      FORMAT_INFO(k_11_11_10_AS_16_16_16_16  , kResolvable,   1, 1, 32, 10, 11, 11, 0, true),
++      FORMAT_INFO(k_32_32_32_FLOAT           , kUncompressed, 1, 1, 96, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_DXT3A                    , kCompressed,   4, 4, 4, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_DXT5A                    , kCompressed,   4, 4, 4, 8, 0, 0, 0, true),
++      FORMAT_INFO(k_CTX1                     , kCompressed,   4, 4, 4, 8, 8, 0, 0, true),
++      FORMAT_INFO(k_DXT3A_AS_1_1_1_1         , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
++      FORMAT_INFO(k_8_8_8_8_GAMMA_EDRAM      , kUncompressed, 1, 1, 32, 8, 8, 8, 8, true),
++      FORMAT_INFO(k_2_10_10_10_FLOAT_EDRAM   , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+   };
+   return &format_infos[gpu_format];
+ }
+ #undef FORMAT_INFO
+ 
++
++// Adapted from Xenia Canary d119505: 5 bits per output component.
++// Zero in a lane means scale 1, preserving constant 0/1 swizzles.
++uint32_t FormatInfo::GetIntegerScaleBits(uint32_t num_format, uint32_t host_swizzle,
++                                        uint8_t swizzled_signs) const {
++  if (!num_format || !fixed) return 0;
++  uint32_t packed = 0;
++  for (uint32_t i = 0; i < 4; ++i) {
++    uint32_t source = (host_swizzle >> (3 * i)) & 7;
++    if (source >= xenos::XE_GPU_TEXTURE_SWIZZLE_0) continue;
++    auto sign = xenos::TextureSign((swizzled_signs >> (2 * i)) & 3);
++    uint32_t width = component_bits[source];
++    if (!width || width > 16 || sign == xenos::TextureSign::kGamma) continue;
++    uint32_t lane = width - 1;
++    if (sign == xenos::TextureSign::kSigned) lane |= 16;
++    packed |= lane << (5 * i);
++  }
++  return packed;
++}
++
+ }  //  namespace rex::graphics
+diff --git a/src/graphics/util/draw.cpp b/src/graphics/util/draw.cpp
+index 305380e..ebf8fd8 100644
+--- a/src/graphics/util/draw.cpp
++++ b/src/graphics/util/draw.cpp
+@@ -10,7 +10,10 @@
+  */
+ 
+ #include <algorithm>
++#include <array>
++#include <bit>
+ #include <cmath>
++#include <set>
+ 
+ #include <rex/assert.h>
+ #include <rex/cvar.h>
+@@ -27,6 +30,8 @@
+ #include <rex/ui/graphics_util.h>
+ 
+ REXCVAR_DEFINE_BOOL(half_pixel_offset, true, "GPU", "Enable half pixel offset");
++REXCVAR_DEFINE_BOOL(resolve_diagnostics, false, "GPU",
++                    "Log at most 256 distinct resolve states on the GPU thread");
+ 
+ REXCVAR_DEFINE_BOOL(resolve_resolution_scale_fill_half_pixel_offset, true, "GPU",
+                     "Fill half pixel offset during resolution scale resolve");
+@@ -798,10 +803,11 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
+   // Most vertices have a negative half-pixel offset applied, which we reverse.
+   float half_pixel_offset =
+       regs.Get<reg::PA_SU_VTX_CNTL>().pix_center == xenos::PixelCenter::kD3DZero ? 0.5f : 0.0f;
++  float vertices[6];
+   int32_t vertices_fixed[6];
+   for (size_t i = 0; i < rex::countof(vertices_fixed); ++i) {
+-    vertices_fixed[i] = ui::FloatToD3D11Fixed16p8(xenos::GpuSwap(vertices_guest[i], fetch.endian) +
+-                                                  half_pixel_offset);
++    vertices[i] = xenos::GpuSwap(vertices_guest[i], fetch.endian);
++    vertices_fixed[i] = ui::FloatToD3D11Fixed16p8(vertices[i] + half_pixel_offset);
+   }
+   // Inclusive.
+   int32_t x0 = std::min(std::min(vertices_fixed[0], vertices_fixed[2]), vertices_fixed[4]);
+@@ -882,6 +888,36 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
+     y1 = y0 + int32_t(xenos::kMaxResolveSize);
+   }
+ 
++  if (REXCVAR_GET(resolve_diagnostics)) {
++    // Capture the values consumed by this resolve. A presenter-side register
++    // snapshot can mix different commands and cannot explain a failed draw.
++    const std::array<uint32_t, 16> key = {
++        regs[XE_GPU_REG_RB_COPY_CONTROL], regs[XE_GPU_REG_RB_SURFACE_INFO],
++        regs[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL], regs[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR],
++        regs[XE_GPU_REG_PA_SC_SCREEN_SCISSOR_TL], regs[XE_GPU_REG_PA_SC_SCREEN_SCISSOR_BR],
++        regs[XE_GPU_REG_PA_SC_WINDOW_OFFSET], regs[XE_GPU_REG_PA_SU_SC_MODE_CNTL],
++        regs[XE_GPU_REG_PA_SU_VTX_CNTL], regs[XE_GPU_REG_RB_COPY_DEST_INFO],
++        std::bit_cast<uint32_t>(vertices[0]), std::bit_cast<uint32_t>(vertices[1]),
++        std::bit_cast<uint32_t>(vertices[2]), std::bit_cast<uint32_t>(vertices[3]),
++        std::bit_cast<uint32_t>(vertices[4]), std::bit_cast<uint32_t>(vertices[5])};
++    static thread_local std::set<std::array<uint32_t, 16>> seen;
++    if (seen.size() < 256 && seen.insert(key).second) {
++      REXGPU_WARN(
++          "Resolve diagnostic #{}: empty={} src={} command={} pitch={} msaa={} "
++          "fetch={:08X} vertices=[{},{},{},{},{},{}] half_pixel={} "
++          "offset=[{},{}] offset_enable={} scissor=[{},{},{},{}] rect=[{},{},{},{}] "
++          "copy_control={:08X} dest_info={:08X} window_tl={:08X} window_br={:08X}",
++          seen.size(), x0 >= x1 || y0 >= y1, uint32_t(rb_copy_control.copy_src_select),
++          uint32_t(rb_copy_control.copy_command), uint32_t(rb_surface_info.surface_pitch),
++          uint32_t(rb_surface_info.msaa_samples), uint32_t(fetch.address * 4),
++          vertices[0], vertices[1], vertices[2], vertices[3], vertices[4], vertices[5],
++          half_pixel_offset, int32_t(pa_sc_window_offset.window_x_offset),
++          int32_t(pa_sc_window_offset.window_y_offset),
++          bool(regs.Get<reg::PA_SU_SC_MODE_CNTL>().vtx_window_offset_enable),
++          scissor.offset[0], scissor.offset[1], scissor_right, scissor_bottom,
++          x0, y0, x1, y1, key[0], key[9], key[2], key[3]);
++    }
++  }
+   assert_true(x0 < x1 && y0 < y1);
+   if (x0 >= x1 || y0 >= y1) {
+     REXGPU_ERROR("Resolve region is empty");
+diff --git a/src/input/input_system.cpp b/src/input/input_system.cpp
+index 813bb1c..d03ee81 100644
+--- a/src/input/input_system.cpp
++++ b/src/input/input_system.cpp
+@@ -11,6 +11,8 @@
+ 
+ #include <algorithm>
+ #include <cmath>
++#include <cstring>
++#include <map>
+ 
+ #include <rex/dbg.h>
+ #include <rex/input/device_assignment.h>
+@@ -28,6 +30,8 @@ REXCVAR_DEFINE_STRING(input_backend, "sdl", "Input", "Input backend: sdl, xinput
+     .allowed({"sdl", "xinput"});
+ 
+ REXCVAR_DEFINE_BOOL(guide_button, false, "Input", "Enable guide button pass-through");
++REXCVAR_DEFINE_BOOL(input_diagnostics, false, "Input",
++                    "Log bounded source and merged controller button changes");
+ namespace rex::input {
+ 
+ namespace {
+@@ -214,7 +218,7 @@ X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,
+ 
+ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
+   SCOPE_profile_cpu_f("hid");
+-  if (!assignment_) {
++  if (!assignment_ || user_index >= kMaxGuestUsers) {
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
+ 
+@@ -233,6 +237,18 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
+     if (driver->GetDeviceState(id, &state) != X_ERROR_SUCCESS) {
+       continue;
+     }
++    if (REXCVAR_GET(input_diagnostics)) {
++      static thread_local std::map<DeviceId, uint16_t> last_buttons;
++      static thread_local unsigned logged = 0;
++      const auto buttons = uint16_t(state.gamepad.buttons);
++      auto found = last_buttons.find(id);
++      if ((found == last_buttons.end() || found->second != buttons) && logged < 128) {
++        ++logged;
++        REXLOG_INFO("Input source: user={} id={:X} packet={} buttons={:04X}",
++                    user_index, uint64_t(id), uint32_t(state.packet_number), buttons);
++      }
++      last_buttons[id] = buttons;
++    }
+     active_devices_.Observe(user_index, id, state.gamepad);
+     if (!any) {
+       merged = state;
+@@ -243,8 +259,28 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
+   }
+ 
+   if (!any) {
++    merged_states_valid_[user_index] = false;
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
++  auto& previous = merged_states_[user_index];
++  uint32_t packet = previous.packet_number;
++  const bool state_changed = !merged_states_valid_[user_index] ||
++      std::memcmp(&previous.gamepad, &merged.gamepad, sizeof(merged.gamepad)) != 0;
++  if (state_changed) {
++    ++packet;
++  }
++  merged.packet_number = packet;
++  if (REXCVAR_GET(input_diagnostics) && state_changed) {
++    static thread_local unsigned logged = 0;
++    if (logged++ < 128)
++      REXLOG_INFO("Input merged: user={} packet={} buttons={:04X} output={} lt={} rt={} sticks=[{},{},{},{}]",
++                  user_index, packet, uint16_t(merged.gamepad.buttons), out_state != nullptr,
++                  merged.gamepad.left_trigger, merged.gamepad.right_trigger,
++                  int16_t(merged.gamepad.thumb_lx), int16_t(merged.gamepad.thumb_ly),
++                  int16_t(merged.gamepad.thumb_rx), int16_t(merged.gamepad.thumb_ry));
++  }
++  previous = merged;
++  merged_states_valid_[user_index] = true;
+   if (out_state) {
+     *out_state = merged;
+   }
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp b/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp
+index bd5de65..6a9e183 100644
+--- a/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp
+@@ -278,7 +278,7 @@ u32 NtSetInformationFile_entry(u32 file_handle, ppc_ptr_t<X_IO_STATUS_BLOCK> io_
+     case XFileDispositionInformation: {
+       auto info = info_ptr.as<X_FILE_DISPOSITION_INFORMATION*>();
+       bool delete_on_close = info->delete_file ? true : false;
+-      file->entry()->SetForDeletion(delete_on_close);
++      result = file->entry()->SetForDeletion(delete_on_close);
+       out_length = 0;
+       REXKRNL_WARN("NtSetInformationFile set deleting flag for {} on close to: {}", file->name(),
+                    delete_on_close);
+diff --git a/src/system/kernel_state.cpp b/src/system/kernel_state.cpp
+index 697399c..7f0b36a 100644
+--- a/src/system/kernel_state.cpp
++++ b/src/system/kernel_state.cpp
+@@ -810,6 +810,9 @@ object_ref<UserModule> KernelState::LoadUserModule(const std::string_view raw_na
+ 
+   {
+     auto global_lock = global_critical_region_.Acquire();
++    if (recomp) {
++      loaded_module_recompiled_keys_.emplace(module.get(), recomp->guest_path);
++    }
+     user_modules_.push_back(module);
+   }
+ 
+@@ -853,7 +856,10 @@ void KernelState::UnloadUserModule(const object_ref<UserModule>& module, bool ca
+   {
+     auto global_lock = global_critical_region_.Acquire();
+ 
+-    auto recomp = FindRecompiledModule(module->path());
++    const auto loaded_key = loaded_module_recompiled_keys_.find(module.get());
++    auto recomp = FindRecompiledModule(loaded_key != loaded_module_recompiled_keys_.end()
++                                          ? loaded_key->second
++                                          : module->path());
+     if (recomp) {
+       const std::string& key = recomp->guest_path;
+       auto cleared_range = function_dispatcher_->UnregisterModule(key);
+@@ -880,6 +886,7 @@ void KernelState::UnloadUserModule(const object_ref<UserModule>& module, bool ca
+     }
+ 
+     if (found_module) {
++      loaded_module_recompiled_keys_.erase(module.get());
+       object_table()->ReleaseHandle(module->handle());
+     }
+   }
+diff --git a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
+index f102b56..271e91c 100644
+--- a/thirdparty/CMakeLists.txt
++++ b/thirdparty/CMakeLists.txt
+@@ -125,8 +125,9 @@ target_include_directories(aes128 PUBLIC
+ target_compile_options(aes128 PRIVATE -w)
+ 
+ # libmspack - LZX decompression (only lzxd.c needed for XEX decompression)
+-# Uses cabextract version which has all needed headers in one place
+-set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/cabextract/mspack")
++# Use the real files: cabextract/mspack consists of symlinks, which Git may
++# check out as plain-text path files on Windows without symlink support.
++set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/libmspack/mspack")
+ add_library(mspack STATIC
+     ${MSPACK_DIR}/lzxd.c
+ )

@@ -11,16 +11,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/src")
 include(generated/rexglue.cmake)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(FM4_LOADED_IMAGE "${CMAKE_CURRENT_SOURCE_DIR}/../fm4/loaded-image.bin" CACHE FILEPATH
+    "Private image dumped from the user's executable by the build workflow")
 add_custom_command(TARGET fm4_rex_codegen POST_BUILD
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/guard-generated.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/generated/default"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../fm4/loaded-image.bin"
+        "${FM4_LOADED_IMAGE}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/guard-generated.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/generated/xmedia"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../fm4/loaded-image.bin" --module
+        "${FM4_LOADED_IMAGE}" --module
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/guard-generated.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/generated/speech"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../fm4/loaded-image.bin" --module
+        "${FM4_LOADED_IMAGE}" --module
     VERBATIM)
 
 # Sources
