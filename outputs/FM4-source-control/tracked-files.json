@@ -58,6 +58,22 @@
       "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
     },
     {
+      "path": "outputs/FM4-build/e2e/README.txt",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/e2e/e2e.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/e2e/jev.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/e2e/ocr-server.ps1",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
       "path": "outputs/FM4-build/fm4_bounds.toml",
       "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
     },
@@ -175,6 +191,10 @@
     },
     {
       "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/xesl.xesli",
+      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
+    },
+    {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/util/perf_trace.h",
       "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
     },
     {

@@ -101,6 +101,17 @@ KETERBATASAN DAN MASALAH YANG MASIH ADA
   migrasi profil antar-build/komputer belum dijamin. Workflow memakai profil
   lokal tersendiri dan tidak menyalin save lama secara otomatis.
 
+PENGUKURAN PERFORMA (13 OKTOBER 2026)
+------------------------------------
+- Diukur dengan e2e/e2e.py --goal quickrace (Quick Race Bernese Alps, kamera
+  kokpit, 30 detik terakhir balapan) pada komputer pengembangan: FPS median
+  24-30, minimum sekitar 19-24.
+- Thread command processor GPU menghabiskan sekitar 150-260 ms per detik
+  menunggu resolve readback sinkron (--readback_resolve=full) dan 250-335 ms per
+  detik menunggu occlusion query ROV, tetapi hampir tidak pernah menunggu
+  perintah dari game. Hambatan utama saat ini adalah sinkronisasi GPU-CPU, bukan
+  kode game hasil recompilation. Angka ini adalah baseline, bukan target.
+
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------
 1. Clone dan jalankan seluruh workflow pada komputer Windows kedua.

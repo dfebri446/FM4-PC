@@ -79,8 +79,16 @@ What happens
 All private output is under BuildRoot: project/generated, loaded-image.bin,
 game-build, local.json, user-data, cache and logs. Input discs are read in place;
 game-relative writes are disabled. A separate new profile is used. Nothing is
-uploaded. BuildRoot defaults to work/portable-fm4, ignored by this repository.
-Never commit or publish BuildRoot or a package of its contents.
+uploaded by setup/generate/build/run. BuildRoot defaults to work/portable-fm4,
+ignored by this repository. Never commit or publish BuildRoot or a package of
+its contents.
+
+End-to-end tests
+----------------
+e2e/e2e.py launches a built BuildRoot, drives a diagnostic controller and
+records captures, a per-second GPU stall trace and a summary. Its optional goal
+mode navigates menus with the Jev model and sends OCR'd screen text to
+TypeSafe; see e2e/README.txt before using it.
 
 Tracked content / provenance
 ----------------------------
