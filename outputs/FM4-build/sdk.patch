@@ -1177,7 +1177,7 @@ index c456e1e..0721b53 100644
 +
  }  //  namespace rex::graphics
 diff --git a/src/graphics/util/draw.cpp b/src/graphics/util/draw.cpp
-index 305380e..ebf8fd8 100644
+index 305380e..4ba011f 100644
 --- a/src/graphics/util/draw.cpp
 +++ b/src/graphics/util/draw.cpp
 @@ -10,7 +10,10 @@
@@ -1214,10 +1214,11 @@ index 305380e..ebf8fd8 100644
    }
    // Inclusive.
    int32_t x0 = std::min(std::min(vertices_fixed[0], vertices_fixed[2]), vertices_fixed[4]);
-@@ -882,6 +888,36 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
+@@ -882,10 +888,43 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
      y1 = y0 + int32_t(xenos::kMaxResolveSize);
    }
  
+-  assert_true(x0 < x1 && y0 < y1);
 +  if (REXCVAR_GET(resolve_diagnostics)) {
 +    // Capture the values consumed by this resolve. A presenter-side register
 +    // snapshot can mix different commands and cannot explain a failed draw.
@@ -1248,9 +1249,18 @@ index 305380e..ebf8fd8 100644
 +          x0, y0, x1, y1, key[0], key[9], key[2], key[3]);
 +    }
 +  }
-   assert_true(x0 < x1 && y0 < y1);
++  // With predicated tiling, D3D9 issues the resolve of every tile in each tile
++  // pass and relies on the tile's window offset and scissor to clip the others
++  // away. That is a valid no-op, not an error: leave the extent zero so that
++  // the backend skips the copy and the clear.
    if (x0 >= x1 || y0 >= y1) {
-     REXGPU_ERROR("Resolve region is empty");
+-    REXGPU_ERROR("Resolve region is empty");
+-    return false;
++    REXGPU_NOISY_DEBUG("Resolve region is empty");
++    return true;
+   }
+ 
+   info_out.coordinate_info.width_div_8 = uint32_t(x1 - x0) >> xenos::kResolveAlignmentPixelsLog2;
 diff --git a/src/input/input_system.cpp b/src/input/input_system.cpp
 index 813bb1c..d03ee81 100644
 --- a/src/input/input_system.cpp
