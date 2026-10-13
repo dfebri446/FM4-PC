@@ -161,24 +161,48 @@ def generate(root, disc1, disc2, jobs):
     state = {'disc1':str(disc1),'disc2':str(disc2) if disc2 else None,'executables':XEX_HASHES}
     (root/'local.json').write_text(json.dumps(state,indent=2),encoding='utf-8')
 
-def build_game(root,jobs):
-    project, install, build = root/'project',root/'sdk-install',root/'game-build'
+FLAVORS = ('thinlto','v3','pgo-gen','pgo-use')
+
+def game_build_dir(root,flavor=()):
+    """game-build for the default build; game-build-<flavor> for opt-in compiler experiments."""
+    return root/('game-build' if not flavor else 'game-build-'+'-'.join(sorted(flavor)))
+
+def flavor_flags(root,flavor):
+    # Opt-in only: the default flags stay -march=x86-64-v2 without LTO/PGO. The project keeps
+    # its own floating-point flags (-ffp-model=strict); these only add to them.
+    flags=['-march=x86-64-v3' if 'v3' in flavor else '-march=x86-64-v2']
+    if 'thinlto' in flavor: flags.append('-flto=thin')
+    profile_dir=root/'pgo'
+    if 'pgo-gen' in flavor: flags.append(f'-fprofile-generate={profile_dir.as_posix()}')
+    if 'pgo-use' in flavor:
+        profile=profile_dir/'fm4.profdata'
+        if not profile.is_file():
+            raise RuntimeError(f'Missing {profile}; merge the pgo-gen *.profraw files with llvm-profdata first.')
+        flags+=[f'-fprofile-use={profile.as_posix()}','-Wno-profile-instr-out-of-date','-Wno-profile-instr-unprofiled']
+    return ' '.join(flags)
+
+def build_game(root,jobs,flavor=()):
+    project, install, build = root/'project',root/'sdk-install',game_build_dir(root,flavor)
     if not (root/'local.json').is_file():
         raise RuntimeError('Run generate first.')
     state=json.loads((root/'local.json').read_text())
     validate_discs(state['disc1'],state['disc2'])
+    suffix=build.name[len('game-build'):]
+    linker=['-DCMAKE_EXE_LINKER_FLAGS=/opt:lldltojobs='+str(jobs)] if 'thinlto' in flavor else []
     run(['cmake','-S',project,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
-         '-DCMAKE_CXX_COMPILER=clang++','-DCMAKE_CXX_FLAGS=-march=x86-64-v2',
+         '-DCMAKE_CXX_COMPILER=clang++',f'-DCMAKE_CXX_FLAGS={flavor_flags(root,flavor)}',*linker,
          f'-DCMAKE_PREFIX_PATH={install}',f'-DPython3_EXECUTABLE={sys.executable}',
-         f'-DFM4_LOADED_IMAGE={root / "loaded-image.bin"}'],log=root/'logs/game-configure.log')
-    run(['cmake','--build',build,'--parallel',jobs],log=root/'logs/game-build.log')
+         f'-DFM4_LOADED_IMAGE={root / "loaded-image.bin"}'],log=root/f'logs/game-configure{suffix}.log')
+    started=time.time()
+    run(['cmake','--build',build,'--parallel',jobs],log=root/f'logs/game-build{suffix}.log')
+    print(f'Game build took {time.time()-started:.0f} s.')
     # Always stage the matching patched runtime/plugin, including incremental builds.
     for dll in (install/'bin').glob('*.dll'):
         shutil.copyfile(dll,build/dll.name)
-    run([build/'fm4_instruction_tests.exe'],cwd=build,log=root/'logs/instruction-tests.log')
+    run([build/'fm4_instruction_tests.exe'],cwd=build,log=root/f'logs/instruction-tests{suffix}.log')
     artifacts = ['fm4_rex.exe','fm4_rex_XMediaFacade_default.dll','fm4_rex_SpeechFacade_default.dll','rexruntime.dll','rexgpu-xenos.dll']
     report = {'artifacts':{name:digest(build/name) for name in artifacts},'gameplay_verified':False}
-    (root/'build-result.json').write_text(json.dumps(report,indent=2))
+    (root/f'build-result{suffix}.json').write_text(json.dumps(report,indent=2))
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
 def launch(root):
@@ -195,6 +219,14 @@ def launch(root):
     cvars=launch_cvars(root,disc1,root/'logs/runtime.log')
     args=[root/'game-build/fm4_rex.exe']+[f'--{k}={v}' for k,v in cvars.items()]
     run(args,cwd=root,env=env,log=root/'logs/play.log')
+
+def warm_cache(root):
+    """Fills BuildRoot/cache with the shaders and pipelines of the menus and a Quick Race by
+    driving the e2e fixed timeline (no network). Later runs then avoid compiling them."""
+    out=root/'e2e/warmcache'
+    run([sys.executable,HERE/'e2e/e2e.py','--build-root',root,'--out',out,'--scenario','quickrace',
+         '--tail','30'],log=root/'logs/warmcache.log')
+    print(f'Shader cache warmed; run details in {out}.')
 
 def launch_cvars(root,disc1,log_file):
     """Launcher cvars, shared with e2e/e2e.py. New performance defaults go here once they pass e2e."""
@@ -213,11 +245,12 @@ def launch_cvars(root,disc1,log_file):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=['doctor','setup','generate','build','all','run'])
+    parser.add_argument('action',choices=['doctor','setup','generate','build','all','run','warmcache'])
     parser.add_argument('--build-root',type=Path,default=REPO/'work/portable-fm4')
     parser.add_argument('--disc1',type=Path)
     parser.add_argument('--disc2',type=Path)
     parser.add_argument('--jobs',type=int,default=4)
+    parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
     args=parser.parse_args()
     root=args.build_root.resolve()
     # Never write private outputs into the tracked deliverables/source directories.
@@ -225,6 +258,9 @@ def main():
         raise ValueError('BuildRoot must be a dedicated private directory, e.g. work/portable-fm4 or D:/FM4-build.')
     if args.jobs<1 or args.jobs>64:
         raise ValueError('jobs must be between 1 and 64')
+    flavor=tuple(sorted({f for f in args.flavor.split(',') if f}))
+    if set(flavor)-set(FLAVORS) or {'pgo-gen','pgo-use'}<=set(flavor):
+        raise ValueError(f'flavor must be a comma list of {FLAVORS}, not both pgo-gen and pgo-use')
     fxc=doctor()
     if args.action=='doctor': return
     discs=None
@@ -233,8 +269,9 @@ def main():
     root.mkdir(parents=True,exist_ok=True)
     if args.action in ('setup','all'): setup(root,fxc,args.jobs)
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
-    if args.action in ('build','all'): build_game(root,args.jobs)
+    if args.action in ('build','all'): build_game(root,args.jobs,flavor)
     if args.action=='run': launch(root)
+    if args.action=='warmcache': warm_cache(root)
 
 if __name__=='__main__':
     try: main()

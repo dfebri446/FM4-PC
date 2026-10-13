@@ -111,6 +111,26 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   detik menunggu occlusion query ROV, tetapi hampir tidak pernah menunggu
   perintah dari game. Hambatan utama saat ini adalah sinkronisasi GPU-CPU, bukan
   kode game hasil recompilation. Angka ini adalah baseline, bukan target.
+- Baseline-v2 (counter baru, quickrace --repeat 3, fps_mean = frame dibagi
+  waktu, 30 detik terakhir): 27,3 fps. Per frame: 1 report occlusion yang
+  ditunggu game + 3 yang tidak, 0 viz query, 4 SET_BIN_SELECT dan sekitar 40%
+  paket berpredikat dilewati (tiling terjadi). Run ulang binary yang sama:
+  27,0 fps; median per run berbeda sampai 7%, jadi perbedaan < 10% tidak
+  terbaca.
+- A/B cvar baru pada binary yang sama (fps_mean, median 3 run):
+    rov_occlusion_async=all                              30,0
+    readback_resolve=fast                                31,0
+    readback_resolve=none                                35,6
+    rov_occlusion_async=all + readback_resolve=fast      55,8 (p99 52 -> 34 ms)
+  Satu sinkronisasi saja yang dihapus hanya memindahkan tunggu ke sinkronisasi
+  lainnya; keduanya harus hilang. Capture kokpit quickrace terlihat setara
+  baseline. Silau matahari, karier, foto dan Autovista BELUM diuji dengan
+  kombinasi ini, sehingga default launcher belum diubah.
+- Timestamp GPU: dengan kombinasi di atas GPU sibuk sekitar 15,6 ms per frame
+  (RTX 5070 Ti Laptop), resolve sekitar 0,2 ms. Thread command processor sibuk
+  hampir penuh, jadi 60 fps stabil butuh pengurangan kerja GPU dan CPU (Tahap 2).
+- --render_target_path_d3d12=rtv saat ini macet di layar hitam setelah logo
+  (game tetap 60 fps tetapi tidak maju); jalur RTV belum dapat dipakai.
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------

@@ -330,12 +330,21 @@ def summarize(perf, measure):
     }
     if frames:
         result.update({
+            # Frames over time across all measured windows; steadier than the median of
+            # per-second FPS, which jumps between 20, 24 and 30 as frames snap to vblanks.
+            'fps_mean': round(1000 * len(frames) / sum(frames), 2),
             'frame_ms_p50': round(percentile(frames, 0.50), 2),
             'frame_ms_p95': round(percentile(frames, 0.95), 2),
             'frame_ms_p99': round(percentile(frames, 0.99), 2),
             'hitch_50ms_per_min': round(sum(f > 50 for f in frames) / minutes, 2),
             'hitch_100ms_per_min': round(sum(f > 100 for f in frames) / minutes, 2),
         })
+    gpu = [p['gpu'] for p in steady if p.get('gpu', {}).get('frames')]
+    if gpu:
+        # GPU time per frame from timestamps: busy (submissions), resolves, first-to-last span.
+        result['gpu_frame_ms_median'] = median([g['frame_ms'] for g in gpu])
+        result['gpu_resolve_ms_median'] = median([g['resolve_ms'] for g in gpu])
+        result['gpu_span_ms_median'] = median([g['span_ms'] for g in gpu])
     if 'counts' in steady[0]:
         frames_in = lambda p: max(1, len(p.get('frame_ms', [])))
         result['counts_per_s_median'] = {k: median([per_s(p, p['counts'][k]) for p in steady])
@@ -364,7 +373,7 @@ def run_once(options, out):
     for item in options.arg:
         key, value = item.lstrip('-').split('=', 1)
         args[key] = value
-    command = [str(root / 'game-build' / 'fm4_rex.exe')] + [f'--{k}={v}' for k, v in args.items()]
+    command = [str(root / options.game_build / 'fm4_rex.exe')] + [f'--{k}={v}' for k, v in args.items()]
     env = {k: v for k, v in os.environ.items() if not k.startswith(('FM4_', 'REX_'))}
     env.update(FM4_SHADOW_WORKAROUND='1', FM4_CAPTURE_DIR=str(capture),
                FM4_TEST_INPUT_FILE=str(input_file), REX_PERF_TRACE_FILE=str(out / 'perf.jsonl'))
@@ -471,14 +480,33 @@ def aggregate(runs):
         'errors': errors,
         'top_errors': sorted(errors.items(), key=lambda kv: -kv[1])[:10],
     }
-    for key in ('frame_ms_p50', 'frame_ms_p95', 'frame_ms_p99', 'hitch_50ms_per_min', 'hitch_100ms_per_min'):
+    for key in ('fps_mean', 'frame_ms_p50', 'frame_ms_p95', 'frame_ms_p99', 'hitch_50ms_per_min', 'hitch_100ms_per_min',
+                'gpu_frame_ms_median', 'gpu_resolve_ms_median', 'gpu_span_ms_median'):
         summary[key] = median(pick(key))
+    return summary
+
+
+def resummarize(out, measure):
+    """Refreshes perf statistics of finished runs, e.g. after new summary fields were added."""
+    def refresh(directory):
+        summary = json.loads((directory / 'summary.json').read_text())
+        perf = [json.loads(line) for line in (directory / 'perf.jsonl').read_text().splitlines()]
+        summary.update(summarize(perf, measure))
+        (directory / 'summary.json').write_text(json.dumps(summary, indent=2))
+        return summary
+    runs = sorted(out.glob('run[0-9]*'), key=lambda d: int(d.name[3:]))
+    if not runs:
+        return refresh(out)
+    summary = aggregate([refresh(run) for run in runs])
+    (out / 'summary.json').write_text(json.dumps(summary, indent=2))
     return summary
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--build-root', required=True, help='BuildRoot used by Build.ps1')
+    parser.add_argument('--game-build', default='game-build',
+                        help='build directory under BuildRoot, e.g. game-build-thinlto (pipeline.py --flavor)')
     parser.add_argument('--out', required=True, help='result directory, outside the repository')
     parser.add_argument('--scenario', default='boot')
     parser.add_argument('--goal', choices=sorted(GOALS), help='navigate with Jev instead of a timeline')
@@ -490,13 +518,17 @@ def main():
     parser.add_argument('--measure', type=int, default=0, help='summarize only the last N perf seconds')
     parser.add_argument('--repeat', type=int, default=1,
                         help='run N times into <out>/run1..runN and aggregate into <out>/summary.json')
+    parser.add_argument('--resummarize', action='store_true',
+                        help='recompute summary.json of existing runs in --out from their perf.jsonl')
     options = parser.parse_args()
 
     out = Path(options.out).resolve()
     # Captures and logs show game content; they must never land in the repository.
     if out == REPO or REPO in out.parents:
         parser.error('--out must be outside the repository, for example <BuildRoot>/e2e/<name>')
-    if options.repeat <= 1:
+    if options.resummarize:
+        summary = resummarize(out, options.measure)
+    elif options.repeat <= 1:
         summary = run_once(options, out)
     else:
         runs = []

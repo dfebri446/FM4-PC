@@ -1,11 +1,12 @@
 param(
-    [ValidateSet('doctor','setup','generate','build','all','run')][string]$Action = 'doctor',
+    [ValidateSet('doctor','setup','generate','build','all','run','warmcache')][string]$Action = 'doctor',
     [string]$Disc1,
     [string]$Disc2,
     [string]$BuildRoot,
     [string]$LLVMRoot,
     [string]$Python = 'python',
-    [ValidateRange(1,64)][int]$Jobs = 4
+    [ValidateRange(1,64)][int]$Jobs = 4,
+    [string]$Flavor
 )
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'This workflow supports Windows x64.' }
@@ -20,5 +21,6 @@ $arguments = @((Join-Path $PSScriptRoot 'pipeline.py'), $Action, '--jobs', "$Job
 if ($Disc1) { $arguments += @('--disc1', $Disc1) }
 if ($Disc2) { $arguments += @('--disc2', $Disc2) }
 if ($BuildRoot) { $arguments += @('--build-root', $BuildRoot) }
+if ($Flavor) { $arguments += @('--flavor', $Flavor) }
 & $Python @arguments
 if ($LASTEXITCODE -ne 0) { throw "FM4 workflow failed (exit $LASTEXITCODE). See the build-root logs." }

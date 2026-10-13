@@ -7,7 +7,10 @@ import os
 import statistics
 import sys
 
-FPS_DROP_FAIL = 0.05       # candidate fps_median more than 5% below baseline -> FAIL
+# Candidate FPS more than 10% below baseline -> FAIL. Two --repeat 3 runs of the same binary
+# and cvars differed by 7% in fps_median (per-run medians 30.0/26.1/25.4 vs 24.2/29.3/24.1),
+# so a tighter threshold fails on noise. fps_mean is used when both summaries have it.
+FPS_DROP_FAIL = 0.10
 P99_RISE_FAIL = 0.20       # candidate frame_ms_p99 more than 20% above baseline -> FAIL
 WAIT_RISE_REL = 0.20       # wait cause rose by more than 20% ...
 WAIT_RISE_ABS = 5.0        # ... and by more than 5 ms/s absolute -> WARN
@@ -15,9 +18,10 @@ LUMA_REL_WARN = 0.10       # capture luma_mean relative difference -> WARN
 BLACK_SAT_PP_WARN = 5.0    # black_pct / saturated_pct difference in percentage points -> WARN
 HIST_L1_WARN = 20.0        # luma_hist16 L1 distance in percentage points -> WARN
 CAPTURE_NOTE = "races are not deterministic; check captures by eye"
-SCALARS = ["fps_median", "fps_min", "frame_ms_p50", "frame_ms_p95", "frame_ms_p99",
+SCALARS = ["fps_mean", "fps_median", "fps_min", "frame_ms_p50", "frame_ms_p95", "frame_ms_p99",
            "hitch_50ms_per_min", "hitch_100ms_per_min", "cp_busy_ms_per_s_median",
-           "readbacks_per_s_median", "draws_per_s_median"]
+           "readbacks_per_s_median", "draws_per_s_median", "gpu_frame_ms_median",
+           "gpu_resolve_ms_median", "gpu_span_ms_median"]
 CAPTURE_KEYS = ["luma_mean", "black_pct", "saturated_pct"]
 
 
@@ -112,9 +116,10 @@ def check_fail(b, c):
         fail.append(f"candidate crashed: {c['crashed']}")
     if c.get("goal_reached") is False:
         fail.append("candidate goal_reached is False")
-    p = pair(b, c, "fps_median")
+    key = "fps_mean" if pair(b, c, "fps_mean") else "fps_median"
+    p = pair(b, c, key)
     if p and p[1] < p[0] * (1 - FPS_DROP_FAIL):
-        fail.append(f"fps_median {p[1]:.2f} is more than 5% below baseline {p[0]:.2f}")
+        fail.append(f"{key} {p[1]:.2f} is more than {FPS_DROP_FAIL:.0%} below baseline {p[0]:.2f}")
     p = pair(b, c, "frame_ms_p99")
     if p and p[1] > p[0] * (1 + P99_RISE_FAIL):
         fail.append(f"frame_ms_p99 {p[1]:.2f} is more than 20% above baseline {p[0]:.2f}")

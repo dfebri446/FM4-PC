@@ -55,6 +55,16 @@ The all action performs setup + generate + build, but does not launch gameplay.
 After source edits, repeat generate + build to refresh the private project.
 If the pinned SDK revision/patch changes, choose a new BuildRoot.
 
+Optional actions for performance work:
+- warmcache drives the e2e Quick Race timeline once (no network) so the shader
+  and pipeline cache under BuildRoot\cache is filled before playing.
+- build -Flavor thinlto,v3,pgo-gen,pgo-use builds a compiler experiment into
+  BuildRoot\game-build-<flavor> without touching the default game-build:
+  ThinLTO, -march=x86-64-v3 (newer CPUs only), PGO instrumentation or PGO use
+  of BuildRoot\pgo\fm4.profdata. Profiles stay local. Run one with
+  e2e.py --game-build game-build-<flavor>. The default build keeps
+  -march=x86-64-v2 without LTO/PGO.
+
 What happens
 ------------
 1. setup clones rexglue/rexglue-sdk at f5337cdc947ff6d4c4196737e2c807a48f2a1fc2,
