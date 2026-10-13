@@ -3,10 +3,14 @@
 // its time, written as JSON lines to REX_PERF_TRACE_FILE. Diagnostic only: when
 // the variable is unset every helper returns immediately.
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace rex::graphics::perf_trace {
 
@@ -20,6 +24,20 @@ enum class Wait : uint32_t {
   kCount
 };
 
+// Event counters per window, to judge which stalls are worth removing.
+enum class Count : uint32_t {
+  kOcclusionAwaited,    // ROV occlusion snapshot for a report the guest spins on.
+  kOcclusionUnawaited,  // ROV occlusion snapshot nobody waits for yet.
+  kVizQueries,          // PM4_VIZ_QUERY begin.
+  kVizDraws,            // Draw conditional on a viz query (viz_use bit).
+  kBinSelects,          // SET_BIN_SELECT(_LO); HI is not counted to avoid counting pairs twice.
+  kPredicatedRun,       // Predicated type-3 packet whose bin check passed.
+  kPredicatedSkipped,   // Predicated type-3 packet skipped by the bin check.
+  kPipelineDrawsWaited,   // Async shaders: draw waited for its pipeline, then drawn.
+  kPipelineDrawsDropped,  // Async shaders: draw dropped, pipeline not ready.
+  kCount
+};
+
 struct State {
   std::ofstream output;
   Wait cause = Wait::kOther;
@@ -28,6 +46,25 @@ struct State {
   uint32_t swaps = 0, draws = 0, copies = 0, readbacks = 0;
   uint64_t wait_ticks[size_t(Wait::kCount)]{};
   uint32_t waits[size_t(Wait::kCount)]{};
+  uint32_t counts[size_t(Count::kCount)]{};
+  std::vector<float> frame_ms;
+  // GPU timestamps of frames that completed in this window.
+  uint32_t gpu_frames = 0;
+  double gpu_busy_ms = 0, gpu_resolve_ms = 0, gpu_span_ms = 0;
+};
+
+// Every resolve destination seen in the run, rewritten as JSON next to the
+// trace (<REX_PERF_TRACE_FILE>.resolves.json) every 10 windows. Used to find
+// which resolves the CPU actually needs.
+struct ResolveInventory {
+  struct Entry {
+    uint64_t count = 0;
+    double first_s = 0, last_s = 0;
+  };
+  // address, length, format, pitch, height.
+  std::map<std::array<uint32_t, 5>, Entry> entries;
+  std::string path;
+  uint32_t windows = 0;
 };
 
 inline uint64_t Now() {
@@ -89,12 +126,65 @@ inline void CountReadback(uint32_t bytes) {
   }
 }
 
+inline void Increment(Count counter) {
+  if (State* state = Get()) ++state->counts[size_t(counter)];
+}
+
+// busy: sum of submission durations; resolve: sum of resolve durations; span:
+// first to last GPU timestamp of the frame, including idle gaps.
+inline void AddGpuFrame(double busy_ms, double resolve_ms, double span_ms) {
+  State* state = Get();
+  if (!state) return;
+  ++state->gpu_frames;
+  state->gpu_busy_ms += busy_ms;
+  state->gpu_resolve_ms += resolve_ms;
+  state->gpu_span_ms += span_ms;
+}
+
+inline ResolveInventory* GetResolveInventory() {
+  static ResolveInventory* inventory = []() -> ResolveInventory* {
+    if (!Get()) return nullptr;
+    auto* result = new ResolveInventory;
+    result->path = std::string(std::getenv("REX_PERF_TRACE_FILE")) + ".resolves.json";
+    return result;
+  }();
+  return inventory;
+}
+
+inline void CountResolve(uint32_t address, uint32_t length, uint32_t format, uint32_t pitch,
+                         uint32_t height) {
+  ResolveInventory* inventory = GetResolveInventory();
+  if (!inventory || !length) return;
+  const double seconds = double(Now() - Get()->origin) / 1e9;
+  auto& entry = inventory->entries[{address, length, format, pitch, height}];
+  if (!entry.count++) entry.first_s = seconds;
+  entry.last_s = seconds;
+}
+
+inline void WriteResolveInventory(double seconds) {
+  ResolveInventory* inventory = GetResolveInventory();
+  if (!inventory) return;
+  std::ofstream output(inventory->path, std::ios::trunc);
+  output << "{\"seconds\":" << seconds << ",\"resolves\":[";
+  bool first = true;
+  for (const auto& [key, entry] : inventory->entries) {
+    output << (first ? "" : ",") << "\n{\"address\":" << key[0] << ",\"length\":" << key[1]
+           << ",\"format\":" << key[2] << ",\"pitch\":" << key[3] << ",\"height\":" << key[4]
+           << ",\"count\":" << entry.count << ",\"first_s\":" << entry.first_s
+           << ",\"last_s\":" << entry.last_s << "}";
+    first = false;
+  }
+  output << "]}\n";
+}
+
 inline void OnSwap() {
   State* state = Get();
   if (!state) return;
   const uint64_t now = Now();
-  if (state->last_swap && now - state->last_swap > state->max_frame) {
-    state->max_frame = now - state->last_swap;
+  if (state->last_swap) {
+    const uint64_t frame = now - state->last_swap;
+    state->max_frame = frame > state->max_frame ? frame : state->max_frame;
+    state->frame_ms.push_back(float(double(frame) / 1e6));
   }
   state->last_swap = now;
   ++state->swaps;
@@ -116,13 +206,39 @@ inline void OnSwap() {
   for (size_t i = 0; i < size_t(Wait::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kNames[i] << "\":" << state->waits[i];
   }
-  state->output << "}}\n";
+  static const char* const kCountNames[] = {"occlusion_awaited", "occlusion_unawaited",
+                                            "viz_queries",       "viz_draws",
+                                            "bin_selects",       "predicated_run",
+                                            "predicated_skipped", "pipeline_draws_waited",
+                                            "pipeline_draws_dropped"};
+  state->output << "},\"counts\":{";
+  for (size_t i = 0; i < size_t(Count::kCount); ++i) {
+    state->output << (i ? "," : "") << '"' << kCountNames[i] << "\":" << state->counts[i];
+  }
+  // Means per GPU frame, from timestamps read a few frames late.
+  const double gpu_frames = state->gpu_frames ? double(state->gpu_frames) : 1.0;
+  state->output << "},\"gpu\":{\"frames\":" << state->gpu_frames
+                << ",\"frame_ms\":" << state->gpu_busy_ms / gpu_frames
+                << ",\"resolve_ms\":" << state->gpu_resolve_ms / gpu_frames
+                << ",\"span_ms\":" << state->gpu_span_ms / gpu_frames;
+  // Every frame duration in the window, for run-wide percentiles and hitches.
+  state->output << "},\"frame_ms\":[";
+  for (size_t i = 0; i < state->frame_ms.size(); ++i) {
+    state->output << (i ? "," : "") << state->frame_ms[i];
+  }
+  state->output << "]}\n";
   state->output.flush();
+  if (ResolveInventory* inventory = GetResolveInventory(); inventory && ++inventory->windows % 10 == 0) {
+    WriteResolveInventory(ms(now - state->origin) / 1000.0);
+  }
   const Wait cause = state->cause;
   std::ofstream output = std::move(state->output);
+  std::vector<float> frame_ms = std::move(state->frame_ms);
+  frame_ms.clear();
   const uint64_t frequency = state->frequency, origin = state->origin;
   *state = State{};
   state->output = std::move(output);
+  state->frame_ms = std::move(frame_ms);
   state->cause = cause;
   state->frequency = frequency;
   state->origin = origin;
