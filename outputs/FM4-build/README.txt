@@ -83,8 +83,11 @@ What happens
 4. run verifies the build artifacts and game revision, mounts Disc 1, imports
    Disc 2 packages if provided and starts the interactive game. Shader compilation
    is synchronous; the existing shadow workaround is enabled. The sun visibility
-   query is scaled by 2 (rov_occlusion_awaited_report_divisor). Controller input
-   uses SDL. Keyboard defaults include W/S for pedals and A/D for steering.
+   query is scaled by 2 (rov_occlusion_awaited_report_divisor). Occlusion reports
+   and resolve readbacks do not wait for the GPU (rov_occlusion_async=all,
+   readback_resolve=fast); pass --rov_occlusion_async=off and
+   --readback_resolve=full to the executable for the older, slower synchronous
+   behaviour if a feature misbehaves. Controller input uses SDL. Keyboard defaults include W/S for pedals and A/D for steering.
 
 All private output is under BuildRoot: project/generated, loaded-image.bin,
 game-build, local.json, user-data, cache and logs. Input discs are read in place;

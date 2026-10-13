@@ -124,8 +124,10 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
     rov_occlusion_async=all + readback_resolve=fast      55,8 (p99 52 -> 34 ms)
   Satu sinkronisasi saja yang dihapus hanya memindahkan tunggu ke sinkronisasi
   lainnya; keduanya harus hilang. Capture kokpit quickrace terlihat setara
-  baseline. Silau matahari, karier, foto dan Autovista BELUM diuji dengan
-  kombinasi ini, sehingga default launcher belum diubah.
+  baseline. Atas keputusan pemilik proyek, kombinasi ini menjadi default
+  launcher sebelum gate lengkap. Silau matahari, karier, foto dan Autovista
+  BELUM diuji dengannya; bila salah satunya rusak, jalankan dengan
+  --rov_occlusion_async=off --readback_resolve=full untuk membandingkan.
 - Timestamp GPU: dengan kombinasi di atas GPU sibuk sekitar 15,6 ms per frame
   (RTX 5070 Ti Laptop), resolve sekitar 0,2 ms. Thread command processor sibuk
   hampir penuh, jadi 60 fps stabil butuh pengurangan kerja GPU dan CPU (Tahap 2).
