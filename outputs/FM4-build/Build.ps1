@@ -7,7 +7,8 @@ param(
     [string]$Python = 'python',
     [ValidateRange(1,64)][int]$Jobs = 4,
     [string]$Flavor,
-    [switch]$SingleTile
+    [switch]$SingleTile,
+    [switch]$VblankVrr
 )
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'This workflow supports Windows x64.' }
@@ -24,5 +25,6 @@ if ($Disc2) { $arguments += @('--disc2', $Disc2) }
 if ($BuildRoot) { $arguments += @('--build-root', $BuildRoot) }
 if ($Flavor) { $arguments += @('--flavor', $Flavor) }
 if ($SingleTile) { $arguments += @('--single-tile') }
+if ($VblankVrr) { $arguments += @('--vblank-vrr') }
 & $Python @arguments
 if ($LASTEXITCODE -ne 0) { throw "FM4 workflow failed (exit $LASTEXITCODE). See the build-root logs." }

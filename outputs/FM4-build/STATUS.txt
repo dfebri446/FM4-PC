@@ -187,6 +187,18 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   fps. Tidak ada keuntungan yang terukur; waktu per zona CPU juga setara.
   Pergeseran 53,4 -> 48,8 pada binary yang sama berasal dari kondisi laptop
   (panas); A/B berurutan harus diapit kontrol atau diselang-seling.
+- Thread command processor (14 Oktober 2026, profil sampling di thread itu):
+  sekitar 30% waktunya ada di PM4_WAIT_REG_MEM, terutama swap yang menunggu
+  vblank guest (alamat 0x1fca4004, rutin swap D3D sub_826E53E8), dulu
+  terhitung "sibuk". Setelah dipisah (wait_reg_mem di perf trace) thread itu
+  sibuk sekitar 70%; di ROV pembatasnya GPU (sekitar 19 ms per frame), jadi
+  optimasi kode CP tidak menaikkan fps ROV. Frame sedikit di atas 16,7 ms
+  ditahan ke vblank berikutnya (33,3 ms); vblank_vrr=true mengirim vblank
+  begitu frame telat siap (tetap di grid 60 Hz bila tepat waktu). 3 run,
+  diapit baseline 50,6 / 50,7 fps: vblank_vrr 52,9 fps, p95 33,2 -> 24,7 ms,
+  p99 34,9 -> 28,9 ms, frame 25-34 ms 15,5% -> 4,3%; dengan -SingleTile 57,9
+  fps, p99 26,8 ms (tanpa VRR 58,8 / 33,1). Rasio timer balapan / jam dinding
+  0,996. vsync=false (vblank 1 kHz) crash. Belum default.
 - Query matahari: keempat vertex sprite yang diukur bertumpuk di satu posisi
   (quad degenerate), sehingga 0 sampel di ROV maupun RTV; kalibrasi silau
   perlu menelusuri dari mana posisi sudut sprite seharusnya berasal.

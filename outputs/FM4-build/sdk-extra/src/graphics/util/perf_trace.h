@@ -20,6 +20,7 @@ enum class Wait : uint32_t {
   kResolveReadback,  // Synchronous resolve readback to guest memory.
   kOcclusion,        // Occlusion query results.
   kMemexport,        // Memexport readback.
+  kWaitRegMem,       // Sleeping or yielding in PM4_WAIT_REG_MEM until its condition holds.
   kOther,
   kCount
 };
@@ -152,6 +153,10 @@ inline void CountReadback(uint32_t bytes) {
   }
 }
 
+// Draw packets since the last occlusion snapshot (diagnostics only):
+// predicated away, dropped by viz kill, issued to the backend.
+inline uint32_t segment_draws[3]{};
+
 inline void Increment(Count counter) {
   if (State* state = Get()) ++state->counts[size_t(counter)];
 }
@@ -239,7 +244,7 @@ inline void OnSwap() {
   if (elapsed < state->frequency) return;
   const auto ms = [&](uint64_t ticks) { return double(ticks) * 1000.0 / double(state->frequency); };
   static const char* const kNames[] = {"guest_idle", "frame_latency", "resolve_readback",
-                                       "occlusion", "memexport", "other"};
+                                       "occlusion", "memexport", "wait_reg_mem", "other"};
   state->output << "{\"t\":" << ms(now - state->origin) / 1000.0
                 << ",\"window_ms\":" << ms(elapsed)
                 << ",\"fps\":" << double(state->swaps) * 1000.0 / ms(elapsed)

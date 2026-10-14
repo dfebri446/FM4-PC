@@ -56,6 +56,11 @@ After source edits, repeat generate + build to refresh the private project.
 If the pinned SDK revision/patch changes, choose a new BuildRoot.
 
 Optional actions for performance work:
+- run -VblankVrr (vblank_vrr=true) delivers the guest vblank as soon as a late
+  frame is ready instead of holding the swap to the next 60 Hz vblank. Quick
+  Race on ROV: 52.9 fps instead of 50.6, frame p95 25 ms instead of 33, p99 29
+  instead of 35; game speed unchanged. Combines with -SingleTile (57.9 fps,
+  p99 27 ms).
 - run -SingleTile renders races as one 720p tile without MSAA (the title's own
   UI tiling scenario, through the render scenario override) and applies FXAA
   on the swap. Quick Race on ROV: 58.6 fps instead of 54.3, frame p95 20 ms

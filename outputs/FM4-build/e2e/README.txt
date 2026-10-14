@@ -59,7 +59,8 @@ Fields: fps (guest swaps), frame_max_ms, frame_ms (every frame in the window),
 draws, copies (resolves), readbacks, readback_kb, and wait_ms per cause for the
 GPU command-processor thread: guest_idle (waiting for guest commands, i.e.
 CPU-bound), frame_latency (GPU-bound), resolve_readback, occlusion, memexport
-and other. counts holds events per window: occlusion_awaited/unawaited (ROV
+wait_reg_mem (PM4_WAIT_REG_MEM sleeping until its condition holds; in FM4
+mostly the swap waiting for vblank) and other. counts holds events per window: occlusion_awaited/unawaited (ROV
 occlusion snapshots whose report the guest spins on, or not), viz_queries,
 viz_draws (draws conditional on a viz query), bin_selects (SET_BIN_SELECT and
 _LO; tiling), predicated_run/predicated_skipped (bin-predicated packets).
@@ -72,6 +73,17 @@ final_capture statistics of the last capture (mean luma, % black < 8,
 % saturated > 247, 16-bin luma histogram) and clear_gray_frames: captures in
 which the exact FM4 clear color (102,102,102) covers at least 1%, i.e. geometry
 such as the road surface was not drawn. compare.py warns when it rises.
+
+Diagnostics (environment variables, off by default; files are local)
+------------------------------------------------------------------
+Pass with --env NAME=value. REX_CP_PROFILE=<file> samples the GPU
+command-processor thread stacks (REX_CP_PROFILE_DELAY / _SECONDS, default 0 /
+30 s; symbolize with llvm-symbolizer against an SDK built with
+-gline-tables-only). REX_WAIT_REG_MEM_TRACE=<file> summarizes WAIT_REG_MEM
+conditions. REX_OCCLUSION_SEGMENT_TRACE, REX_OCCLUSION_DRAW_TRACE and
+REX_DRAW_DEPTH_HIST trace occlusion snapshot segments, the draw after each
+snapshot and per-frame depth state; rtv_occlusion_debug=noqueries|fake changes
+RTV occlusion reports for experiments.
 
 Comparing runs
 --------------

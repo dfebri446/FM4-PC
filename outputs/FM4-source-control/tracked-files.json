@@ -198,6 +198,10 @@
       "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
     },
     {
+      "path": "outputs/FM4-build/sdk-extra/src/graphics/util/cp_sampler.h",
+      "provenance": "ReXGlue SDK addition (diagnostic sampling profiler); no game content"
+    },
+    {
       "path": "outputs/FM4-build/sdk-extra/src/graphics/util/perf_trace.h",
       "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
     },

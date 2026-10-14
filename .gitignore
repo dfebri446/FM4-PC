@@ -67,6 +67,7 @@
 !/outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_8bpp_scaled.cs.xesl
 !/outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/texture_address.xesli
 !/outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/xesl.xesli
+!/outputs/FM4-build/sdk-extra/src/graphics/util/cp_sampler.h
 !/outputs/FM4-build/sdk-extra/src/graphics/util/perf_trace.h
 !/outputs/FM4-build/sdk.patch
 !/outputs/FM4-build/speech_bounds.toml
