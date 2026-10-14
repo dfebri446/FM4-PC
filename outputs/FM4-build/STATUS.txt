@@ -143,9 +143,20 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   (rtv_occlusion_snapshots). Dengan rov_occlusion_async=all, aspal di depan
   mobil tidak tergambar beberapa detik setelah start (report terlambat dibaca
   sebagai tak terlihat); previous memperbaikinya, off/unawaited juga benar
-  tetapi 35-49 fps. RTV belum default: kesetaraan visual dengan ROV pada
-  capture statis, silau matahari, karier, foto dan Autovista belum diuji, dan
-  capture RTV cenderung sedikit lebih gelap.
+  tetapi 35-49 fps.
+- Perbandingan visual RTV vs ROV (14 Oktober 2026): menu utama identik (selisih
+  rata-rata 0,01 level per kanal); Autovista Ferrari 458 statis setara (75%
+  piksel sama persis, 24% berbeda 1 level, maksimum 5 level). Distribusi
+  luminansi dan piksel jenuh capture balapan RTV berada dalam rentang ROV;
+  kesan "lebih gelap" sebelumnya berasal dari balapan yang tidak deterministik.
+  Query occlusion seluruh frame melaporkan sekitar 1,5x sampel ROV (query host
+  menghitung semua sampel yang lolos) tanpa efek yang terlihat.
+- Silau matahari RTV belum terkalibrasi. Query matahari (report yang ditunggu)
+  0 sampel sepanjang rute quickrace dan dari grid; satu kali terlihat di ROV
+  saat menoleh ke kanan pada waktu lap sekitar 00:31 (225-253 sampel per frame
+  setelah pembagi 2), tetapi posisi autodriver tidak bisa diulang. Butuh
+  adegan deterministik dengan matahari di pandangan (mis. skenario kamera).
+  RTV tetap opsional sampai silau, karier, foto dan Autovista interaktif lolos.
 - Shader dengan cache kosong (--store_shaders=false): shader sinkron menambah
   sedikit hitch saat memuat (sekitar 9 frame > 100 ms per run, terburuk 400-640
   ms) tanpa menurunkan FPS balapan. Shader async membuang sekitar 2.000 draw

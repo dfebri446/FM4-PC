@@ -677,7 +677,7 @@ index a744375..f9c54a7 100644
      REXGPU_INFO("Begin viz query ID {:02X}", id);
    } else {
 diff --git a/src/graphics/d3d12/command_processor.cpp b/src/graphics/d3d12/command_processor.cpp
-index 19874a5..0666490 100644
+index 19874a5..0f183ae 100644
 --- a/src/graphics/d3d12/command_processor.cpp
 +++ b/src/graphics/d3d12/command_processor.cpp
 @@ -11,10 +11,14 @@
@@ -1443,7 +1443,7 @@ index 19874a5..0666490 100644
    ID3D12Device* device = GetD3D12Provider().GetDevice();
    if (!device) {
      return false;
-@@ -4864,6 +5177,425 @@ void D3D12CommandProcessor::ShutdownOcclusionQueryResources() {
+@@ -4864,6 +5177,429 @@ void D3D12CommandProcessor::ShutdownOcclusionQueryResources() {
    occlusion_query_readback_mapping_ = nullptr;
    occlusion_query_readback_.Reset();
    occlusion_query_heap_.Reset();
@@ -1602,6 +1602,10 @@ index 19874a5..0666490 100644
 +    if (pending.awaited && divisor > 1 && !pending.host_queries) {
 +      for (uint64_t& samples : segment) samples = (samples + (divisor >> 1)) / divisor;
 +    }
++    perf_trace::AddOcclusionInterval(
++        pending.awaited,
++        NormalizeOcclusionSamples(
++            segment[uint32_t(DxbcShaderTranslator::ROVOcclusionCounter::kZPass)]));
 +    if (pending.published) {
 +      rov_occlusion_last_segment_[pending.interval << 1 | uint32_t(pending.awaited)] = segment;
 +      continue;
@@ -1869,7 +1873,7 @@ index 19874a5..0666490 100644
  }
  
  bool D3D12CommandProcessor::AcquireOcclusionQueryIndex(uint32_t& host_index_out) {
-@@ -4921,6 +5653,7 @@ bool D3D12CommandProcessor::BeginGuestOcclusionQuery(uint32_t sample_count_addre
+@@ -4921,6 +5657,7 @@ bool D3D12CommandProcessor::BeginGuestOcclusionQuery(uint32_t sample_count_addre
  
  bool D3D12CommandProcessor::EndGuestOcclusionQuery(
      uint32_t sample_count_address, xenos::xe_gpu_depth_sample_counts* sample_counts) {

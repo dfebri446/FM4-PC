@@ -73,6 +73,10 @@ struct State {
   // GPU timestamps of frames that completed in this window.
   uint32_t gpu_frames = 0;
   double gpu_busy_ms = 0, gpu_resolve_ms = 0, gpu_span_ms = 0;
+  // Samples passing depth/stencil per occlusion snapshot interval, as reported
+  // to the guest (after any divisor), to compare paths and calibrate.
+  double occlusion_samples[2]{};  // Unawaited, awaited.
+  uint32_t occlusion_intervals[2]{};
 };
 
 // Every resolve destination seen in the run, rewritten as JSON next to the
@@ -165,6 +169,13 @@ class ZoneScope {
   Zone zone_;
   uint64_t start_;
 };
+
+inline void AddOcclusionInterval(bool awaited, uint64_t passed_samples) {
+  State* state = Get();
+  if (!state) return;
+  state->occlusion_samples[awaited] += double(passed_samples);
+  ++state->occlusion_intervals[awaited];
+}
 
 // busy: sum of submission durations; resolve: sum of resolve durations; span:
 // first to last GPU timestamp of the frame, including idle gaps.
@@ -262,6 +273,13 @@ inline void OnSwap() {
   for (size_t i = 0; i < size_t(Zone::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kZoneNames[i] << "\":" << ms(state->zone_ticks[i]);
   }
+  // Mean passing samples per occlusion interval.
+  const auto mean_samples = [&](size_t i) {
+    return state->occlusion_intervals[i] ? state->occlusion_samples[i] / state->occlusion_intervals[i]
+                                         : 0.0;
+  };
+  state->output << "},\"occlusion_samples\":{\"unawaited\":" << mean_samples(0)
+                << ",\"awaited\":" << mean_samples(1);
   // Means per GPU frame, from timestamps read a few frames late.
   const double gpu_frames = state->gpu_frames ? double(state->gpu_frames) : 1.0;
   state->output << "},\"gpu\":{\"frames\":" << state->gpu_frames

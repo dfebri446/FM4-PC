@@ -10,7 +10,7 @@ BUTTONS = {'up': 0x1, 'down': 0x2, 'left': 0x4, 'right': 0x8, 'start': 0x10, 'ba
            'lb': 0x100, 'rb': 0x200, 'a': 0x1000, 'b': 0x2000, 'x': 0x4000, 'y': 0x8000}
 
 # Each step: [seconds to wait before, action, hold seconds]. Actions are button names joined
-# with '+', or 'rt=<0..255>', 'lt=<0..255>', 'lx=<-32768..32767>', or 'none'.
+# with '+', or 'rt=<0..255>', 'lt=<0..255>', 'lx/ly/rx/ry=<-32768..32767>', or 'none'.
 SCENARIOS = {
     'boot': [[90, 'none', 0]],
     # Main menu -> Free Play -> Quick Race with the default Abarth 131 on Bernese Alps
@@ -116,9 +116,9 @@ def percentile(values, fraction):
     return values[min(len(values) - 1, int(round(fraction * (len(values) - 1))))]
 
 
-def set_input(path, buttons=0, lt=0, rt=0, lx=0, ly=0):
+def set_input(path, buttons=0, lt=0, rt=0, lx=0, ly=0, rx=0, ry=0):
     tmp = path.with_suffix('.tmp')
-    tmp.write_text(f'{buttons} {lt} {rt} {lx} {ly} 0 0\n')
+    tmp.write_text(f'{buttons} {lt} {rt} {lx} {ly} {rx} {ry}\n')
     # The game may be reading the file at this moment; Windows then refuses the replace.
     for attempt in range(50):
         try:
@@ -130,7 +130,7 @@ def set_input(path, buttons=0, lt=0, rt=0, lx=0, ly=0):
 
 
 def parse_action(action):
-    state = dict(buttons=0, lt=0, rt=0, lx=0, ly=0)
+    state = dict(buttons=0, lt=0, rt=0, lx=0, ly=0, rx=0, ry=0)
     if action == 'none':
         return state
     for part in action.split('+'):
@@ -350,6 +350,10 @@ def summarize(perf, measure):
         # Command-processor wall time per work kind, inclusive (draw contains draw_*).
         result['cpu_ms_per_s_median'] = {k: median([per_s(p, p['cpu_ms'][k]) for p in steady])
                                          for k in steady[0]['cpu_ms']}
+    if 'occlusion_samples' in steady[0]:
+        # Mean passing samples per occlusion interval as reported to the game.
+        result['occlusion_samples_median'] = {k: median([p['occlusion_samples'][k] for p in steady])
+                                              for k in steady[0]['occlusion_samples']}
     gpu = [p['gpu'] for p in steady if p.get('gpu', {}).get('frames')]
     if gpu:
         # GPU time per frame from timestamps: busy (submissions), resolves, first-to-last span.
@@ -390,7 +394,8 @@ def run_once(options, out):
                FM4_TEST_INPUT_FILE=str(input_file), REX_PERF_TRACE_FILE=str(out / 'perf.jsonl'))
     # Diagnostic variables, e.g. REX_RESOLVE_PUBLICATION_TRACE=<path>.
     env.update(item.split('=', 1) for item in options.env)
-    steps = [] if options.goal else (json.loads(options.steps) if options.steps else SCENARIOS[options.scenario])
+    # With --goal, --steps run after the goal is reached (e.g. looking around in the race).
+    steps = json.loads(options.steps) if options.steps else ([] if options.goal else SCENARIOS[options.scenario])
 
     stderr = open(out / 'stderr.log', 'w', encoding='utf-8', errors='replace')
     started = time.time()
@@ -490,6 +495,7 @@ def aggregate(runs):
         'counts_per_s_median': nested('counts_per_s_median'),
         'counts_per_frame_median': nested('counts_per_frame_median'),
         'cpu_ms_per_s_median': nested('cpu_ms_per_s_median'),
+        'occlusion_samples_median': nested('occlusion_samples_median'),
         'final_captures': [r['final_capture'] for r in runs],
         'errors': errors,
         'top_errors': sorted(errors.items(), key=lambda kv: -kv[1])[:10],
