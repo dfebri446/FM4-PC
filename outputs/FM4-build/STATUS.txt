@@ -167,6 +167,21 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   jalan hilang di atas. RTV tetap tersedia sebagai opsi:
   --render_target_path_d3d12=rtv --edram_single_rt_no_wrap=true
   --rov_occlusion_async=previous.
+- 2.1 predicated tiling (14 Oktober 2026): FM4 memilih tiling per skenario
+  render (media/RenderScenarios, TilingScenario). Balapan 8-16 mobil memakai
+  1 (2 tile, MSAA 2x, 4 bin select per frame); pre-race, replay dan balapan
+  1 mobil 0 (lebih banyak tile); UI 2 (satu tile 720p tanpa MSAA). Override
+  FM4_TILING_SCENARIO=2 (Build.ps1 -Action run -SingleTile, dengan FXAA) pada
+  ROV, 3 run vs baseline-v3: fps_mean 54,3 -> 58,6, p95 32,9 -> 19,5 ms,
+  hitch >50 ms 13,8 -> 2,0 per menit, GPU 17,5 -> 13,0 ms, draw per frame
+  sekitar 2.190 -> 1.680, tanpa error baru dan tanpa frame warna clear. Nilai
+  0 lebih lambat (44,5 fps, 5 bin select), 3 juga (48,5 fps). Tepi bergerigi
+  jelas tanpa MSAA; FXAA menghaluskan sebagian tetapi kabel tipis jadi
+  terputus. Belum default: pilihan kualitas vs fps diserahkan ke pemilik.
+  Karier, foto dan Autovista belum diuji dengan opsi ini.
+- Query matahari: keempat vertex sprite yang diukur bertumpuk di satu posisi
+  (quad degenerate), sehingga 0 sampel di ROV maupun RTV; kalibrasi silau
+  perlu menelusuri dari mana posisi sudut sprite seharusnya berasal.
 - Shader dengan cache kosong (--store_shaders=false): shader sinkron menambah
   sedikit hitch saat memuat (sekitar 9 frame > 100 ms per run, terburuk 400-640
   ms) tanpa menurunkan FPS balapan. Shader async membuang sekitar 2.000 draw

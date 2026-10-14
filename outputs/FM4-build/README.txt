@@ -56,6 +56,12 @@ After source edits, repeat generate + build to refresh the private project.
 If the pinned SDK revision/patch changes, choose a new BuildRoot.
 
 Optional actions for performance work:
+- run -SingleTile renders races as one 720p tile without MSAA (the title's own
+  UI tiling scenario, through the render scenario override) and applies FXAA
+  on the swap. Quick Race on ROV: 58.6 fps instead of 54.3, frame p95 20 ms
+  instead of 33, GPU 13 ms instead of 17.5. Edges are visibly more jagged
+  than with 2x MSAA (thin cables break up); photo mode and split screen keep
+  their own settings.
 - warmcache drives the e2e Quick Race timeline once (no network) so the shader
   and pipeline cache under BuildRoot\cache is filled before playing.
 - build -Flavor thinlto,v3,pgo-gen,pgo-use builds a compiler experiment into

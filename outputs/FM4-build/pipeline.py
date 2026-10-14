@@ -205,7 +205,7 @@ def build_game(root,jobs,flavor=()):
     (root/f'build-result{suffix}.json').write_text(json.dumps(report,indent=2))
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
-def launch(root):
+def launch(root,single_tile=False):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -214,9 +214,14 @@ def launch(root):
             raise RuntimeError(f'Build artifact changed: {name}. Rebuild first.')
     env = {k:v for k,v in os.environ.items() if not k.startswith('FM4_')}
     env['FM4_SHADOW_WORKAROUND']='1'
+    cvars=launch_cvars(root,disc1,root/'logs/runtime.log')
+    if single_tile:
+        # Races render 720p in one tile without MSAA (the title's UI tiling
+        # scenario): no predicated tiling, FXAA on the swap instead.
+        env['FM4_TILING_SCENARIO']='2'
+        cvars['swap_post_effect']='fxaa'
     if disc2:
         env['FM4_DISC2_ROOT']=str(disc2)
-    cvars=launch_cvars(root,disc1,root/'logs/runtime.log')
     args=[root/'game-build/fm4_rex.exe']+[f'--{k}={v}' for k,v in cvars.items()]
     run(args,cwd=root,env=env,log=root/'logs/play.log')
 
@@ -250,6 +255,8 @@ def main():
     parser.add_argument('--disc1',type=Path)
     parser.add_argument('--disc2',type=Path)
     parser.add_argument('--jobs',type=int,default=4)
+    parser.add_argument('--single-tile',action='store_true',
+                        help='run: races without MSAA and predicated tiling, with FXAA (faster)')
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
     args=parser.parse_args()
     root=args.build_root.resolve()
@@ -270,7 +277,7 @@ def main():
     if args.action in ('setup','all'): setup(root,fxc,args.jobs)
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
     if args.action in ('build','all'): build_game(root,args.jobs,flavor)
-    if args.action=='run': launch(root)
+    if args.action=='run': launch(root,args.single_tile)
     if args.action=='warmcache': warm_cache(root)
 
 if __name__=='__main__':
