@@ -2235,7 +2235,7 @@ index dd321a5..25ba3d4 100644
  
        // Make sure there is memory to write to.
 diff --git a/src/graphics/graphics_system.cpp b/src/graphics/graphics_system.cpp
-index 8f2fcb0..2319d9e 100644
+index 8f2fcb0..7420c11 100644
 --- a/src/graphics/graphics_system.cpp
 +++ b/src/graphics/graphics_system.cpp
 @@ -31,6 +31,13 @@
@@ -2252,7 +2252,7 @@ index 8f2fcb0..2319d9e 100644
  REXCVAR_DEFINE_STRING(swap_post_effect, "none", "GPU", "Swap post effect: none, fxaa, fxaa_extreme")
      .allowed({"none", "fxaa", "fxaa_extreme"})
      .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
-@@ -158,13 +165,35 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
+@@ -158,13 +165,40 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
              std::max(uint64_t(1), uint64_t(double(guest_tick_frequency) / refresh_rate_hz));
          uint64_t no_vsync_interval_ticks = std::max(uint64_t(1), guest_tick_frequency / 1000);
          uint64_t last_frame_time = chrono::Clock::QueryGuestTickCount();
@@ -2266,19 +2266,24 @@ index 8f2fcb0..2319d9e 100644
 -            last_frame_time += interval_ticks;
 +          if (REXCVAR_GET(vblank_vrr) && REXCVAR_GET(vsync)) {
 +            const uint64_t elapsed = current_time - last_frame_time;
-+            if (elapsed >= interval_ticks) {
-+              const bool waiting =
-+                  command_processor_ && command_processor_->is_waiting_reg_mem();
-+              if (waiting && !vblank_late && elapsed < 2 * interval_ticks) {
-+                // On time: the command processor already waited when the grid
-+                // vblank fell due, so stay on the refresh grid.
++            const bool waiting = command_processor_ && command_processor_->is_waiting_reg_mem();
++            if (waiting && vblank_late) {
++              // A frame that missed its vblank is ready: deliver it now and
++              // start a new phase, even right after a forced vblank.
++              MarkVblank();
++              last_frame_time = current_time;
++              vblank_late = false;
++            } else if (elapsed >= interval_ticks) {
++              if (waiting && elapsed < 2 * interval_ticks) {
++                // On time: stay on the refresh grid.
 +                MarkVblank();
 +                last_frame_time += interval_ticks;
-+              } else if (waiting || elapsed >= 2 * interval_ticks) {
-+                // A late frame (or no wait at all): deliver now, new phase.
++              } else if (elapsed >= 2 * interval_ticks) {
++                // Nothing waited for two intervals (loading, or a long frame):
++                // keep vblanks coming, but the next wait still gets one at once.
 +                MarkVblank();
 +                last_frame_time = current_time;
-+                vblank_late = false;
++                vblank_late = !waiting;
 +              } else {
 +                vblank_late = true;
 +              }

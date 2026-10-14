@@ -198,7 +198,13 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   diapit baseline 50,6 / 50,7 fps: vblank_vrr 52,9 fps, p95 33,2 -> 24,7 ms,
   p99 34,9 -> 28,9 ms, frame 25-34 ms 15,5% -> 4,3%; dengan -SingleTile 57,9
   fps, p99 26,8 ms (tanpa VRR 58,8 / 33,1). Rasio timer balapan / jam dinding
-  0,996. vsync=false (vblank 1 kHz) crash. Belum default.
+  0,996. vsync=false (vblank 1 kHz) crash. Versi akhir (vblank yang dipaksa
+  setelah 2 interval tetap membuat frame telat berikutnya langsung dapat
+  vblank), A/B selang-seling 3 pasang: fps 52,7 vs 52,5, p95 33,2 -> 23,3 ms,
+  p99 35,4 -> 26,0 ms, frame 34-50 ms 0,8% -> 0,1%, error sama, tanpa frame
+  warna clear. Default launcher sejak 14 Oktober
+  2026 atas keputusan pemilik proyek (Build.ps1 -FixedVblank mengembalikan
+  grid tetap); karier, foto dan Autovista belum diuji dengan VRR.
 - Query matahari: keempat vertex sprite yang diukur bertumpuk di satu posisi
   (quad degenerate), sehingga 0 sampel di ROV maupun RTV; kalibrasi silau
   perlu menelusuri dari mana posisi sudut sprite seharusnya berasal.

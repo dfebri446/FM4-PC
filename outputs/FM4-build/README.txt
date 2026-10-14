@@ -56,11 +56,11 @@ After source edits, repeat generate + build to refresh the private project.
 If the pinned SDK revision/patch changes, choose a new BuildRoot.
 
 Optional actions for performance work:
-- run -VblankVrr (vblank_vrr=true) delivers the guest vblank as soon as a late
-  frame is ready instead of holding the swap to the next 60 Hz vblank. Quick
-  Race on ROV: 52.9 fps instead of 50.6, frame p95 25 ms instead of 33, p99 29
-  instead of 35; game speed unchanged. Combines with -SingleTile (57.9 fps,
-  p99 27 ms).
+- run -FixedVblank returns to the fixed 60 Hz guest vblank grid. By default
+  (vblank_vrr=true) a frame that misses a vblank gets its vblank as soon as it
+  is ready instead of waiting for the next one. Quick Race on ROV, three runs
+  each, interleaved: same average fps (52.5 vs 52.7) but frame p95 23 ms
+  instead of 33 and p99 26 instead of 35; game speed unchanged.
 - run -SingleTile renders races as one 720p tile without MSAA (the title's own
   UI tiling scenario, through the render scenario override) and applies FXAA
   on the swap. Quick Race on ROV: 58.6 fps instead of 54.3, frame p95 20 ms
@@ -94,7 +94,8 @@ What happens
 4. run verifies the build artifacts and game revision, mounts Disc 1, imports
    Disc 2 packages if provided and starts the interactive game. Shader compilation
    is synchronous; the existing shadow workaround is enabled. Rendering uses the
-   pixel shader interlock path (render_target_path_d3d12=rov). The sun visibility
+   pixel shader interlock path (render_target_path_d3d12=rov). A frame that
+   misses a guest vblank gets it as soon as it is ready (vblank_vrr=true). The sun visibility
    query is scaled by 2 (rov_occlusion_awaited_report_divisor). Occlusion reports
    and resolve readbacks do not wait for the GPU (rov_occlusion_async=all,
    readback_resolve=fast); pass --rov_occlusion_async=off and
