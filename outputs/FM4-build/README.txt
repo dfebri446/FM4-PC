@@ -82,12 +82,16 @@ What happens
    and GPU DLLs, runs arithmetic instruction tests and writes build-result.json.
 4. run verifies the build artifacts and game revision, mounts Disc 1, imports
    Disc 2 packages if provided and starts the interactive game. Shader compilation
-   is synchronous; the existing shadow workaround is enabled. The sun visibility
-   query is scaled by 2 (rov_occlusion_awaited_report_divisor). Occlusion reports
-   and resolve readbacks do not wait for the GPU (rov_occlusion_async=all,
-   readback_resolve=fast); pass --rov_occlusion_async=off and
-   --readback_resolve=full to the executable for the older, slower synchronous
-   behaviour if a feature misbehaves. Controller input uses SDL. Keyboard defaults include W/S for pedals and A/D for steering.
+   is synchronous; the existing shadow workaround is enabled. Rendering uses the
+   host render target path (render_target_path_d3d12=rtv with
+   edram_single_rt_no_wrap=true), which reaches a stable 60 fps in Quick Race.
+   Occlusion reports are published at once from the previous frame's samples
+   (rov_occlusion_async=previous) and resolve readbacks do not wait for the GPU
+   (readback_resolve=fast). Sun glare has not been calibrated on this path. If
+   rendering misbehaves, compare with the earlier pixel shader interlock path:
+   --render_target_path_d3d12=rov --rov_occlusion_async=all (sun query scaled by
+   rov_occlusion_awaited_report_divisor=2), or the fully synchronous
+   --rov_occlusion_async=off --readback_resolve=full. Controller input uses SDL. Keyboard defaults include W/S for pedals and A/D for steering.
 
 All private output is under BuildRoot: project/generated, loaded-image.bin,
 game-build, local.json, user-data, cache and logs. Input discs are read in place;

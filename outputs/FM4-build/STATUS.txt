@@ -124,10 +124,9 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
     rov_occlusion_async=all + readback_resolve=fast      55,8 (p99 52 -> 34 ms)
   Satu sinkronisasi saja yang dihapus hanya memindahkan tunggu ke sinkronisasi
   lainnya; keduanya harus hilang. Capture kokpit quickrace terlihat setara
-  baseline. Atas keputusan pemilik proyek, kombinasi ini menjadi default
-  launcher sebelum gate lengkap. Silau matahari, karier, foto dan Autovista
-  BELUM diuji dengannya; bila salah satunya rusak, jalankan dengan
-  --rov_occlusion_async=off --readback_resolve=full untuk membandingkan.
+  baseline. Atas keputusan pemilik proyek, kombinasi ini sempat menjadi default
+  launcher sebelum gate lengkap; sejak 14 Oktober 2026 digantikan jalur RTV
+  (lihat di bawah).
 - Timestamp GPU: dengan kombinasi di atas GPU sibuk sekitar 15,6 ms per frame
   (RTX 5070 Ti Laptop), resolve sekitar 0,2 ms. Thread command processor sibuk
   hampir penuh, jadi 60 fps stabil butuh pengurangan kerja GPU dan CPU (Tahap 2).
@@ -156,7 +155,11 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   saat menoleh ke kanan pada waktu lap sekitar 00:31 (225-253 sampel per frame
   setelah pembagi 2), tetapi posisi autodriver tidak bisa diulang. Butuh
   adegan deterministik dengan matahari di pandangan (mis. skenario kamera).
-  RTV tetap opsional sampai silau, karier, foto dan Autovista interaktif lolos.
+- Sejak 14 Oktober 2026, atas keputusan pemilik proyek, launcher memakai RTV
+  (--render_target_path_d3d12=rtv --edram_single_rt_no_wrap=true
+  --rov_occlusion_async=previous --readback_resolve=fast) sebelum silau,
+  karier, foto dan Autovista interaktif diuji. Bila silau atau tampilan salah,
+  bandingkan dengan --render_target_path_d3d12=rov --rov_occlusion_async=all.
 - Shader dengan cache kosong (--store_shaders=false): shader sinkron menambah
   sedikit hitch saat memuat (sekitar 9 frame > 100 ms per run, terburuk 400-640
   ms) tanpa menurunkan FPS balapan. Shader async membuang sekitar 2.000 draw
