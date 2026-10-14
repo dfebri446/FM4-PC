@@ -2,7 +2,7 @@
 texture, primitive and depth state the title uses, per scenario and combined.
 
 usage: inventory.py --build-root <BuildRoot> <inventory.json> [...] [--json out.json]
-Enum names are read from <BuildRoot>\\sdk-source\\include\\rex\\graphics\\xenos.h.
+Enum names are read from <BuildRoot>\\runtime-source\\include\\rex\\graphics\\xenos.h.
 """
 import argparse, json, re
 from collections import Counter
@@ -55,7 +55,7 @@ def main():
     parser.add_argument('--json')
     parser.add_argument('inventories', nargs='+')
     options = parser.parse_args()
-    xenos = (Path(options.build_root) / 'sdk-source/include/rex/graphics/xenos.h').read_text(errors='replace')
+    xenos = (Path(options.build_root) / 'runtime-source/include/rex/graphics/xenos.h').read_text(errors='replace')
     names = {'color': enum(xenos, 'ColorRenderTargetFormat'), 'depth': enum(xenos, 'DepthRenderTargetFormat'),
              'texture': enum(xenos, 'TextureFormat'), 'primitive': enum(xenos, 'PrimitiveType'),
              'edram': enum(xenos, 'EdramMode')}

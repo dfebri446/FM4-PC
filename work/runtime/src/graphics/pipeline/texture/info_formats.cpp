@@ -1,0 +1,113 @@
+/**
+ ******************************************************************************
+ * Xenia : Xbox 360 Emulator Research Project                                 *
+ ******************************************************************************
+ * Copyright 2014 Ben Vanik. All rights reserved.                             *
+ * Released under the BSD license - see LICENSE in the root for more details. *
+ ******************************************************************************
+ *
+ * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+ */
+
+// clang-format off
+
+#include <rex/graphics/pipeline/texture/info.h>
+
+namespace rex::graphics {
+
+using namespace rex::graphics::xenos;
+
+#define FORMAT_INFO(texture_format, format, block_width, block_height, bits_per_pixel, r, g, b, a, fixed) \
+    {xenos::TextureFormat::texture_format, #texture_format, FormatType::format, block_width, block_height, bits_per_pixel, {r, g, b, a}, fixed}
+const FormatInfo* FormatInfo::Get(uint32_t gpu_format) {
+  static const FormatInfo format_infos[64] = {
+      FORMAT_INFO(k_1_REVERSE                , kUncompressed, 1, 1, 1, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_1                        , kUncompressed, 1, 1, 1, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_8                        , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
+      FORMAT_INFO(k_1_5_5_5                  , kResolvable,   1, 1, 16, 5, 5, 5, 1, true),
+      FORMAT_INFO(k_5_6_5                    , kResolvable,   1, 1, 16, 5, 6, 5, 0, true),
+      FORMAT_INFO(k_6_5_5                    , kResolvable,   1, 1, 16, 5, 5, 6, 0, true),
+      FORMAT_INFO(k_8_8_8_8                  , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
+      FORMAT_INFO(k_2_10_10_10               , kResolvable,   1, 1, 32, 10, 10, 10, 2, true),
+      FORMAT_INFO(k_8_A                      , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
+      FORMAT_INFO(k_8_B                      , kResolvable,   1, 1, 8, 8, 0, 0, 0, true),
+      FORMAT_INFO(k_8_8                      , kResolvable,   1, 1, 16, 8, 8, 0, 0, true),
+      FORMAT_INFO(k_Cr_Y1_Cb_Y0_REP          , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_Y1_Cr_Y0_Cb_REP          , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_16_EDRAM              , kUncompressed, 1, 1, 32, 16, 16, 0, 0, true),
+      FORMAT_INFO(k_8_8_8_8_A                , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
+      FORMAT_INFO(k_4_4_4_4                  , kResolvable,   1, 1, 16, 4, 4, 4, 4, true),
+      FORMAT_INFO(k_10_11_11                 , kResolvable,   1, 1, 32, 11, 11, 10, 0, true),
+      FORMAT_INFO(k_11_11_10                 , kResolvable,   1, 1, 32, 10, 11, 11, 0, true),
+      FORMAT_INFO(k_DXT1                     , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_DXT2_3                   , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_DXT4_5                   , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_16_16_16_EDRAM        , kUncompressed, 1, 1, 64, 16, 16, 16, 16, true),
+      FORMAT_INFO(k_24_8                     , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_24_8_FLOAT               , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16                       , kResolvable,   1, 1, 16, 16, 0, 0, 0, true),
+      FORMAT_INFO(k_16_16                    , kResolvable,   1, 1, 32, 16, 16, 0, 0, true),
+      FORMAT_INFO(k_16_16_16_16              , kResolvable,   1, 1, 64, 16, 16, 16, 16, true),
+      FORMAT_INFO(k_16_EXPAND                , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_16_EXPAND             , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_16_16_16_EXPAND       , kUncompressed, 1, 1, 64, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_FLOAT                 , kResolvable,   1, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_16_FLOAT              , kResolvable,   1, 1, 32, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_16_16_16_FLOAT        , kResolvable,   1, 1, 64, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32                       , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_32                    , kUncompressed, 1, 1, 64, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_32_32_32              , kUncompressed, 1, 1, 128, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_FLOAT                 , kResolvable,   1, 1, 32, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_32_FLOAT              , kResolvable,   1, 1, 64, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_32_32_32_FLOAT        , kResolvable,   1, 1, 128, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_AS_8                  , kCompressed,   4, 1, 8, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_AS_8_8                , kCompressed,   2, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_MPEG                  , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_16_MPEG               , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_8_INTERLACED             , kUncompressed, 1, 1, 8, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_AS_8_INTERLACED       , kCompressed,   4, 1, 8, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_32_AS_8_8_INTERLACED     , kCompressed,   1, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_INTERLACED            , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_MPEG_INTERLACED       , kUncompressed, 1, 1, 16, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_16_16_MPEG_INTERLACED    , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_DXN                      , kCompressed,   4, 4, 8, 8, 8, 0, 0, true),
+      FORMAT_INFO(k_8_8_8_8_AS_16_16_16_16   , kResolvable,   1, 1, 32, 8, 8, 8, 8, true),
+      FORMAT_INFO(k_DXT1_AS_16_16_16_16      , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_DXT2_3_AS_16_16_16_16    , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_DXT4_5_AS_16_16_16_16    , kCompressed,   4, 4, 8, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_2_10_10_10_AS_16_16_16_16, kResolvable,   1, 1, 32, 10, 10, 10, 2, true),
+      FORMAT_INFO(k_10_11_11_AS_16_16_16_16  , kResolvable,   1, 1, 32, 11, 11, 10, 0, true),
+      FORMAT_INFO(k_11_11_10_AS_16_16_16_16  , kResolvable,   1, 1, 32, 10, 11, 11, 0, true),
+      FORMAT_INFO(k_32_32_32_FLOAT           , kUncompressed, 1, 1, 96, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_DXT3A                    , kCompressed,   4, 4, 4, 8, 0, 0, 0, true),
+      FORMAT_INFO(k_DXT5A                    , kCompressed,   4, 4, 4, 8, 0, 0, 0, true),
+      FORMAT_INFO(k_CTX1                     , kCompressed,   4, 4, 4, 8, 8, 0, 0, true),
+      FORMAT_INFO(k_DXT3A_AS_1_1_1_1         , kCompressed,   4, 4, 4, 0, 0, 0, 0, false),
+      FORMAT_INFO(k_8_8_8_8_GAMMA_EDRAM      , kUncompressed, 1, 1, 32, 8, 8, 8, 8, true),
+      FORMAT_INFO(k_2_10_10_10_FLOAT_EDRAM   , kUncompressed, 1, 1, 32, 0, 0, 0, 0, false),
+  };
+  return &format_infos[gpu_format];
+}
+#undef FORMAT_INFO
+
+
+// Adapted from Xenia Canary d119505: 5 bits per output component.
+// Zero in a lane means scale 1, preserving constant 0/1 swizzles.
+uint32_t FormatInfo::GetIntegerScaleBits(uint32_t num_format, uint32_t host_swizzle,
+                                        uint8_t swizzled_signs) const {
+  if (!num_format || !fixed) return 0;
+  uint32_t packed = 0;
+  for (uint32_t i = 0; i < 4; ++i) {
+    uint32_t source = (host_swizzle >> (3 * i)) & 7;
+    if (source >= xenos::XE_GPU_TEXTURE_SWIZZLE_0) continue;
+    auto sign = xenos::TextureSign((swizzled_signs >> (2 * i)) & 3);
+    uint32_t width = component_bits[source];
+    if (!width || width > 16 || sign == xenos::TextureSign::kGamma) continue;
+    uint32_t lane = width - 1;
+    if (sign == xenos::TextureSign::kSigned) lane |= 16;
+    packed |= lane << (5 * i);
+  }
+  return packed;
+}
+
+}  //  namespace rex::graphics

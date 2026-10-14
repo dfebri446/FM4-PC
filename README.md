@@ -130,9 +130,10 @@ Data lokal disimpan di bawah `BuildRoot`:
 
 ```text
 FM4-build/
-├── sdk-source/       # SDK dan dependensi yang diunduh
-├── sdk-build/        # Build SDK
-├── sdk-install/      # SDK yang dipasang lokal
+├── runtime-source/   # Salinan work/runtime + library pihak ketiga
+├── runtime-upstream/ # Clone SDK upstream (hanya untuk library pihak ketiga)
+├── runtime-build/    # Build runtime
+├── runtime-install/  # Runtime yang dipasang lokal
 ├── project/          # Source integrasi dan generated/ privat
 ├── game-build/       # Executable, modul, runtime, plugin GPU
 ├── user-data/        # Profil, save, dan konten Disc 2 yang diimpor
@@ -191,18 +192,19 @@ Prioritas validasi berikutnya adalah komputer kedua, balapan karier sampai hadia
 - Jika hash XEX ditolak, periksa versi game dan kelengkapan ekstraksi. Mengganti nama file tidak membuat revisi lain kompatibel.
 - Jika aset tidak ditemukan, `Disc1` harus menunjuk root hasil ekstraksi lengkap, bukan folder berisi tiga XEX saja.
 - Periksa log tahap yang gagal di `BuildRoot\logs`. Jangan menggabungkan runtime/plugin dari build berbeda; `run` memeriksa hash artifact.
-- Jangan menerapkan patch historis di `outputs/FM4-analysis` di atas `outputs/FM4-build/sdk.patch`; workflow sudah memakai patch gabungan.
+- Runtime ada di `work/runtime` (fork SDK ReXGlue, hanya D3D12). Patch historis di `outputs/FM4-analysis` tidak perlu diterapkan. BuildRoot lama dengan susunan `sdk-source` ditolak; buat BuildRoot baru.
 - Jika PowerShell memblokir skrip yang sudah kamu tinjau, contoh pemanggilan dengan execution policy khusus proses tersedia dalam [panduan build lengkap](outputs/FM4-build/README.txt).
 
 ## Isi repo dan atribusi
 
-Repo menyimpan kode integrasi, tooling, tes sintetis, metadata lokasi/batas fungsi, resep switch, dan patch/source SDK. Instruksi asli game, isi tabel switch, aset, shader game, hasil recompilation, binary, save, serta capture tidak disertakan. Instruksi dan isi tabel dibaca dari data milik pengguna saat generate.
+Repo menyimpan kode integrasi, tooling, tes sintetis, metadata lokasi/batas fungsi, resep switch, dan runtime (fork SDK ReXGlue di `work/runtime`). Instruksi asli game, isi tabel switch, aset, shader game, hasil recompilation, binary, save, serta capture tidak disertakan. Instruksi dan isi tabel dibaca dari data milik pengguna saat generate.
 
 SDK dan shader resolve yang disertakan mempertahankan atribusi serta lisensi upstream:
 
 - [Pemberitahuan ReXGlue/Xenia](outputs/FM4-source-control/third-party-notices/ReXGlue-LICENSE.txt)
-- [Lisensi shader Xenia](outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/LICENSE.xenia)
-- [Asal dan adaptasi source shader resolve](outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/PROVENANCE.txt)
+- [Lisensi runtime (ReXGlue/Xenia)](work/runtime/LICENSE)
+- [Lisensi shader Xenia](work/runtime/src/graphics/shaders/fm4-resolve/LICENSE.xenia)
+- [Asal dan adaptasi source shader resolve](work/runtime/src/graphics/shaders/fm4-resolve/PROVENANCE.txt)
 
 Repo ini tidak menetapkan lisensi proyek menyeluruh yang baru dan tidak memberikan hak atas konten FM4. Daftar berkas yang ditinjau dicatat dalam [tracked-files.json](outputs/FM4-source-control/tracked-files.json). `.gitignore` mengabaikan berkas baru secara bawaan; penambahan source memerlukan pembaruan daftar tersebut dan peninjauan isi.
 

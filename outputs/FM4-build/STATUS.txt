@@ -234,6 +234,14 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   gagal mencapai balapan; tidak dijadikan default.
 - Di jalur vertex buffer, upload memori guest ke GPU memakan 116 ms/s dan
   lock global hanya 20 ms/s.
+- Runtime milik proyek (14 Oktober 2026): work/runtime (fork ReXGlue SDK,
+  D3D12 saja) menggantikan sdk.patch/sdk-extra. Setup/generate/build penuh di
+  BuildRoot baru lolos; source runtime identik dengan BuildRoot lama selain akhir
+  baris. e2e quickrace + kamera: 3 run dengan profil baru gagal navigasi
+  (profil kosong: mobil default dan layar pra-balapan lain, harness tidak
+  mengenali balapan; game berjalan), dengan profil dan cache yang disalin 6 dari
+  6 run mencapai balapan, 0 frame jalan hilang. Selang-seling lama/baru: 49,4 /
+  52,0 dan 57,4 / 58,7 fps. BuildRoot lama dengan sdk-source ditolak setup.
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------

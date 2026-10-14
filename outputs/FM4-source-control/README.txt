@@ -2,7 +2,7 @@ FM4 development: source-only repository
 ================================================
 
 This repository records reviewed integration code, diagnostic tools, synthetic
-tests and selected ReXGlue SDK patches. It does not contain the original game,
+tests and the project's runtime, a D3D12-only fork of the ReXGlue SDK. It does not contain the original game,
 translated game function bodies, extracted content, game shaders or build output.
 
 Included:
@@ -11,21 +11,27 @@ Included:
 - work/fm4-rex/tests: synthetic arithmetic vectors and SDK texture-format tests.
   vector-vectors.h is generated from a mathematical oracle, not a game dump.
 - CMake files and two local diagnostic helper scripts.
+- work/runtime: ReXGlue SDK fork (BSD-3, Xenia-derived portions, notices kept).
+  Third-party libraries are not stored; setup fetches them from the pinned
+  upstream SDK revision. Inventory category runtime-fork; files may be up to
+  512 KiB, and the recompiler emitter (function_graph.cpp) is marked so the
+  translated-function pattern check skips it.
 - outputs/FM4-analysis: seven selected SDK source patches. They are historical
-  patches. The complete portable workflow uses ../FM4-build/sdk.patch instead.
+  patches, already contained in work/runtime.
 - ReXGlue/Xenia copyright and BSD license notice in third-party-notices.
 
 Excluded (kept on this computer, never staged for this checkpoint):
 - Original discs, ISO/XEX files, extracted assets, loaded images and memory dumps.
 - generated/, translated/disassembled game code, crash-function.cpp,
   original extracted tables and game shader analysis.
-- SDK checkout, executable/DLL/library files, build/cache directories.
+- SDK/third-party checkouts, executable/DLL/library files, build/cache directories.
 - Captures, screenshots, logs, traces, saves, user data and existing archives.
 - XenonRecomp-FM4-fixes.patch, pending a separate provenance/license review.
 
 The portable setup/generate/build/run workflow is documented in
-../FM4-build/README.txt. It downloads a pinned open-source SDK, applies the full
-SDK patch and regenerates private game source using the user's extracted discs.
+../FM4-build/README.txt. It builds work/runtime with third-party libraries from a
+pinned open-source SDK revision and regenerates private game source using the
+user's extracted discs.
 The tracked compiler-template transform (FM4-build/guard-generated.py) has been
 reviewed separately; it contains generic emitter transforms, not original game
 function bodies. Reviewed numeric function locations/bounds and switch recipes

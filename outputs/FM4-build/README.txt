@@ -78,18 +78,23 @@ Optional actions for performance work:
 
 What happens
 ------------
-1. setup clones rexglue/rexglue-sdk at f5337cdc947ff6d4c4196737e2c807a48f2a1fc2,
-   initializes its pinned submodules, applies sdk.patch and sdk-extra, compiles
-   the licensed Xenia/ReXGlue resolve shaders with Windows SDK FXC, then builds
-   and installs a matching Release SDK locally. The old individual SDK patches
-   in FM4-analysis are historical; do NOT apply them on top of sdk.patch.
+1. setup builds the project's runtime, a D3D12-only fork of the ReXGlue SDK kept
+   in work/runtime. It mirrors work/runtime to BuildRootuntime-source, takes
+   the third-party libraries from rexglue/rexglue-sdk at
+   f5337cdc947ff6d4c4196737e2c807a48f2a1fc2 (its vendored directories and the
+   13 submodules the D3D12 build needs; Vulkan, SPIR-V, Tracy and the tests are
+   not fetched), compiles the licensed Xenia/ReXGlue resolve shaders with
+   Windows SDK FXC, then builds and installs the Release runtime locally. The
+   old individual SDK patches in FM4-analysis are historical.
 2. generate validates the input executables. A small SDK loader reads the user's
    executable without running guest code. It creates a private image; bounded
    switch dispatches are evaluated from that image to regenerate switch labels.
    ReXGlue generates the main executable and both auxiliary module sources.
    Compiler-template transforms add instruction helpers and reject unresolved
    direct branches/labels. No existing generated tree is required.
-3. build compiles the application and both modules, stages the matching runtime
+3. build first mirrors work/runtime again and rebuilds the runtime
+   incrementally, so runtime edits only need build. It then compiles the
+   application and both modules, stages the matching runtime
    and GPU DLLs, runs arithmetic instruction tests and writes build-result.json.
 4. run verifies the build artifacts and game revision, mounts Disc 1, imports
    Disc 2 packages if provided and starts the interactive game. Shader compilation
@@ -127,8 +132,8 @@ integration metadata (locations, lengths, registers and counts); switch labels
 and instruction contents are read from the user's executable during generation.
 guard-generated.py transforms generic compiler output templates locally; it
 contains no stored original function bodies. rexglue.cmake is SDK-generated build
-boilerplate, covered by the SDK notice. sdk.patch and sdk-extra contain SDK code,
-not game code. Shader sources have Xenia BSD notices and PROVENANCE.txt; see also
+boilerplate, covered by the SDK notice. work/runtime contains SDK code (BSD-3,
+with Xenia-derived portions), not game code. Shader sources have Xenia BSD notices and PROVENANCE.txt; see also
 ../FM4-source-control/third-party-notices/ReXGlue-LICENSE.txt.
 
 The root allowlist excludes newly created files by default. Run the tracked

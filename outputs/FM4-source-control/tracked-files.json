@@ -1,5 +1,8 @@
 {
   "version": 1,
+  "categories": {
+    "runtime-fork": "ReXGlue SDK runtime fork (rexglue/rexglue-sdk f5337cd, BSD-3-Clause, Xenia-derived portions; notices retained), D3D12 only, with FM4 changes; no game content"
+  },
   "files": [
     {
       "path": ".gitattributes",
@@ -119,102 +122,6 @@
     },
     {
       "path": "outputs/FM4-build/rexglue.cmake",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/filesystem/file.cpp",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/LICENSE.xenia",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/PROVENANCE.txt",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/edram.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/endian.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/pixel_formats.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_16bpp.cs.xesl",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_16bpp.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_16bpp_scaled.cs.xesl",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_32bpp.cs.xesl",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_32bpp.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_32bpp_scaled.cs.xesl",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_64bpp.cs.xesl",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_64bpp.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_64bpp_scaled.cs.xesl",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_8bpp.cs.xesl",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_8bpp.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/resolve_full_8bpp_scaled.cs.xesl",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/texture_address.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/shaders/fm4-resolve/xesl.xesli",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/util/cp_sampler.h",
-      "provenance": "ReXGlue SDK addition (diagnostic sampling profiler); no game content"
-    },
-    {
-      "path": "outputs/FM4-build/sdk-extra/src/graphics/util/perf_trace.h",
-      "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
-    },
-    {
-      "path": "outputs/FM4-build/sdk.patch",
       "provenance": "ReXGlue/Xenia SDK source; upstream BSD notices included"
     },
     {
@@ -348,6 +255,3275 @@
     {
       "path": "work/fm4-rex/tests/vector-vectors.h",
       "provenance": "Synthetic tests/oracle; no game input data"
+    },
+    {
+      "path": "work/runtime/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/CMakePresets.json",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/LICENSE",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/MoltenVK_icd.json",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/embed_templates.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/ppc_test_pipeline.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rex_pch.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rex_version.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rexglueConfig.cmake.in",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rexglue_devenv.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rexglue_fidelityfx.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rexglue_helpers.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rexglue_install.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rexglue_link_audit.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/cmake/rexglue_vulkan_stack.cmake",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/assert.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/audio_driver.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/audio_system.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/conversion.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/downmix.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/flags.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/nop/nop_audio_system.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/sdl/sdl_audio_driver.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/sdl/sdl_audio_system.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/xma/context.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/xma/decoder.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/xma/helpers.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/xma/register_file.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/audio/xma/register_table.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/bit.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/chrono/chrono.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/chrono/chrono_steady_cast.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/chrono/clock.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/analysis_errors.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/analyze.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/binary_view.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/code_emitter.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/code_region.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/codegen.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/codegen_context.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/codegen_writer.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/config.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/function_graph.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/function_node.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/function_scanner.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/function_types.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/manifest.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/output_partition.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/output_stamp.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/phases.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/progress_reporter.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/project_recompiler.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/sig_scanner.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/template_registry.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/test_support.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/codegen/vtable_scanner.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/cvar.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/cvar_cli.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/dbg.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/embedded_metadata.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/exception_handler.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/device.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/disc_image_device.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/disc_image_entry.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/disc_image_file.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/host_path_device.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/host_path_entry.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/host_path_file.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/null_device.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/null_entry.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/null_file.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/stfs_container_device.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/stfs_container_entry.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/stfs_container_file.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/devices/stfs_xbox.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/entry.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/file.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/flags.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/vfs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/filesystem/wildcard.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/command_processor.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/command_processor.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/deferred_command_list.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/graphics_system.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/pipeline_cache.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/primitive_processor.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/render_target_cache.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/shader.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/shared_memory.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/texture_cache.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/flags.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/format/dxbc.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/format/ucode.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/graphics_system.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/packet_disassembler.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/render_target/cache.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/shader/dxbc.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/shader/dxbc_translator.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/shader/interpreter.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/shader/shader.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/shader/translator.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/texture/cache.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/texture/conversion.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/texture/info.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/texture/util.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline_util.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/primitive_processor.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/register_file.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/register_table.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/registers.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/sampler_info.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/shared_memory.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/util/draw.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/util/draw_extent_estimator.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/video_mode_util.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/xenos.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/hash.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/hook.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/image_info.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/device.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/device_assignment.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/flags.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/input.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/input_driver.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/input_system.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/mnk/mnk_input_driver.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/nop/nop_input_driver.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/sdl/sdl_input_driver.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/state_merge.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/input/xinput/xinput_input_driver.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/crt/heap.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/init.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xam/apps/app.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xam/apps/xgi_app.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xam/apps/xlivebase_app.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xam/apps/xmp_app.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xam/module.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xam/module_export_groups.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xam/private.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xbdm/module.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xbdm/module_export_groups.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xbdm/private.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/cert_monitor.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/debug_monitor.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/error.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/module.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/module_export_groups.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/private.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/rtl.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/threading.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/kernel/xboxkrnl/video.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/literals.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/logging.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/logging/api.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/logging/assert.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/logging/format.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/logging/macros.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/logging/sink.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/logging/types.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/math.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/memory.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/memory/arena.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/memory/mapped_memory.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/memory/ring_buffer.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/memory/utils.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/net/socket.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/o1heap_config.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/perf/counter.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/platform.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/platform/console.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/platform/dynlib.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/platform/env.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/platform/exceptions.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/platform/fpscr.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/platform/seh.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ppc.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ppc/context.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ppc/func.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ppc/function.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ppc/intrinsics.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ppc/stack.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/result.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/rex_app.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/runtime.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/stream.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/string.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/string/buffer.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/string/key.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/string/numeric.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/string/utf8.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/achievement_manager.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/achievement_store.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/achievements.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/binary_types.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/elf_module.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/entry_table.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/export_resolver.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/flags.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/format.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/function.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/function_dispatcher.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/gpu_plugin.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/guest_path.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/info/file.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/info/volume.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/interfaces/audio.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/interfaces/graphics.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/interfaces/input.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/kernel_module.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/kernel_state.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/lzx.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/map_parser.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/mmio_handler.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/module.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/symbol.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/thread.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/thread_state.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/user_module.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/util/gameinfo_utils.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/util/native_list.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/util/object_table.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/util/ordinal_table_post.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/util/ordinal_table_pre.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/util/string_utils.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/util/xdbf_utils.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/util/xex2_info.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xam/app_manager.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xam/content_device.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xam/content_manager.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xam/user_profile.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xcontent.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xenumerator.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xevent.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xex_module.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xexception.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xfile.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xio.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xiocompletion.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xmemory.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xmodule.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xmutant.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xnotifylistener.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xobject.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xsemaphore.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xsocket.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xsymboliclink.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xthread.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xtimer.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xtypes.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/system/xvideo.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/thread.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/thread/atomic.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/thread/fiber.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/thread/mutex.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/thread/timer_queue.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/types.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_api.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_cpu_descriptor_pool.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_descriptor_heap_pool.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_immediate_drawer.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_presenter.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_provider.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_submission_tracker.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_upload_buffer_pool.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/d3d12/d3d12_util.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/flags.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/graphics_provider.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/graphics_upload_buffer_pool.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/graphics_util.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/image_decode.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/imgui_dialog.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/imgui_drawer.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/immediate_drawer.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/keybinds.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/menu_item.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/overlay/achievement_icon_cache.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/overlay/achievement_notification.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/overlay/achievement_toast.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/overlay/achievements_overlay.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/overlay/console_overlay.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/overlay/debug_overlay.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/overlay/settings_overlay.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/presenter.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/renderdoc_api.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/sdl_virtual_key.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/style.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/surface.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/surface_gnulinux.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/surface_mac.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/surface_win.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/ui_drawer.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/ui_event.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/virtual_key.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/window.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/window_listener.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/window_sdl.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/windowed_app.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/windowed_app_context.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/ui/windowed_app_context_sdl.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/vec128.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/version.h.in",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/_indirect_call.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/dll_targets_cmake.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/funcs_h.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/init_cpp.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/init_h.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/module_registry_cpp.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/pch_h.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/register_cpp.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/codegen/sources_cmake.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/init/app_header.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/init/cmake_presets.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/init/cmakelists.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/init/main_cpp.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/init/manifest_toml.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/init/rexglue_cmake.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/test/ppc_config_h.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/test/ppc_test_cases_cpp.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/test/ppc_test_decls_h.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/resources/templates/test/ppc_test_functions_cpp.inja",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/audio_driver.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/audio_system.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/downmix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/nop/nop_audio_system.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/sdl/sdl_audio_driver.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/sdl/sdl_audio_system.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/xma_context.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/xma_decoder.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/audio/xma_register_file.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/analyze.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/binary_view.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/arithmetic.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/builder_context.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/comparison.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/context.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/control_flow.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/floating_point.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/helpers.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/logical.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/memory.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/system.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/builders/vector.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/code_emitter.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/codegen.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/codegen_context.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/codegen_flags.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/codegen_flags.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/codegen_logging.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/codegen_writer.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/config.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/decoded_binary.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/decoded_binary.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/file_io.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/function_graph.cpp",
+      "provenance": "runtime-fork",
+      "emitter": true
+    },
+    {
+      "path": "work/runtime/src/codegen/function_scanner.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/instruction_dispatch.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/manifest.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/output_partition.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/output_stamp.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/phase_discover.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/phase_gapfill.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/phase_helpers.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/phase_merge.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/phase_register.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/phase_scan.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/phase_validate.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/ppc/disasm.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/ppc/disasm.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/ppc/instruction.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/ppc/instruction.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/ppc/opcode.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/ppc/opcode.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/project_recompiler.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/sig_scanner.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/template_registry.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/template_registry_internal.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/test_support.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/codegen/vtable_scanner.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/arena.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/atomic_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/atomic_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/bit_map.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/bit_stream.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/byte_stream.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/clock.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/clock_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/clock_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/cvar.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/dbg_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/dbg_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/dynlib_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/dynlib_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/exception_handler.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/exception_handler_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/exception_handler_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/fiber_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/fiber_win32.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/filesystem.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/filesystem_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/filesystem_wildcard.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/filesystem_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/hash.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/logging.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/mapped_memory_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/mapped_memory_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/math_gcc.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/math_msvc.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/memory.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/memory_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/memory_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/mutex.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/perf/counter.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/platform/console_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/platform/console_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/platform/env_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/platform/env_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/platform_posix.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/platform_win.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/ring_buffer.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/seh_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/seh_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/socket_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/socket_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/string_buffer.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/system_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/system_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/threading.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/threading_posix.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/threading_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/timer_queue.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/utf8.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/core/vec128.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/device.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/disc_image_device.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/disc_image_entry.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/disc_image_file.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/host_path_device.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/host_path_entry.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/host_path_file.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/null_device.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/null_device.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/null_entry.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/null_file.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/stfs_container_device.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/stfs_container_entry.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/devices/stfs_container_file.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/entry.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/file.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/vfs_dump.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/filesystem/virtual_file_system.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/command_processor.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/command_processor.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/deferred_command_list.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/graphics_system.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/pipeline_cache.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/primitive_processor.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/render_target_cache.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/shader.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/shared_memory.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/texture_cache.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/flags.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/format/ucode.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/graphics_system.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/packet_disassembler.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/render_target/cache.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/dxbc.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/dxbc_translator.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/dxbc_translator_alu.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/dxbc_translator_memexport.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/dxbc_translator_om.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/interpreter.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/shader.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/translator.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/translator_disasm.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/texture/cache.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/texture/conversion.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/texture/extent.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/texture/info.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/texture/info_formats.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/texture/util.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/plugin_main.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/primitive_processor.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/register_file.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/registers.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/sampler_info.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/adaptive_quad_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/adaptive_triangle_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/apply_gamma_pwl_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/apply_gamma_pwl_fxaa_luma_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/apply_gamma_pwl_fxaa_luma_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/apply_gamma_pwl_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/apply_gamma_table_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/apply_gamma_table_fxaa_luma_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/apply_gamma_table_fxaa_luma_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/apply_gamma_table_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/clear_uint2_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/continuous_quad_1cp_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/continuous_quad_4cp_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/continuous_triangle_1cp_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/continuous_triangle_3cp_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/discrete_quad_1cp_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/discrete_quad_4cp_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/discrete_triangle_1cp_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/discrete_triangle_3cp_hs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/float24_round_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/float24_truncate_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/fullscreen_cw_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/fxaa_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/fxaa_extreme_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/host_depth_store_1xmsaa_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/host_depth_store_2xmsaa_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/host_depth_store_4xmsaa_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/passthrough_position_xy_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_clear_32bpp_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_clear_32bpp_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_clear_64bpp_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_clear_64bpp_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_downscale_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_32bpp_1x2xmsaa_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_32bpp_1x2xmsaa_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_32bpp_4xmsaa_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_32bpp_4xmsaa_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_64bpp_1x2xmsaa_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_64bpp_1x2xmsaa_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_64bpp_4xmsaa_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_64bpp_4xmsaa_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_full_128bpp_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_full_128bpp_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/tessellation_adaptive_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/tessellation_indexed_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_128bpb_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_128bpb_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_16bpb_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_16bpb_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_32bpb_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_32bpb_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_64bpb_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_64bpb_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_8bpb_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_8bpb_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_bgrg8_rgb8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_bgrg8_rgbg8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_ctx1_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_depth_float_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_depth_float_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_depth_unorm_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_depth_unorm_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_dxn_rg8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_dxt1_rgba8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_dxt3_rgba8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_dxt3a_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_dxt3aas1111_argb4_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_dxt3aas1111_bgra4_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_dxt5_rgba8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_dxt5a_r8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_gbgr8_grgb8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_gbgr8_rgb8_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r10g11b11_rgba16_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r10g11b11_rgba16_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r10g11b11_rgba16_snorm_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r10g11b11_rgba16_snorm_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r11g11b10_rgba16_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r11g11b10_rgba16_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r11g11b10_rgba16_snorm_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r11g11b10_rgba16_snorm_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r16_snorm_float_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r16_snorm_float_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r16_unorm_float_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r16_unorm_float_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r4g4b4a4_a4r4g4b4_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r4g4b4a4_a4r4g4b4_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r4g4b4a4_b4g4r4a4_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r4g4b4a4_b4g4r4a4_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r5g5b5a1_b5g5r5a1_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r5g5b5a1_b5g5r5a1_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r5g5b6_b5g6r5_swizzle_rbga_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r5g5b6_b5g6r5_swizzle_rbga_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r5g6b5_b5g6r5_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_r5g6b5_b5g6r5_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_rg16_snorm_float_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_rg16_snorm_float_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_rg16_unorm_float_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_rg16_unorm_float_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_rgba16_snorm_float_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_rgba16_snorm_float_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_rgba16_unorm_float_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/texture_load_rgba16_unorm_float_scaled_cs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/LICENSE.xenia",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/PROVENANCE.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/edram.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/endian.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/pixel_formats.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_16bpp.cs.xesl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_16bpp.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_16bpp_scaled.cs.xesl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_32bpp.cs.xesl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_32bpp.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_32bpp_scaled.cs.xesl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_64bpp.cs.xesl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_64bpp.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_64bpp_scaled.cs.xesl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_8bpp.cs.xesl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_8bpp.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/resolve_full_8bpp_scaled.cs.xesl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/texture_address.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/fm4-resolve/xesl.xesli",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/placeholder.ps.glsl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/resolve_downscale.cs.glsl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shaders/resolve_downscale.cs.hlsl",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/shared_memory.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/util/cp_sampler.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/util/draw.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/util/draw_extent_estimator.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/util/perf_trace.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/xenos.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/input/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/input/device_assignment.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/input/input_system.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/input/mnk/mnk_input_driver.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/input/nop/nop_input_driver.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/input/sdl/sdl_input_driver.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/input/state_merge.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/input/xinput/xinput_input_driver.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/crt/file.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/crt/heap.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/crt/memory.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/crt/string.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/crt/threading.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/export_table_post.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/export_table_pre.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/kernel_init.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/apps/xam_app.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/apps/xgi_app.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/apps/xlivebase_app.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/apps/xmp_app.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/export_table.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_avatar.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_content.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_content_aggregate.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_content_device.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_debug.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_enum.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_info.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_input.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_locale.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_misc.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_module.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_msg.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_net.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_notify.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_nui.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_party.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_task.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_ui.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_user.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_video.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xam/xam_voice.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xbdm/export_table.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xbdm/xbdm_misc.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xbdm/xbdm_module.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/cert_monitor.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/debug_monitor.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/export_table.inc",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_audio.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_audio_xma.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_crypt.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_debug.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_error.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_hal.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_hid.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_io.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_memory.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_misc.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_module.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_modules.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_ob.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_strings.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_threading.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_usbcam.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_video.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/kernel/xboxkrnl/xboxkrnl_xconfig.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/cli_utils.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/codegen_command.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/codegen_command.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/init_command.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/init_command.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/project_scan.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/project_scan.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/template_utils.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/test_recompiler.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/commands/test_recompiler.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/main.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/ui/glyphs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/ui/progress.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/ui/progress.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/ui/ui.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/rexglue/ui/ui.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/achievement_manager.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/achievements.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/elf_module.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/embedded_metadata.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/entry_table.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/export_resolver.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/function_dispatcher.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/gpu_plugin_loader.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/guest_path.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/kernel_module.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/kernel_state.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/lzx.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/map_parser.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/mmio_handler.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/module.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/ppc_types.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/runtime.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/thread.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/thread_state.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/user_module.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/util/gameinfo_utils.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/util/native_list.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/util/object_table.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/util/xdbf_utils.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xam/app_manager.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xam/content_manager.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xam/user_profile.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xenumerator.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xevent.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xex_module.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xfile.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xiocompletion.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xmemory.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xmodule.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xmutant.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xnotifylistener.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xobject.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xsemaphore.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xsocket.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xsymboliclink.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xthread.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/system/xtimer.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/CMakeLists.txt",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/d3d12/d3d12_cpu_descriptor_pool.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/d3d12/d3d12_descriptor_heap_pool.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/d3d12/d3d12_immediate_drawer.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/d3d12/d3d12_presenter.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/d3d12/d3d12_provider.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/d3d12/d3d12_submission_tracker.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/d3d12/d3d12_upload_buffer_pool.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/d3d12/d3d12_util.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/graphics_upload_buffer_pool.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/graphics_util.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/image_decode.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/imgui_dialog.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/imgui_drawer.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/immediate_drawer.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/keybinds.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/menu_item.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/overlay/achievement_icon_cache.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/overlay/achievement_toast.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/overlay/achievements_overlay.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/overlay/console_commands.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/overlay/console_overlay.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/overlay/debug_overlay.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/overlay/settings_overlay.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/presenter.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/renderdoc_api.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/rex_app.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/sdl_virtual_key.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_bilinear_dither_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_bilinear_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_cas_resample_dither_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_cas_resample_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_cas_sharpen_dither_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_cas_sharpen_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_fsr_easu_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_fsr_rcas_dither_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_fsr_rcas_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/guest_output_triangle_strip_rect_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/immediate_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/immediate_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_bilinear_dither_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_bilinear_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_ffx_cas_resample_dither_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_ffx_cas_resample_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_ffx_cas_sharpen_dither_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_ffx_cas_sharpen_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_ffx_fsr_easu_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_ffx_fsr_rcas_dither_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_ffx_fsr_rcas_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/guest_output_triangle_strip_rect_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/immediate_ps.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/vulkan_spirv/immediate_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/surface_gnulinux.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/surface_mac.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/surface_win.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/window.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/window_sdl.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/windowed_app.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/windowed_app_context.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/windowed_app_context_sdl.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/windowed_app_main_sdl.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/thirdparty/CMakeLists.txt",
+      "provenance": "runtime-fork"
     }
   ]
 }

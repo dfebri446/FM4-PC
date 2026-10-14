@@ -14,8 +14,17 @@ from prepare import write_switches
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+# The runtime (ReXGlue SDK fork, D3D12 only) lives in work/runtime. Its
+# third-party libraries still come from the upstream SDK at this revision:
+# the directories it vendors and the submodules the D3D12 build needs.
+RUNTIME = REPO/'work/runtime'
 SDK_REV = 'f5337cdc947ff6d4c4196737e2c807a48f2a1fc2'
 SDK_URL = 'https://github.com/rexglue/rexglue-sdk.git'
+THIRDPARTY_VENDORED = ('aes_128','crypto','disasm','disruptorplus','dxbc','dxc','ffmpeg-overlay','pe',
+                       'renderdoc','stb','tiny-aes-c')
+THIRDPARTY_SUBMODULES = ('cli11','libmspack','FFmpeg','tomlplusplus','simde','xxHash','spdlog','fmt',
+                         'utfcpp','imgui','sdl3','inja','o1heap')
+RESOLVE_SHADERS = [f'resolve_full_{bits}bpp{suffix}' for bits in (8,16,32,64) for suffix in ('','_scaled')]
 XEX_HASHES = {
     'default.xex': '763636fe8cc9d2ff822ade4c972efef907e193f31175def127863575bf3c4ad5',
     'SpeechFacade_default.xex': 'cf06cac7c34e38a9b45db5c7da4a690c7414c8b461537463d3162465e89431bd',
@@ -84,42 +93,80 @@ def validate_discs(disc1, disc2):
                 raise ValueError(f'Missing Disc 2 content package: {package}')
     return disc1, disc2
 
-def setup(root, fxc, jobs):
-    source, build, install = root/'sdk-source', root/'sdk-build', root/'sdk-install'
-    if not source.exists():
-        run(['git','clone',SDK_URL,source],log=root/'logs/sdk-clone.log')
-    head = subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()
-    marker = source/'.fm4-patch-sha256'
-    if not marker.exists():
-        if subprocess.check_output(['git','-C',str(source),'status','--porcelain']).strip():
-            raise RuntimeError('SDK tree has unrecorded edits; use a new build-root.')
-        run(['git','-C',source,'checkout','--detach',SDK_REV])
-        run(['git','-C',source,'submodule','update','--init','--recursive'],log=root/'logs/sdk-submodules.log')
-        run(['git','-C',source,'apply','--check',HERE/'sdk.patch'])
-        run(['git','-C',source,'apply',HERE/'sdk.patch'])
-        shutil.copytree(HERE/'sdk-extra',source,dirs_exist_ok=True)
-        marker.write_text(digest(HERE/'sdk.patch'))
-    elif head != SDK_REV or marker.read_text() != digest(HERE/'sdk.patch'):
-        raise RuntimeError('SDK revision/patch changed. Use a new build-root to avoid mixing versions.')
+def check_layout(root):
+    if (root/'sdk-source').exists() and not (root/'runtime-source').exists():
+        raise RuntimeError('This BuildRoot uses the old sdk-source/sdk.patch layout. Use a new BuildRoot.')
+
+def sync_runtime(root):
+    """Mirror work/runtime into <BuildRoot>/runtime-source. Unchanged files keep their
+    timestamps, so incremental runtime builds only recompile what was edited."""
+    source = root/'runtime-source'
+    listing = source/'.fm4-runtime-files.json'
+    previous = set(json.loads(listing.read_text())) if listing.is_file() else set()
+    current = set()
+    for path in RUNTIME.rglob('*'):
+        if path.is_file():
+            relative = path.relative_to(RUNTIME).as_posix()
+            current.add(relative)
+            destination = source/relative
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            copy_source(path,destination)
+    for relative in previous-current:
+        (source/relative).unlink(missing_ok=True)
+    listing.write_text(json.dumps(sorted(current)))
+
+def fetch_thirdparty(root):
+    """Third-party libraries from the upstream SDK revision, outside the repository."""
+    upstream, destination = root/'runtime-upstream', root/'runtime-source/thirdparty'
+    marker = destination/'.fm4-thirdparty.json'
+    wanted = {'revision':SDK_REV,'vendored':THIRDPARTY_VENDORED,'submodules':THIRDPARTY_SUBMODULES}
+    if marker.is_file() and json.loads(marker.read_text()) == json.loads(json.dumps(wanted)):
+        return
+    if not upstream.exists():
+        run(['git','clone','--no-checkout',SDK_URL,upstream],log=root/'logs/upstream-clone.log')
+    run(['git','-C',upstream,'checkout','--detach',SDK_REV],log=root/'logs/upstream-checkout.log')
+    run(['git','-C',upstream,'submodule','update','--init','--recursive','--',
+         *[f'thirdparty/{name}' for name in THIRDPARTY_SUBMODULES]],log=root/'logs/upstream-submodules.log')
+    for name in THIRDPARTY_VENDORED+THIRDPARTY_SUBMODULES:
+        shutil.rmtree(destination/name,ignore_errors=True)
+        shutil.copytree(upstream/'thirdparty'/name,destination/name,symlinks=True)
+    marker.write_text(json.dumps(wanted))
+
+def compile_resolve_shaders(root, fxc):
+    """FM4 resolve shaders -> DXBC headers; only when their sources changed."""
+    source = root/'runtime-source'
     shader_source = source/'src/graphics/shaders/fm4-resolve'
-    for bits in (8,16,32,64):
-        for suffix in ('','_scaled'):
-            name = f'resolve_full_{bits}bpp{suffix}'
-            run([fxc,'/D','SHADING_LANGUAGE_HLSL_XE=1','/T','cs_5_1','/O3',
-                 '/Qstrip_reflect','/Qstrip_debug','/Qstrip_priv','/Gfp','/nologo',
-                 '/Fh',source/f'src/graphics/shaders/bytecode/d3d12_5_1/{name}_cs.h',
-                 '/Vn',name+'_cs',shader_source/(name+'.cs.xesl')],log=root/f'logs/{name}.log')
-    run(['cmake','-S',source,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
-         '-DCMAKE_C_COMPILER=clang','-DCMAKE_CXX_COMPILER=clang++',
-         '-DCMAKE_C_FLAGS=-march=x86-64-v2','-DCMAKE_CXX_FLAGS=-march=x86-64-v2',
-         '-DREXGLUE_ENABLE_TRACY=OFF','-DREXGLUE_BUILD_TESTS=OFF','-DREXGLUE_USE_VULKAN=OFF',
-         f'-DCMAKE_INSTALL_PREFIX={install}'],log=root/'logs/sdk-configure.log')
-    run(['cmake','--build',build,'--parallel',jobs],log=root/'logs/sdk-build.log')
-    run(['cmake','--install',build],log=root/'logs/sdk-install.log')
-    (root/'setup-complete.json').write_text(json.dumps({'revision':SDK_REV,'patch':digest(HERE/'sdk.patch')}))
+    inputs = hashlib.sha256(b''.join(path.read_bytes() for path in sorted(shader_source.glob('*.xesl*'))))
+    marker = source/'.fm4-resolve-shaders'
+    outputs = [source/f'src/graphics/shaders/bytecode/d3d12_5_1/{name}_cs.h' for name in RESOLVE_SHADERS]
+    if marker.is_file() and marker.read_text() == inputs.hexdigest() and all(path.is_file() for path in outputs):
+        return
+    for name,output in zip(RESOLVE_SHADERS,outputs):
+        run([fxc,'/D','SHADING_LANGUAGE_HLSL_XE=1','/T','cs_5_1','/O3',
+             '/Qstrip_reflect','/Qstrip_debug','/Qstrip_priv','/Gfp','/nologo',
+             '/Fh',output,'/Vn',name+'_cs',shader_source/(name+'.cs.xesl')],log=root/f'logs/{name}.log')
+    marker.write_text(inputs.hexdigest())
+
+def build_runtime(root, fxc, jobs):
+    source, build, install = root/'runtime-source', root/'runtime-build', root/'runtime-install'
+    sync_runtime(root)
+    fetch_thirdparty(root)
+    compile_resolve_shaders(root, fxc)
+    if not (build/'build.ninja').is_file():
+        run(['cmake','-S',source,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
+             '-DCMAKE_C_COMPILER=clang','-DCMAKE_CXX_COMPILER=clang++',
+             '-DCMAKE_C_FLAGS=-march=x86-64-v2','-DCMAKE_CXX_FLAGS=-march=x86-64-v2',
+             '-DREXGLUE_ENABLE_TRACY=OFF','-DREXGLUE_BUILD_TESTS=OFF','-DREXGLUE_USE_VULKAN=OFF',
+             f'-DCMAKE_INSTALL_PREFIX={install}'],log=root/'logs/runtime-configure.log')
+    run(['cmake','--build',build,'--parallel',jobs],log=root/'logs/runtime-build.log')
+    run(['cmake','--install',build],log=root/'logs/runtime-install.log')
+
+def setup(root, fxc, jobs):
+    build_runtime(root, fxc, jobs)
+    (root/'setup-complete.json').write_text(json.dumps({'thirdparty_revision':SDK_REV,'runtime':'work/runtime'}))
 
 def generate(root, disc1, disc2, jobs):
-    install, project = root/'sdk-install', root/'project'
+    install, project = root/'runtime-install', root/'project'
     cli = install/'bin/rexglue.exe'
     if not cli.is_file() or not (root/'setup-complete.json').is_file():
         raise RuntimeError('Run setup first.')
@@ -181,12 +228,14 @@ def flavor_flags(root,flavor):
         flags+=[f'-fprofile-use={profile.as_posix()}','-Wno-profile-instr-out-of-date','-Wno-profile-instr-unprofiled']
     return ' '.join(flags)
 
-def build_game(root,jobs,flavor=()):
-    project, install, build = root/'project',root/'sdk-install',game_build_dir(root,flavor)
+def build_game(root,fxc,jobs,flavor=()):
+    project, install, build = root/'project',root/'runtime-install',game_build_dir(root,flavor)
     if not (root/'local.json').is_file():
         raise RuntimeError('Run generate first.')
     state=json.loads((root/'local.json').read_text())
     validate_discs(state['disc1'],state['disc2'])
+    # Edits in work/runtime are picked up here: sync, incremental build, install.
+    build_runtime(root,fxc,jobs)
     suffix=build.name[len('game-build'):]
     # clang++ drives lld-link, so linker options go through -Xlinker.
     lto_jobs=f'-Xlinker /opt:lldltojobs={jobs}'
@@ -199,7 +248,7 @@ def build_game(root,jobs,flavor=()):
     started=time.time()
     run(['cmake','--build',build,'--parallel',jobs],log=root/f'logs/game-build{suffix}.log')
     print(f'Game build took {time.time()-started:.0f} s.')
-    # Always stage the matching patched runtime/plugin, including incremental builds.
+    # Always stage the matching runtime/plugin, including incremental builds.
     for dll in (install/'bin').glob('*.dll'):
         shutil.copyfile(dll,build/dll.name)
     run([build/'fm4_instruction_tests.exe'],cwd=build,log=root/f'logs/instruction-tests{suffix}.log')
@@ -268,7 +317,7 @@ def main():
     args=parser.parse_args()
     root=args.build_root.resolve()
     # Never write private outputs into the tracked deliverables/source directories.
-    if root in (REPO,*REPO.parents) or REPO/'outputs'==root or REPO/'outputs' in root.parents or REPO/'work/fm4-rex'==root or REPO/'work/fm4-rex' in root.parents:
+    if root in (REPO,*REPO.parents) or any(root==REPO/d or REPO/d in root.parents for d in ('outputs','work/fm4-rex','work/runtime')):
         raise ValueError('BuildRoot must be a dedicated private directory, e.g. work/portable-fm4 or D:/FM4-build.')
     if args.jobs<1 or args.jobs>64:
         raise ValueError('jobs must be between 1 and 64')
@@ -281,9 +330,10 @@ def main():
     if args.action in ('generate','all'):
         discs=validate_discs(args.disc1,args.disc2)
     root.mkdir(parents=True,exist_ok=True)
+    check_layout(root)
     if args.action in ('setup','all'): setup(root,fxc,args.jobs)
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
-    if args.action in ('build','all'): build_game(root,args.jobs,flavor)
+    if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
     if args.action=='run': launch(root,args.single_tile,args.fixed_vblank)
     if args.action=='warmcache': warm_cache(root)
 

@@ -53,7 +53,7 @@ Requirements and data sent
 
 Performance trace
 -----------------
-sdk-extra/src/graphics/util/perf_trace.h (wired by sdk.patch) writes one JSON
+work/runtime/src/graphics/util/perf_trace.h writes one JSON
 line per second when REX_PERF_TRACE_FILE is set; otherwise it does nothing.
 Fields: fps (guest swaps), frame_max_ms, frame_ms (every frame in the window),
 draws, copies (resolves), readbacks, readback_kb, and wait_ms per cause for the
@@ -105,7 +105,7 @@ that build PM4 packets, rewritten every 5 seconds. The function list in
 work\fm4-rex\src\fm4-d3d-trace.cpp comes from a static scan of the generated
 code (addresses and packet names only):
 
-  python outputs\FM4-build\e2e\pm4_writers.py <BuildRoot>\project\generated\default <BuildRoot>\sdk-source\include\rex\graphics\xenos.h out.json
+  python outputs\FM4-build\e2e\pm4_writers.py <BuildRoot>\project\generated\default <BuildRoot>\runtime-source\include\rex\graphics\xenos.h out.json
 
 Headers whose packet count is computed at run time (DRAW_INDX, SET_CONSTANT)
 are not found by the scan.
@@ -126,19 +126,15 @@ goal not reached, median FPS down > 5%, frame p99 up > 20%, or an error key
 that the baseline does not have. A wait cause up > 20% or different capture
 statistics only WARN; races are not deterministic, so check captures by eye.
 
-SDK development loop
---------------------
-For performance work on the SDK, edit the BuildRoot copy directly instead of
-re-running setup:
-1. Edit <BuildRoot>\sdk-source.
-2. cmake --build <BuildRoot>\sdk-build, then cmake --install <BuildRoot>\sdk-build
-   (inside a VS x64 developer shell with LLVM on PATH, as Build.ps1 sets up).
-3. Build.ps1 -Action build -BuildRoot <BuildRoot>: incremental game build,
-   copies the SDK DLLs, runs the instruction tests, writes build-result.json.
-4. Before committing, regenerate the tracked patch and extra files:
-     git -C <BuildRoot>\sdk-source diff -- . ':(exclude)src/graphics/shaders/bytecode' > outputs\FM4-build\sdk.patch
-   and copy changed files that sdk.patch does not carry (for example
-   src/graphics/util/perf_trace.h) to outputs\FM4-build\sdk-extra.
-Only setup checks the sdk.patch digest (.fm4-patch-sha256). Do not re-run setup
-on a development BuildRoot; verify a clean setup in a new BuildRoot at the end
-of each stage.
+Runtime development loop
+------------------------
+The runtime (ReXGlue SDK fork) is work/runtime in this repository:
+1. Edit work/runtime directly.
+2. Build.ps1 -Action build -BuildRoot <BuildRoot>: mirrors work/runtime to
+   <BuildRoot>\runtime-source, rebuilds and installs the runtime incrementally,
+   builds the game, copies the runtime DLLs, runs the instruction tests and
+   writes build-result.json.
+3. Add new runtime files to outputs\FM4-source-control\tracked-files.json
+   (category runtime-fork) and run check-staged-content.py before committing.
+Never edit <BuildRoot>\runtime-source: the next build overwrites it. Verify a
+clean setup in a new BuildRoot at the end of each stage.

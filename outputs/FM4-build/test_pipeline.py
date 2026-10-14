@@ -56,8 +56,10 @@ class PipelineTests(unittest.TestCase):
                 with self.assertRaises(ValueError): pipeline.validate_discs(root,None)
 
     def test_new_clone_has_all_source_inputs(self):
-        for name in ('sdk.patch','rexglue.cmake','guard-generated.py','dump-image.cpp','switch-recipes.json'):
+        for name in ('rexglue.cmake','guard-generated.py','dump-image.cpp','switch-recipes.json'):
             self.assertTrue((pipeline.HERE/name).is_file(),name)
+        for name in ('CMakeLists.txt','thirdparty/CMakeLists.txt','src/graphics/shaders/fm4-resolve/resolve.xesli'):
+            self.assertTrue((pipeline.RUNTIME/name).is_file(),name)
         for recipe in json.loads((pipeline.HERE/'switch-recipes.json').read_text()):
             self.assertEqual(set(recipe),{'start','end','address','register','count'})
             self.assertNotIn('labels',recipe)
