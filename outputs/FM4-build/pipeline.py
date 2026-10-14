@@ -232,9 +232,9 @@ def launch_cvars(root,disc1,log_file):
     """Launcher cvars, shared with e2e/e2e.py. New performance defaults go here once they pass e2e."""
     return {'game_data_root':disc1,'user_data_root':root/'user-data','cache_root':root/'cache',
             'allow_game_relative_writes':'false','headless':'false','fullscreen':'false',
-            'render_target_path_d3d12':'rtv','edram_single_rt_no_wrap':'true','readback_resolve':'fast',
+            'render_target_path_d3d12':'rov','readback_resolve':'fast',
             'gpu_allow_invalid_fetch_constants':'true','async_shader_compilation':'false',
-            'rov_occlusion_awaited_report_divisor':'2','rov_occlusion_async':'previous',
+            'rov_occlusion_awaited_report_divisor':'2','rov_occlusion_async':'all',
             'input_backend':'sdl','mnk_mode':'true','mnk_mouse':'false',
             'keybind_right_trigger':'W','keybind_left_trigger':'S',
             'keybind_lstick_left':'A','keybind_lstick_right':'D',
