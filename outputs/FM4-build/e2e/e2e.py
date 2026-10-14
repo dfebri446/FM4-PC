@@ -23,6 +23,14 @@ SCENARIOS = {
     ],
 }
 
+# Steps after a goal (--steps <name>): hold the throttle and press Back every 6 s, cycling
+# the race cameras (cockpit, hood, bumper, chase near, chase far, back to cockpit).
+_CAMERA = [[4, 'rt=255+back', 0.15], [0.2, 'rt=255', 0]] + [[6, 'rt=255+back', 0.15], [0.2, 'rt=255', 0]] * 5
+STEP_PRESETS = {'camera': _CAMERA}
+# Exact FM4 clear color: where it covers >= 1% of a race capture, geometry such as the road
+# surface was not drawn (seen on the RTV path).
+CLEAR_GRAY = bytes([102, 102, 102])
+
 # Goals for Jev-driven navigation. The route is guidance for the judgment, not a script.
 GOALS = {
     'quickrace': {
@@ -395,7 +403,10 @@ def run_once(options, out):
     # Diagnostic variables, e.g. REX_RESOLVE_PUBLICATION_TRACE=<path>.
     env.update(item.split('=', 1) for item in options.env)
     # With --goal, --steps run after the goal is reached (e.g. looking around in the race).
-    steps = json.loads(options.steps) if options.steps else ([] if options.goal else SCENARIOS[options.scenario])
+    if options.steps in STEP_PRESETS:
+        steps = STEP_PRESETS[options.steps]
+    else:
+        steps = json.loads(options.steps) if options.steps else ([] if options.goal else SCENARIOS[options.scenario])
 
     stderr = open(out / 'stderr.log', 'w', encoding='utf-8', errors='replace')
     started = time.time()
@@ -441,7 +452,12 @@ def run_once(options, out):
         # Keep the final capture under a stable name for checkpoints.
         ppm_to_png(frames[-1], out / 'final.png')
         final_stats = capture_stats(frames[-1])
+    clear_gray_frames = []
     for frame in frames:
+        width, height, rgb = read_ppm(frame)
+        # Runs of the clear color count once per pixel; misaligned matches are negligible.
+        if rgb.count(CLEAR_GRAY) >= 0.01 * width * height:
+            clear_gray_frames.append(frame.stem)
         ppm_to_png(frame, frame.with_suffix('.png'))
         if not options.keep_ppm:
             frame.unlink()
@@ -462,6 +478,7 @@ def run_once(options, out):
         'frames_captured': len(frames), 'perf_windows': len(perf),
         **summarize(perf, options.measure),
         'final_capture': final_stats,
+        'clear_gray_frames': clear_gray_frames,
         'errors': errors,
         'top_errors': sorted(errors.items(), key=lambda kv: -kv[1])[:10],
     }
@@ -497,6 +514,7 @@ def aggregate(runs):
         'cpu_ms_per_s_median': nested('cpu_ms_per_s_median'),
         'occlusion_samples_median': nested('occlusion_samples_median'),
         'final_captures': [r['final_capture'] for r in runs],
+        'clear_gray_frames': sum(len(r.get('clear_gray_frames', [])) for r in runs),
         'errors': errors,
         'top_errors': sorted(errors.items(), key=lambda kv: -kv[1])[:10],
     }
@@ -532,7 +550,7 @@ def main():
     parser.add_argument('--goal', choices=sorted(GOALS), help='navigate with Jev instead of a timeline')
     parser.add_argument('--goal-timeout', type=float, default=360)
     parser.add_argument('--env', action='append', default=[], help='extra NAME=value for the game process')
-    parser.add_argument('--steps', help='JSON list of steps, overrides --scenario')
+    parser.add_argument('--steps', help='JSON list of steps or a preset name (camera), overrides --scenario')
     parser.add_argument('--arg', action='append', default=[], help='extra/override --cvar=value')
     parser.add_argument('--tail', type=float, default=10, help='seconds to keep running after the last step')
     parser.add_argument('--keep-ppm', action='store_true', help='keep full-resolution captures')

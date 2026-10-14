@@ -139,10 +139,17 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   sehingga wilayah EDRAM-nya berputar melewati akhir EDRAM dan merebut tile
   warna di base 0; edram_single_rt_no_wrap mencegahnya. Report occlusion
   dihitung sebagai snapshot kumulatif dengan query host
-  (rtv_occlusion_snapshots). Dengan rov_occlusion_async=all, aspal di depan
-  mobil tidak tergambar beberapa detik setelah start (report terlambat dibaca
-  sebagai tak terlihat); previous memperbaikinya, off/unawaited juga benar
-  tetapi 35-49 fps.
+  (rtv_occlusion_snapshots). Mode off/unawaited 35-49 fps; previous 60 fps.
+- Masalah terbuka RTV (14 Oktober 2026): potongan jalan tertentu, terutama
+  start straight (sekitar 4-14 detik setelah start), kadang tidak tergambar;
+  yang tampak warna clear rata (102,102,102), sementara kerb dan objek lain
+  tetap ada. Terjadi di sekitar 6 dari 28 run balapan RTV, dengan semua mode
+  occlusion (all, previous, off), di kamera mana pun; tidak pernah terjadi di
+  75 run ROV. Bukan karena timing atau nilai occlusion (query FM4 per frame
+  berisi satu sprite matahari per tile; nilainya sama di ROV dan RTV), bukan
+  uji depth EQUAL (FM4 tidak memakainya), dan bukan cache pipeline. Penyebab
+  belum diketahui. e2e mendeteksinya lewat clear_gray_frames; jalur ROV
+  (--render_target_path_d3d12=rov --rov_occlusion_async=all) tidak terkena.
 - Perbandingan visual RTV vs ROV (14 Oktober 2026): menu utama identik (selisih
   rata-rata 0,01 level per kanal); Autovista Ferrari 458 statis setara (75%
   piksel sama persis, 24% berbeda 1 level, maksimum 5 level). Distribusi

@@ -87,7 +87,8 @@ What happens
    edram_single_rt_no_wrap=true), which reaches a stable 60 fps in Quick Race.
    Occlusion reports are published at once from the previous frame's samples
    (rov_occlusion_async=previous) and resolve readbacks do not wait for the GPU
-   (readback_resolve=fast). Sun glare has not been calibrated on this path. If
+   (readback_resolve=fast). Sun glare has not been calibrated on this path, and
+   in some runs a road section (the start straight) is not drawn; see STATUS.txt. If
    rendering misbehaves, compare with the earlier pixel shader interlock path:
    --render_target_path_d3d12=rov --rov_occlusion_async=all (sun query scaled by
    rov_occlusion_awaited_report_divisor=2), or the fully synchronous

@@ -144,6 +144,11 @@ def check_warn(b, c):
         p = pair(bc, cc, k)
         if p and abs(p[1] - p[0]) > BLACK_SAT_PP_WARN:
             warn.append(f"capture {k} differs by {abs(p[1] - p[0]):.2f} pp; {CAPTURE_NOTE}")
+    gray = lambda d: d.get("clear_gray_frames") if isinstance(d.get("clear_gray_frames"), int) \
+        else len(d.get("clear_gray_frames") or [])
+    if gray(c) > gray(b):
+        warn.append(f"captures showing the clear color (missing geometry) {gray(b)} -> {gray(c)}; "
+                    f"{CAPTURE_NOTE}")
     l1 = hist_l1(bc.get("luma_hist16"), cc.get("luma_hist16"))
     if l1 is not None and l1 > HIST_L1_WARN:
         warn.append(f"capture luma_hist16 L1 distance {l1:.1f} pp (> {HIST_L1_WARN:g}); "

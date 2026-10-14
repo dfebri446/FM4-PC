@@ -22,7 +22,9 @@ Goal-driven with Jev (TypeSafe System One):
   python outputs\FM4-build\e2e\e2e.py --build-root D:\FM4-build --out D:\FM4-build\e2e\race --goal quickrace --tail 40 --measure 30
 
 The quickrace goal starts the game, opens Free Play > Quick Race, accepts the
-default car and track, starts the race and holds the throttle. The run exits
+default car and track, starts the race and holds the throttle. Add
+--steps camera to cycle the race cameras (Back every 6 s) once the race runs.
+The run exits
 with code 1 when the game crashes or the goal is not reached in time.
 
 How goal mode works
@@ -67,7 +69,9 @@ summary.json adds frame_ms_p50/p95/p99, hitch_50ms_per_min and
 hitch_100ms_per_min, cp_busy_ms_per_s_median (window minus all waits: wall time
 the command-processor thread works), counts per second and per frame, and
 final_capture statistics of the last capture (mean luma, % black < 8,
-% saturated > 247, 16-bin luma histogram).
+% saturated > 247, 16-bin luma histogram) and clear_gray_frames: captures in
+which the exact FM4 clear color (102,102,102) covers at least 1%, i.e. geometry
+such as the road surface was not drawn. compare.py warns when it rises.
 
 Comparing runs
 --------------
