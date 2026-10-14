@@ -257,7 +257,7 @@ def build_game(root,fxc,jobs,flavor=()):
     (root/f'build-result{suffix}.json').write_text(json.dumps(report,indent=2))
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
-def launch(root,single_tile=False,fixed_vblank=False):
+def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -274,6 +274,16 @@ def launch(root,single_tile=False,fixed_vblank=False):
         cvars['swap_post_effect']='fxaa'
     if fixed_vblank:
         cvars['vblank_vrr']='false'
+    if frame_rate:
+        # The display refresh the title sees (and the guest vblank rate), and the
+        # FrameRate of its render scenarios (races 60, replays and photo mode 30).
+        # The title scales its time step, so the race clock stays real time. Above
+        # 60 fps the ROV path is too slow (GPU about 17 ms a frame), so use RTV.
+        cvars['video_mode_refresh_rate']=str(frame_rate)
+        env['FM4_FRAME_RATE']=str(frame_rate)
+        if frame_rate>60:
+            cvars.update({'render_target_path_d3d12':'rtv','edram_single_rt_no_wrap':'true',
+                          'rov_occlusion_async':'previous'})
     if disc2:
         env['FM4_DISC2_ROOT']=str(disc2)
     args=[root/'game-build/fm4_rex.exe']+[f'--{k}={v}' for k,v in cvars.items()]
@@ -313,6 +323,8 @@ def main():
                         help='run: races without MSAA and predicated tiling, with FXAA (faster)')
     parser.add_argument('--fixed-vblank',action='store_true',
                         help='run: hold every swap to the fixed 60 Hz vblank grid (vblank_vrr=false)')
+    parser.add_argument('--frame-rate',type=int,choices=range(30,241),metavar='30-240',
+                        help='run: unlock the 30/60 fps limits (for example 120)')
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
     args=parser.parse_args()
     root=args.build_root.resolve()
@@ -334,7 +346,7 @@ def main():
     if args.action in ('setup','all'): setup(root,fxc,args.jobs)
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
     if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
-    if args.action=='run': launch(root,args.single_tile,args.fixed_vblank)
+    if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate)
     if args.action=='warmcache': warm_cache(root)
 
 if __name__=='__main__':

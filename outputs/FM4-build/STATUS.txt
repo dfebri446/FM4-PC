@@ -296,6 +296,18 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   (REX_STALE_PAGE_TRACE baris K: satu buffer 32 KB saat loading, 76-192 byte
   basi). Readback resolve tidak lagi menimpa halaman yang ditulis guest sejak
   resolve. Keduanya bukan penyebab jalan hilang.
+- Batas 30/60 fps (15 Oktober 2026): skenario render mengunci FrameRate 60
+  (balapan) atau 30 (countdown, pasca-balapan, replay, photo mode), dan game
+  mengikuti refresh rate yang dilaporkan kernel. Dengan video_mode_refresh_rate
+  120 dan FrameRate 120 (FM4_FRAME_RATE, launcher -FrameRate 120) pada RTV,
+  Quick Race timeline: 114,7 fps, frame median 8,4 ms, p95 11,6, p99 16,1, tanpa
+  hitch >50 ms, error sama dengan 60 fps; jam balapan / jam dinding 1,001
+  (race_clock.py), jadi game menskalakan langkah waktunya dan tidak berjalan
+  lebih cepat. Frame graph tiap frame: setiap frame berisi pass scene penuh
+  (sekitar 1.500-1.900 draw), bukan frame duplikat. Hanya refresh 120: 100 fps,
+  jam 1,001; hanya FrameRate 120 pada 60 Hz: tetap 60. GPU sekitar 5 ms per
+  frame; batasnya command processor. Belum diuji: karier, replay penuh,
+  photo mode, split screen, dan fisika/handling secara subjektif.
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------

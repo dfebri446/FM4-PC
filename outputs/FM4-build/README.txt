@@ -67,6 +67,12 @@ Optional actions for performance work:
   instead of 33, GPU 13 ms instead of 17.5. Edges are visibly more jagged
   than with 2x MSAA (thin cables break up); photo mode and split screen keep
   their own settings.
+- run -FrameRate 120 lifts the title's 30/60 fps limits: the refresh rate it
+  sees and its render scenario FrameRate become 120, and the title scales its
+  time step (race clock against wall time 1.001). Above 60 it uses the RTV
+  render target path. Quick Race: frame time median 8.4 ms (about 119 fps),
+  p95 11.6 ms, p99 16.1 ms, every frame fully rendered; GPU about 5 ms and the
+  command processor set the ceiling. 30-240 accepted.
 - warmcache drives the e2e Quick Race timeline once (no network) so the shader
   and pipeline cache under BuildRoot\cache is filled before playing.
 - build -Flavor thinlto,v3,pgo-gen,pgo-use builds a compiler experiment into
