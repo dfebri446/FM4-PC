@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <map>
 #include <set>
+#include <vector>
 #include <sstream>
 #include <utility>
 
@@ -289,6 +290,156 @@ void WriteGpuInventory(const GpuInventory& inventory) {
   output.close();
   std::error_code error;
   std::filesystem::rename(inventory.path + ".tmp", inventory.path, error);
+}
+
+// Optional frame graph of every REX_FRAME_GRAPH_EVERY-th frame (default 600)
+// (REX_FRAME_GRAPH=<file>), JSON lines: "frame", "pass" (consecutive draws
+// with the same surface state: EDRAM pitch, MSAA, written color targets with
+// base and format, depth base and format, window offset, edram mode; the
+// resolves whose output its textures read) and "resolve" (source, clears,
+// destination). Resolve outputs are tracked across frames to find readers.
+struct FrameGraphTrace {
+  struct Output {
+    uint32_t address, length, id, frame;
+  };
+  std::ofstream output;
+  uint32_t every = 600;
+  uint32_t frame = 0;
+  uint32_t next_id = 0;
+  std::vector<Output> outputs;  // Most recent resolve per destination range.
+  std::string pass;             // Surface description of the open pass.
+  uint32_t pass_draws = 0;
+  std::set<uint32_t> pass_reads;
+  bool sampled() const { return frame % every == 0; }
+  void Flush() {
+    if (!pass_draws) return;
+    output << "{\"pass\":" << pass << ",\"draws\":" << pass_draws << ",\"reads\":[";
+    bool first = true;
+    for (uint32_t id : pass_reads) {
+      output << (first ? "" : ",") << id;
+      first = false;
+    }
+    output << "]}\n";
+    pass_draws = 0;
+    pass_reads.clear();
+  }
+};
+FrameGraphTrace* GetFrameGraphTrace() {
+  static FrameGraphTrace* trace = [] {
+    const char* path = std::getenv("REX_FRAME_GRAPH");
+    if (!path || !*path) return static_cast<FrameGraphTrace*>(nullptr);
+    auto* result = new FrameGraphTrace;
+    result->output.open(path);
+    if (const char* every = std::getenv("REX_FRAME_GRAPH_EVERY")) {
+      result->every = std::max(1, std::atoi(every));
+    }
+    return result;
+  }();
+  return trace;
+}
+void FrameGraphDraw(const RegisterFile& regs, const Shader& vertex_shader, const Shader* pixel_shader,
+                    uint32_t color_mask, reg::RB_DEPTHCONTROL depth_control,
+                    xenos::EdramMode edram_mode) {
+  FrameGraphTrace* trace = GetFrameGraphTrace();
+  if (!trace || !trace->sampled()) return;
+  char buffer[96];
+  std::string pass = "{";
+  const auto surface = regs.Get<reg::RB_SURFACE_INFO>();
+  std::snprintf(buffer, sizeof(buffer), "\"pitch\":%u,\"msaa\":%u,\"mode\":%u,\"color\":[",
+                surface.surface_pitch, uint32_t(surface.msaa_samples), uint32_t(edram_mode));
+  pass += buffer;
+  bool first = true;
+  for (uint32_t i = 0; i < xenos::kMaxColorRenderTargets; ++i) {
+    if (!(color_mask >> (i * 4) & 0xF)) continue;
+    const auto info = regs.Get<reg::RB_COLOR_INFO>(reg::RB_COLOR_INFO::rt_register_indices[i]);
+    std::snprintf(buffer, sizeof(buffer), "%s[%u,%u,%u]", first ? "" : ",", i,
+                  info.color_base | info.color_base_bit_11 << 11, uint32_t(info.color_format));
+    pass += buffer;
+    first = false;
+  }
+  pass += "]";
+  if (depth_control.z_enable || depth_control.stencil_enable) {
+    const auto depth = regs.Get<reg::RB_DEPTH_INFO>();
+    std::snprintf(buffer, sizeof(buffer), ",\"depth\":[%u,%u]",
+                  depth.depth_base | depth.depth_base_bit_11 << 11, uint32_t(depth.depth_format));
+    pass += buffer;
+  }
+  const uint32_t window_offset = regs.values[XE_GPU_REG_PA_SC_WINDOW_OFFSET];
+  std::snprintf(buffer, sizeof(buffer), ",\"offset\":[%d,%d]}",
+                int32_t(window_offset << 17) >> 17, int32_t(window_offset << 1) >> 17);
+  pass += buffer;
+  if (pass != trace->pass) {
+    trace->Flush();
+    trace->pass = pass;
+  }
+  ++trace->pass_draws;
+  for (const Shader* shader : {&vertex_shader, pixel_shader}) {
+    if (!shader) continue;
+    for (const Shader::TextureBinding& binding : shader->texture_bindings()) {
+      const uint32_t address = regs.GetTextureFetch(binding.fetch_constant).base_address << 12;
+      for (const FrameGraphTrace::Output& resolved : trace->outputs) {
+        if (address >= resolved.address && address < resolved.address + resolved.length) {
+          trace->pass_reads.insert(resolved.id);
+        }
+      }
+    }
+  }
+}
+void FrameGraphResolve(const RegisterFile& regs, uint32_t address, uint32_t length) {
+  FrameGraphTrace* trace = GetFrameGraphTrace();
+  if (!trace) return;
+  const uint32_t id = trace->next_id++;
+  if (length) {
+    auto& outputs = trace->outputs;
+    outputs.erase(std::remove_if(outputs.begin(), outputs.end(),
+                                 [&](const FrameGraphTrace::Output& o) {
+                                   return o.address < address + length &&
+                                          address < o.address + o.length;
+                                 }),
+                  outputs.end());
+    outputs.push_back({address, length, id, trace->frame});
+    if (outputs.size() > 1024) outputs.erase(outputs.begin());
+  }
+  if (!trace->sampled()) return;
+  trace->Flush();
+  trace->pass.clear();
+  const auto control = regs.Get<reg::RB_COPY_CONTROL>();
+  const auto info = regs.Get<reg::RB_COPY_DEST_INFO>();
+  const auto pitch = regs.Get<reg::RB_COPY_DEST_PITCH>();
+  const auto surface = regs.Get<reg::RB_SURFACE_INFO>();
+  uint32_t source_base, source_format;
+  if (control.copy_src_select >= xenos::kMaxColorRenderTargets) {
+    const auto depth = regs.Get<reg::RB_DEPTH_INFO>();
+    source_base = depth.depth_base | depth.depth_base_bit_11 << 11;
+    source_format = uint32_t(depth.depth_format);
+  } else {
+    const auto color = regs.Get<reg::RB_COLOR_INFO>(
+        reg::RB_COLOR_INFO::rt_register_indices[control.copy_src_select]);
+    source_base = color.color_base | color.color_base_bit_11 << 11;
+    source_format = uint32_t(color.color_format);
+  }
+  char buffer[320];
+  std::snprintf(buffer, sizeof(buffer),
+                "{\"resolve\":%u,\"source\":[%u,%u,%u],\"pitch\":%u,\"msaa\":%u,\"sample\":%u,"
+                "\"command\":%u,\"clear\":[%u,%u],\"dest\":[%u,%u,%u,%u,%u]}\n",
+                id, control.copy_src_select, source_base, source_format, surface.surface_pitch,
+                uint32_t(surface.msaa_samples), uint32_t(control.copy_sample_select),
+                uint32_t(control.copy_command), control.color_clear_enable,
+                control.depth_clear_enable, address, length, uint32_t(info.copy_dest_format),
+                pitch.copy_dest_pitch, pitch.copy_dest_height);
+  trace->output << buffer;
+}
+void FrameGraphSwap() {
+  FrameGraphTrace* trace = GetFrameGraphTrace();
+  if (!trace) return;
+  if (trace->sampled()) {
+    trace->Flush();
+    trace->output << std::flush;
+  }
+  trace->pass.clear();
+  if (++trace->frame % trace->every == 0) {
+    trace->output << "{\"frame\":" << trace->frame << "}\n";
+  }
 }
 
 // Optional per-segment occlusion samples (REX_OCCLUSION_SEGMENT_TRACE) to
@@ -2231,6 +2382,7 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
   if (GpuInventory* inventory = GetGpuInventory()) {
     if (++inventory->frame % 600 == 0) WriteGpuInventory(*inventory);
   }
+  FrameGraphSwap();
   if (DrawListTrace* draw_list = GetDrawListTrace()) {
     if (++draw_list->frame % draw_list->every == 0) {
       draw_list->output << "F " << draw_list->frame << ' '
@@ -2804,6 +2956,8 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   uint32_t normalized_color_mask =
       pixel_shader ? draw_util::GetNormalizedColorMask(regs, pixel_shader->writes_color_targets())
                    : 0;
+  FrameGraphDraw(regs, *vertex_shader, pixel_shader, normalized_color_mask, normalized_depth_control,
+                 edram_mode);
   if (GpuInventory* inventory = GetGpuInventory()) {
     GpuInventory::Pair& pair = inventory->pairs[{vertex_shader->ucode_data_hash(),
                                                  pixel_shader ? pixel_shader->ucode_data_hash() : 0}];
@@ -3407,6 +3561,7 @@ bool D3D12CommandProcessor::IssueCopy() {
 void D3D12CommandProcessor::CountResolveDestination(uint32_t address, uint32_t length) const {
   const auto info = register_file_->Get<reg::RB_COPY_DEST_INFO>();
   const auto pitch = register_file_->Get<reg::RB_COPY_DEST_PITCH>();
+  FrameGraphResolve(*register_file_, address, length);
   perf_trace::CountResolve(address, length, uint32_t(info.copy_dest_format),
                            pitch.copy_dest_pitch, pitch.copy_dest_height);
 }

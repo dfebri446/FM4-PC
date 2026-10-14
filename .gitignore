@@ -31,6 +31,7 @@
 !/outputs/FM4-build/e2e/README.txt
 !/outputs/FM4-build/e2e/compare.py
 !/outputs/FM4-build/e2e/inventory.py
+!/outputs/FM4-build/e2e/frame_graph.py
 !/outputs/FM4-build/e2e/pm4_writers.py
 !/outputs/FM4-build/e2e/e2e.py
 !/outputs/FM4-build/e2e/jev.py

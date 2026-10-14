@@ -73,6 +73,10 @@
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
+      "path": "outputs/FM4-build/e2e/frame_graph.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
       "path": "outputs/FM4-build/e2e/inventory.py",
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },

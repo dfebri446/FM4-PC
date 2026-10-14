@@ -110,6 +110,14 @@ code (addresses and packet names only):
 Headers whose packet count is computed at run time (DRAW_INDX, SET_CONSTANT)
 are not found by the scan.
 
+REX_FRAME_GRAPH=<file.jsonl> (REX_FRAME_GRAPH_EVERY, default 600 frames) records
+the passes of sampled frames (surface pitch, MSAA, color and depth targets with
+EDRAM base and format, window offset), every resolve (source, clears,
+destination) and which resolve outputs each pass samples, also from earlier
+frames. Print a frame with:
+
+  python outputs\FM4-build\e2erame_graph.py --build-root <BuildRoot> trace.jsonl [--frame N | --list]
+
 Comparing runs
 --------------
 Single runs vary by about 10-20% in FPS, and a hot laptop drifts: the same
