@@ -75,7 +75,9 @@ such as the road surface was not drawn. compare.py warns when it rises.
 
 Comparing runs
 --------------
-Single runs vary by about 10-20% in FPS. Measure each configuration with
+Single runs vary by about 10-20% in FPS, and a hot laptop drifts: the same
+binary measured 53.4 and then 48.8 fps (3 runs each) half an hour apart, so
+bracket a candidate with baseline runs before and after it. Measure each configuration with
 --repeat 3: runs go to <out>\run1..run3 and <out>\summary.json aggregates them
 (median of medians, minimum of minimums, union of errors). A/B a cvar on the
 same binary with --arg, for example --arg=--readback_resolve=fast. Then:

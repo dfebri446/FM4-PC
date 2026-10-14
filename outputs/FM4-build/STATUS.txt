@@ -179,6 +179,14 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   jelas tanpa MSAA; FXAA menghaluskan sebagian tetapi kabel tipis jadi
   terputus. Belum default: pilihan kualitas vs fps diserahkan ke pemilik.
   Karier, foto dan Autovista belum diuji dengan opsi ini.
+- 1.6 kompiler (14 Oktober 2026): yang membatasi fps adalah thread command
+  processor di SDK (sibuk sekitar 960-990 ms/s, guest_idle sekitar 1 ms/s),
+  bukan kode game, jadi LTO/PGO game tidak diukur. SDK ThinLTO dan SDK
+  -march=x86-64-v3 (DLL dipasang di salinan game-build), 3 run masing-masing:
+  49,8 dan 49,7 fps; baseline yang sama sebelum dan sesudahnya 53,4 dan 48,8
+  fps. Tidak ada keuntungan yang terukur; waktu per zona CPU juga setara.
+  Pergeseran 53,4 -> 48,8 pada binary yang sama berasal dari kondisi laptop
+  (panas); A/B berurutan harus diapit kontrol atau diselang-seling.
 - Query matahari: keempat vertex sprite yang diukur bertumpuk di satu posisi
   (quad degenerate), sehingga 0 sampel di ROV maupun RTV; kalibrasi silau
   perlu menelusuri dari mana posisi sudut sprite seharusnya berasal.

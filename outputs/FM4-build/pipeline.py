@@ -188,7 +188,10 @@ def build_game(root,jobs,flavor=()):
     state=json.loads((root/'local.json').read_text())
     validate_discs(state['disc1'],state['disc2'])
     suffix=build.name[len('game-build'):]
-    linker=['-DCMAKE_EXE_LINKER_FLAGS=/opt:lldltojobs='+str(jobs)] if 'thinlto' in flavor else []
+    # clang++ drives lld-link, so linker options go through -Xlinker.
+    lto_jobs=f'-Xlinker /opt:lldltojobs={jobs}'
+    linker=[f'-DCMAKE_EXE_LINKER_FLAGS={lto_jobs}',f'-DCMAKE_SHARED_LINKER_FLAGS={lto_jobs}'] \
+        if 'thinlto' in flavor else []
     run(['cmake','-S',project,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
          '-DCMAKE_CXX_COMPILER=clang++',f'-DCMAKE_CXX_FLAGS={flavor_flags(root,flavor)}',*linker,
          f'-DCMAKE_PREFIX_PATH={install}',f'-DPython3_EXECUTABLE={sys.executable}',
