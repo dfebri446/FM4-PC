@@ -178,9 +178,26 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   rusak hanya 64 KB pertamanya lalu langsung pindah ke item berikutnya dan sisa
   item tidak pernah dibaca (juga baca 1 MB di 0x4725000 saat balapan tidak
   terjadi). Jadi game sendiri meninggalkan data track area start; renderer
-  tidak terlibat. Belum diketahui kenapa streamer berhenti: kandidat di
-  emulator adalah semantik I/O asinkron (NtReadFile selesai sinkron, APC hanya
-  diantre bila apc_context bukan nol) atau race timing di kode game.
+  tidak terlibat. Penyebab akhir (15 Oktober 2026, trace I/O REX_IO_TRACE dan
+  hook loader FM4_STREAM_TRACE): bukan I/O (baca streamer memakai event
+  overlapped tanpa APC, semua selesai dan didekompresi tanpa error). Request
+  item itu terdiri dari section .dat (0x110 byte) dan .gpu (1,5-1,8 MB, align
+  4 KB); alokasi .gpu dari heap "sGPU" milik memory manager game gagal, loader
+  menandai request gagal (flag +84 bit 4) dan membuangnya. Saat gagal sGPU
+  (119,5 MB) terpakai 101,6 MB, puncak 119,3 MB: sekitar 18 MB bebas tetapi
+  tidak ada blok 1,8 MB (alokator first-fit, terfragmentasi setelah lonjakan
+  saat loading). Urutan muat di sini berubah-ubah karena penjadwalan thread
+  host (beberapa worker loader, baca file seketika). Heap GPU lain di pool
+  balapan punya cadangan: nGPU (41 MB, penuh) dan pGPU (front end) jatuh ke
+  fGPU (118 MB, saat itu 33 MB bebas); sGPU tidak punya cadangan. Coba ulang
+  alokasi selama 1 detik tidak membantu (memori tidak kembali bebas).
+  Perbaikan (work/fm4-rex/src/fm4-streaming-fixes.cpp): bila alokasi section
+  loader di sGPU gagal, sGPU diberi cadangan fGPU (field +236 = 0x22, seperti
+  nGPU) lalu dialokasi ulang sekali; FM4_STREAMING_FALLBACK=0 mematikannya.
+  Validasi RTV vblank tetap (kondisi bug paling sering), timeline tetap: 20 dari
+  20 run tanpa frame jalan hilang, 5 run memakai cadangan dan semuanya berhasil
+  (section 0x1C15A4 byte), 59,7-60,0 fps, tanpa crash; sebelumnya sekitar
+  15-25% run kena.
 - Perbandingan visual RTV vs ROV (14 Oktober 2026): menu utama identik (selisih
   rata-rata 0,01 level per kanal); Autovista Ferrari 458 statis setara (75%
   piksel sama persis, 24% berbeda 1 level, maksimum 5 level). Distribusi

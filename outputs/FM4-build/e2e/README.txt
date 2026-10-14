@@ -144,6 +144,25 @@ renderer work; all write files outside the repository):
   predication skipped it; tells "the game did not send it" from "skipped".
 - REX_FILE_READ_TRACE=<file>: every guest file read (time, status, offset,
   sizes, buffer, async flag, path); compare runs to find streaming differences.
+- REX_IO_TRACE=<file>: NtReadFile calls with the event, APC, IOSB, returned
+  status and the guest return addresses of the call chain, and waits on read
+  events.
+- FM4_STREAM_TRACE=<file>: the title's resource loader (request steps, the
+  section allocation and its failure flags, archive stream reads, ReadFile and
+  GetOverlappedResult results, decompressor results, and the memory manager's
+  pool table when a section allocation fails). The streaming fix itself is
+  always on; FM4_STREAMING_FALLBACK=0 turns it off for comparisons.
+
+Without network access (Jev unreachable), --scenario quickrace drives the same
+route on a fixed timeline; it reaches the race reliably with the copied profile.
+
+Frame rate experiments: FM4_FRAME_RATE=<n> replaces the FrameRate value of the
+render scenarios (races 60, countdown/replays/photo mode 30), and
+--arg=--video_mode_refresh_rate=<hz> changes the refresh rate reported to the
+game and the vblank rate. race_clock.py reads the race timer of the captures
+(run with --keep-ppm) and prints its rate against wall time (1.0: real time):
+
+  python outputs\FM4-build\e2e\race_clock.py <BuildRoot>\e2e\<run>
 - REX_DRAW_STATS=<file> (REX_DRAW_STATS_EVERY, default 60): per draw of a
   sampled frame, the shader pair, buffers, render targets and window offset
   with the D3D12 pipeline statistics: input assembler primitives, clipper

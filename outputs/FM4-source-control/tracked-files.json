@@ -93,6 +93,10 @@
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
+      "path": "outputs/FM4-build/e2e/race_clock.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
       "path": "outputs/FM4-build/fm4_bounds.toml",
       "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
     },
@@ -215,6 +219,14 @@
     {
       "path": "work/fm4-rex/src/fm4-render-overrides.cpp",
       "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-stream-trace.cpp",
+      "provenance": "Original diagnostic integration source; guest function addresses and structure offsets only, no game function bodies"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-streaming-fixes.cpp",
+      "provenance": "Original compatibility fix source; guest function addresses only, no game function bodies"
     },
     {
       "path": "work/fm4-rex/src/fm4-test-input.h",

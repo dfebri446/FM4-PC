@@ -20,18 +20,24 @@ def system_one(state, questions, model='jev-latest', retries=4):
     body = json.dumps({'model': model, 'state': state, 'questions': questions}).encode()
     request = urllib.request.Request(API_URL, data=body, method='POST', headers={
         'Authorization': 'Bearer ' + api_key(), 'Content-Type': 'application/json'})
-    for attempt in range(retries + 1):
+    network_deadline = None
+    attempt = 0
+    while True:
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 return json.loads(response.read())
         except urllib.error.HTTPError as error:
             if error.code in (429, 529) and attempt < retries:
                 time.sleep(0.5 * 2 ** attempt)
+                attempt += 1
                 continue
             raise RuntimeError(f'Jev HTTP {error.code}: {error.read()[:300]!r}') from None
         except (urllib.error.URLError, TimeoutError, ConnectionError):
-            # Brief network drops (e.g. host unreachable) should not end a long run.
-            if attempt < retries:
-                time.sleep(2 * 2 ** attempt)
+            # Network drops (host unreachable, DNS failures lasting a minute or
+            # more) should not end a long run: keep trying for two minutes.
+            network_deadline = network_deadline or time.monotonic() + 120
+            if time.monotonic() < network_deadline:
+                time.sleep(min(15, 2 * 2 ** min(attempt, 3)))
+                attempt += 1
                 continue
             raise

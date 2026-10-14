@@ -29,6 +29,16 @@
 #include <rex/system/xtypes.h>
 #include <rex/thread/mutex.h>
 
+#include <chrono>
+#include <cstdlib>
+#include <fstream>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
+#include <fmt/format.h>
+#include <rex/system/thread_state.h>
+
 namespace rex::kernel::xboxkrnl {
 using namespace rex::system;
 
@@ -184,6 +194,81 @@ u32 NtOpenFile_entry(mapped_u32 handle_out, u32 desired_access,
                             open_options);
 }
 
+namespace {
+struct IoTraceState {
+  std::mutex mutex;
+  std::ofstream output;
+  std::unordered_map<uint32_t, uint64_t> read_events;  // Handle -> steady ms of the read.
+};
+IoTraceState* GetIoTrace() {
+  static IoTraceState* trace = [] {
+    const char* path = std::getenv("REX_IO_TRACE");
+    if (!path || !*path)
+      return static_cast<IoTraceState*>(nullptr);
+    auto* result = new IoTraceState;
+    result->output.open(path);
+    return result;
+  }();
+  return trace;
+}
+}  // namespace
+
+bool IoTraceEnabled() {
+  return GetIoTrace() != nullptr;
+}
+
+void IoTrace(std::string_view event, std::string_view details) {
+  IoTraceState* trace = GetIoTrace();
+  if (!trace)
+    return;
+  auto thread = XThread::GetCurrentThread();
+  std::lock_guard<std::mutex> lock(trace->mutex);
+  trace->output << std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::steady_clock::now().time_since_epoch())
+                       .count()
+                << ' ' << (thread ? thread->thread_id() : 0) << ' ' << event << ' ' << details
+                << '\n';
+  trace->output.flush();
+}
+
+bool IoTraceIsReadEvent(uint32_t handle) {
+  IoTraceState* trace = GetIoTrace();
+  if (!trace || !handle)
+    return false;
+  std::lock_guard<std::mutex> lock(trace->mutex);
+  auto it = trace->read_events.find(handle);
+  const uint64_t now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now().time_since_epoch())
+                                    .count());
+  return it != trace->read_events.end() && now - it->second < 2000;
+}
+
+std::string IoTraceCallers() {
+  auto* thread_state = rex::runtime::ThreadState::Get();
+  if (!thread_state || !thread_state->context())
+    return "-";
+  const PPCContext& ctx = *thread_state->context();
+  auto* memory = REX_KERNEL_MEMORY();
+  std::string out = fmt::format("{:08X}", uint32_t(ctx.lr));
+  // Back chain at 0(r1), saved LR at -8 from the caller's stack pointer, within
+  // the thread's stack (KPCR stack base, the high end, at 0x70).
+  auto thread = XThread::GetCurrentThread();
+  if (!thread || !thread->pcr_ptr())
+    return out;
+  const uint32_t stack_base =
+      rex::memory::load_and_swap<uint32_t>(memory->TranslateVirtual(thread->pcr_ptr() + 0x70));
+  uint32_t frame = ctx.r1.u32;
+  for (int i = 0; i < 4 && frame && frame < stack_base; ++i) {
+    const uint32_t back = rex::memory::load_and_swap<uint32_t>(memory->TranslateVirtual(frame));
+    if (!back || back <= frame || back >= stack_base || back - frame > 0x100000)
+      break;
+    out += fmt::format(",{:08X}",
+                       rex::memory::load_and_swap<uint32_t>(memory->TranslateVirtual(back - 8)));
+    frame = back;
+  }
+  return out;
+}
+
 u32 NtReadFile_entry(u32 file_handle, u32 event_handle, mapped_void apc_routine_ptr,
                      mapped_void apc_context, ppc_ptr_t<X_IO_STATUS_BLOCK> io_status_block,
                      mapped_void buffer, u32 buffer_length, mapped_u64 byte_offset_ptr) {
@@ -277,6 +362,28 @@ u32 NtReadFile_entry(u32 file_handle, u32 event_handle, mapped_void apc_routine_
 
   if (ev && signal_event) {
     ev->Set(0, false);
+  }
+
+  if (IoTraceState* trace = GetIoTrace()) {
+    if (event_handle) {
+      std::lock_guard<std::mutex> lock(trace->mutex);
+      trace->read_events[event_handle] =
+          uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::steady_clock::now().time_since_epoch())
+                       .count());
+    }
+    IoTrace(
+        "read",
+        fmt::format("file={:X} {} off={:X} len={:X} buf={:08X} ev={:X} apc={:08X} ctx={:08X} "
+                    "iosb={:08X} sync={} -> {:08X} iosb_status={:08X} info={:X} apc_queued={} "
+                    "callers={}",
+                    uint32_t(file_handle), file ? file->path() : std::string("?"), byte_offset,
+                    uint32_t(buffer_length), buffer.guest_address(), uint32_t(event_handle),
+                    apc_routine_ptr.guest_address(), apc_context.guest_address(),
+                    io_status_block.guest_address(), file ? int(file->is_synchronous()) : -1,
+                    uint32_t(result), io_status_block ? uint32_t(io_status_block->status) : 0xDEAD,
+                    io_status_block ? uint32_t(io_status_block->information) : 0, int(apc_queued),
+                    IoTraceCallers()));
   }
 
   // Log detailed completion info for debugging async IO issues

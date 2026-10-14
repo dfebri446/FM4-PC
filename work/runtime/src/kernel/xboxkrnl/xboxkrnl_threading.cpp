@@ -864,6 +864,12 @@ u32 NtWaitForSingleObjectEx_entry(u32 object_handle, u32 wait_mode, u32 alertabl
   } else {
     result = X_STATUS_INVALID_HANDLE;
   }
+  if (IoTraceIsReadEvent(object_handle)) {
+    IoTrace("wait", fmt::format("handle={:X} alertable={} timeout={} -> {:08X} callers={}",
+                                uint32_t(object_handle), uint32_t(alertable),
+                                timeout_ptr ? int64_t(*timeout_ptr) : -1, uint32_t(result),
+                                IoTraceCallers()));
+  }
 
   return result;
 }
