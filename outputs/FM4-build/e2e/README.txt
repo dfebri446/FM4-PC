@@ -83,7 +83,32 @@ command-processor thread stacks (REX_CP_PROFILE_DELAY / _SECONDS, default 0 /
 conditions. REX_OCCLUSION_SEGMENT_TRACE, REX_OCCLUSION_DRAW_TRACE and
 REX_DRAW_DEPTH_HIST trace occlusion snapshot segments, the draw after each
 snapshot and per-frame depth state; rtv_occlusion_debug=noqueries|fake changes
-RTV occlusion reports for experiments.
+RTV occlusion reports for experiments. REX_DRAW_LIST_TRACE=<file> lists every
+draw of every REX_DRAW_LIST_EVERY-th frame (default 10; about 3,000 lines per
+race frame, use 20 to keep the timing close to an untraced run) with shaders,
+buffer addresses, render target state and the backend outcome; captures write
+their steady-clock time to capture\captures.txt to match frames.
+REX_IB_TRACE=<file> lists, for every 60th frame, each indirect buffer with its
+nesting depth, guest address, length, content hash and the draws inside it.
+
+Stage 3.1 inventory
+-------------------
+REX_GPU_INVENTORY=<file.json> aggregates the state per shader pair (render
+target and depth formats, MSAA, blend, depth state, texture formats, primitive
+types, memexport), rewritten every 600 frames. Summarize one file per scenario
+and the combination with:
+
+  python outputs\FM4-build\e2e\inventory.py --build-root <BuildRoot> a.json b.json
+
+FM4_D3D_TRACE=<file> counts calls (and the top callers) of the guest functions
+that build PM4 packets, rewritten every 5 seconds. The function list in
+work\fm4-rex\src\fm4-d3d-trace.cpp comes from a static scan of the generated
+code (addresses and packet names only):
+
+  python outputs\FM4-build\e2e\pm4_writers.py <BuildRoot>\project\generated\default <BuildRoot>\sdk-source\include\rex\graphics\xenos.h out.json
+
+Headers whose packet count is computed at run time (DRAW_INDX, SET_CONSTANT)
+are not found by the scan.
 
 Comparing runs
 --------------

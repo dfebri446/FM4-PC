@@ -150,6 +150,14 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   uji depth EQUAL (FM4 tidak memakainya), dan bukan cache pipeline. Penyebab
   belum diketahui. e2e mendeteksinya lewat clear_gray_frames; jalur ROV
   (--render_target_path_d3d12=rov --rov_occlusion_async=all) tidak terkena.
+  Klasifikasi (14 Oktober 2026, REX_DRAW_LIST_TRACE): di frame rusak game
+  tetap mengirim semua draw yang ada di frame normal di sekitarnya, dan host
+  menerbitkannya (outcome ok); garis dan panah di atas jalan tetap tergambar
+  di atas warna clear. Jadi bukan culling game, melainkan warna draw yang
+  hilang di jalur render target RTV. Kaitan dengan timing: dengan vblank_vrr
+  (default sekarang) 0 dari 25 run RTV kena (13 ber-trace, 12 tanpa trace,
+  53-60 fps); dengan vblank tetap 8 dari 36 (2/8 sekarang, 6/28 sebelumnya),
+  p sekitar 0,01. Penyebabnya tersembunyi, bukan diperbaiki; RTV tetap opsi.
 - Perbandingan visual RTV vs ROV (14 Oktober 2026): menu utama identik (selisih
   rata-rata 0,01 level per kanal); Autovista Ferrari 458 statis setara (75%
   piksel sama persis, 24% berbeda 1 level, maksimum 5 level). Distribusi

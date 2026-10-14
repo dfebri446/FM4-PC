@@ -35,6 +35,7 @@ set(FM4REX_SOURCES
     src/fm4-gpu-probe.cpp
     src/fm4-jpeg-diagnostics.cpp
     src/fm4-ui-diagnostics.cpp
+    src/fm4-d3d-trace.cpp
 )
 
 if(WIN32)

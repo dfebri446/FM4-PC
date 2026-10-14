@@ -34,6 +34,8 @@
 !/outputs/FM4-build/dump-image.cpp
 !/outputs/FM4-build/e2e/README.txt
 !/outputs/FM4-build/e2e/compare.py
+!/outputs/FM4-build/e2e/inventory.py
+!/outputs/FM4-build/e2e/pm4_writers.py
 !/outputs/FM4-build/e2e/e2e.py
 !/outputs/FM4-build/e2e/jev.py
 !/outputs/FM4-build/e2e/ocr-server.ps1
@@ -93,6 +95,7 @@
 !/work/fm4-rex/src/fm4-render-overrides.cpp
 !/work/fm4-rex/src/fm4-test-input.h
 !/work/fm4-rex/src/fm4-ui-diagnostics.cpp
+!/work/fm4-rex/src/fm4-d3d-trace.cpp
 !/work/fm4-rex/src/fm4-vector-fixes.h
 !/work/fm4-rex/src/fm4_rex_app.h
 !/work/fm4-rex/src/instruction-tests.cpp

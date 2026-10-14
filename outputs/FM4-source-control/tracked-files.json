@@ -70,11 +70,19 @@
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
+      "path": "outputs/FM4-build/e2e/inventory.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
       "path": "outputs/FM4-build/e2e/jev.py",
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
       "path": "outputs/FM4-build/e2e/ocr-server.ps1",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/e2e/pm4_writers.py",
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
@@ -264,6 +272,10 @@
     {
       "path": "work/fm4-rex/src/fm4-crash-diagnostics.cpp",
       "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-d3d-trace.cpp",
+      "provenance": "Original diagnostic integration source; guest function addresses and PM4 packet names only, no game function bodies"
     },
     {
       "path": "work/fm4-rex/src/fm4-diagnostic-state.h",

@@ -126,6 +126,13 @@ inline void FM4CaptureFrames(std::stop_token stop, rex::ui::Presenter* presenter
 #else
       std::filesystem::rename(temporary, target);
 #endif
+      // Capture times on the steady clock, to match per-frame GPU traces.
+      std::ofstream(directory / "captures.txt", std::ios::app)
+          << saved << ' '
+          << std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now().time_since_epoch())
+                 .count()
+          << '\n';
       FM4QueueGpuProbe(runtime, directory, saved);
     }
   } catch (const std::exception& error) {
