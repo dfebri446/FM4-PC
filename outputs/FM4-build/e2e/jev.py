@@ -29,3 +29,9 @@ def system_one(state, questions, model='jev-latest', retries=4):
                 time.sleep(0.5 * 2 ** attempt)
                 continue
             raise RuntimeError(f'Jev HTTP {error.code}: {error.read()[:300]!r}') from None
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            # Brief network drops (e.g. host unreachable) should not end a long run.
+            if attempt < retries:
+                time.sleep(2 * 2 ** attempt)
+                continue
+            raise

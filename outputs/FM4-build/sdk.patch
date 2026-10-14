@@ -1877,6 +1877,105 @@ index 19874a5..0666490 100644
    if (!REXCVAR_GET(occlusion_query_enable) || !occlusion_query_resources_available_ ||
        !active_occlusion_query_.valid || !occlusion_query_heap_ || !occlusion_query_readback_) {
      return false;
+diff --git a/src/graphics/d3d12/render_target_cache.cpp b/src/graphics/d3d12/render_target_cache.cpp
+index dd321a5..25ba3d4 100644
+--- a/src/graphics/d3d12/render_target_cache.cpp
++++ b/src/graphics/d3d12/render_target_cache.cpp
+@@ -12,6 +12,8 @@
+ #include "thirdparty/dxbc/DXBCChecksum.h"
+ 
+ #include <algorithm>
++#include <cstdlib>
++#include <fstream>
+ #include <array>
+ #include <cstdint>
+ #include <cstring>
+@@ -1159,6 +1161,21 @@ void D3D12RenderTargetCache::WriteEdramUintPow2UAVDescriptor(D3D12_CPU_DESCRIPTO
+                                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+ }
+ 
++namespace {
++// Optional, bounded trace of host render target resolves for RTV path
++// investigations (REX_RTV_RESOLVE_TRACE): the resolve source and the host
++// render targets dumped to EDRAM for it.
++std::ofstream* RtvResolveTrace() {
++  static std::ofstream* output = []() -> std::ofstream* {
++    const char* path = std::getenv("REX_RTV_RESOLVE_TRACE");
++    if (!path || !*path) return nullptr;
++    return new std::ofstream(path, std::ios::trunc);
++  }();
++  static uint32_t lines = 0;
++  return output && lines++ < 200000 ? output : nullptr;
++}
++}  // namespace
++
+ bool D3D12RenderTargetCache::Resolve(const memory::Memory& memory, D3D12SharedMemory& shared_memory,
+                                      D3D12TextureCache& texture_cache,
+                                      uint32_t& written_address_out, uint32_t& written_length_out) {
+@@ -1218,6 +1235,35 @@ bool D3D12RenderTargetCache::Resolve(const memory::Memory& memory, D3D12SharedMe
+             return false;
+           }
+         }
++        if (std::ofstream* trace = RtvResolveTrace()) {
++          const draw_util::ResolveEdramInfo& edram = resolve_info.color_edram_info;
++          const draw_util::ResolveEdramInfo& depth = resolve_info.depth_edram_info;
++          uint32_t dump_base, dump_row_length_used, dump_rows, dump_pitch;
++          resolve_info.GetCopyEdramTileSpan(dump_base, dump_row_length_used, dump_rows, dump_pitch);
++          *trace << "{\"dest\":" << resolve_info.copy_dest_extent_start
++                 << ",\"length\":" << resolve_info.copy_dest_extent_length
++                 << ",\"copy_depth\":" << uint32_t(resolve_info.IsCopyingDepth())
++                 << ",\"color_base\":" << edram.base_tiles << ",\"color_pitch\":" << edram.pitch_tiles
++                 << ",\"color_format\":" << edram.format << ",\"color_msaa\":" << uint32_t(edram.msaa_samples)
++                 << ",\"depth_base\":" << depth.base_tiles
++                 << ",\"x8\":" << resolve_info.coordinate_info.edram_offset_x_div_8
++                 << ",\"y8\":" << resolve_info.coordinate_info.edram_offset_y_div_8
++                 << ",\"w8\":" << resolve_info.coordinate_info.width_div_8
++                 << ",\"h8\":" << resolve_info.height_div_8
++                 << ",\"dump_base\":" << dump_base << ",\"dump_rows\":" << dump_rows
++                 << ",\"dump_pitch\":" << dump_pitch << ",\"rts\":[";
++          bool first = true;
++          for (const ResolveCopyDumpRectangle& rectangle : dump_rectangles_) {
++            const RenderTargetKey key = rectangle.render_target->key();
++            *trace << (first ? "" : ",") << "{\"base\":" << key.base_tiles
++                   << ",\"pitch32\":" << key.pitch_tiles_at_32bpp
++                   << ",\"msaa\":" << uint32_t(key.msaa_samples) << ",\"depth\":" << key.is_depth
++                   << ",\"format\":" << key.resource_format << ",\"row_first\":" << rectangle.row_first
++                   << ",\"rows\":" << rectangle.rows << "}";
++            first = false;
++          }
++          *trace << "]}\n";
++        }
+       }
+ 
+       // Make sure there is memory to write to.
+diff --git a/src/graphics/pipeline/render_target/cache.cpp b/src/graphics/pipeline/render_target/cache.cpp
+index 953c5fd..e96aae0 100644
+--- a/src/graphics/pipeline/render_target/cache.cpp
++++ b/src/graphics/pipeline/render_target/cache.cpp
+@@ -31,6 +31,13 @@
+ REXCVAR_DEFINE_BOOL(mrt_edram_used_range_clamp_to_min, true, "GPU",
+                     "Clamp MRT EDRAM used range to minimum");
+ 
++REXCVAR_DEFINE_BOOL(edram_single_rt_no_wrap, false, "GPU",
++                    "When a draw binds a single render target, do not let its estimated EDRAM "
++                    "range wrap past the end of EDRAM. Titles using predicated tiling (FM4) "
++                    "draw depth-only passes of one tile whose estimated full-screen height "
++                    "would otherwise wrap over the color tile at base 0 and take its ownership "
++                    "on the host render target path");
++
+ REXCVAR_DEFINE_BOOL(execute_unclipped_draw_vs_on_cpu_for_psi_render_backend, true, "GPU",
+                     "Execute unclipped draw VS on CPU for PSI render backend");
+ 
+@@ -654,6 +661,9 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
+                                             rt_max_distance_tiles_at_64bpp >> (rt_is_64bpp ^ 1)),
+                                    ((i + 1 < edram_bases_sorted_count)
+                                         ? edram_bases_sorted[i + 1].first
++                                    : (edram_bases_sorted_count == 1 &&
++                                       REXCVAR_GET(edram_single_rt_no_wrap))
++                                        ? xenos::kEdramTileCount
+                                         : (xenos::kEdramTileCount + edram_bases_sorted[0].first)) -
+                                        rt_base);
+   }
 diff --git a/src/graphics/pipeline/shader/dxbc_translator.cpp b/src/graphics/pipeline/shader/dxbc_translator.cpp
 index 2c31a0e..5f38cf1 100644
 --- a/src/graphics/pipeline/shader/dxbc_translator.cpp

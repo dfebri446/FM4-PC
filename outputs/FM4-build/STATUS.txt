@@ -131,14 +131,21 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
 - Timestamp GPU: dengan kombinasi di atas GPU sibuk sekitar 15,6 ms per frame
   (RTX 5070 Ti Laptop), resolve sekitar 0,2 ms. Thread command processor sibuk
   hampir penuh, jadi 60 fps stabil butuh pengurangan kerja GPU dan CPU (Tahap 2).
-- Jalur RTV (--render_target_path_d3d12=rtv) belum dapat dipakai. Report
-  occlusion FM4 kini dihitung sebagai snapshot kumulatif dengan query host
-  (rtv_occlusion_snapshots), sehingga intro dan layar judul tampil. Setelah
-  menu utama layar tetap hitam: enam resolve scene HDR 7e3 yang di-tiling
-  (1280x256/224, format tujuan 2_10_10_10) berisi nol di RTV, padahal sama
-  persis di ROV; resolve lainnya setara. --native_2x_msaa=false dan
-  --mrt_edram_used_range_clamp_to_min=false tidak mengubahnya. Perlu debugging
-  GPU (mis. RenderDoc) pada pemindahan render target host ke EDRAM.
+- Jalur RTV berjalan dan stabil 60 fps pada quickrace dengan
+    --render_target_path_d3d12=rtv --edram_single_rt_no_wrap=true
+    --rov_occlusion_async=previous
+  (fps_mean 59,8-59,9, p99 sekitar 19,6 ms, GPU sekitar 10 ms per frame;
+  ROV default: 54,3 fps, p99 35 ms, GPU 17,5 ms). Penyebab menu hitam: draw
+  depth-only per tile mengikat satu render target, tingginya diperkirakan 720
+  sehingga wilayah EDRAM-nya berputar melewati akhir EDRAM dan merebut tile
+  warna di base 0; edram_single_rt_no_wrap mencegahnya. Report occlusion
+  dihitung sebagai snapshot kumulatif dengan query host
+  (rtv_occlusion_snapshots). Dengan rov_occlusion_async=all, aspal di depan
+  mobil tidak tergambar beberapa detik setelah start (report terlambat dibaca
+  sebagai tak terlihat); previous memperbaikinya, off/unawaited juga benar
+  tetapi 35-49 fps. RTV belum default: kesetaraan visual dengan ROV pada
+  capture statis, silau matahari, karier, foto dan Autovista belum diuji, dan
+  capture RTV cenderung sedikit lebih gelap.
 - Shader dengan cache kosong (--store_shaders=false): shader sinkron menambah
   sedikit hitch saat memuat (sekitar 9 frame > 100 ms per run, terburuk 400-640
   ms) tanpa menurunkan FPS balapan. Shader async membuang sekitar 2.000 draw
