@@ -323,6 +323,7 @@ class PhysicalHeap : public BaseHeap {
   uint32_t GetPhysicalAddress(uint32_t address) const;
 
  protected:
+  friend class Memory;  // DescribePhysicalPage.
   bool IsHostPageWriteWatched(uint32_t host_page_number) const override;
 
   // Allocation on these heaps delegates to parent_heap_, whose own reconcile
@@ -509,6 +510,14 @@ class Memory {
   bool TriggerPhysicalMemoryCallbacks(
       std::unique_lock<std::recursive_mutex> global_lock_locked_once, uint32_t virtual_address,
       uint32_t length, bool is_write, bool unwatch_exact_range, bool unprotect = true);
+
+  // Diagnostics: for each physical memory view (A0000000, C0000000, E0000000)
+  // in which the page is committed, "<view>:p<guest protect>w<write watched>
+  // h<host access>" (host access is rex::memory::PageAccess).
+  std::string DescribePhysicalPage(uint32_t physical_address);
+  // Diagnostics: whether the page is committed and writable in a physical view
+  // without a write watch there, so guest writes would not be noticed.
+  bool IsPhysicalPageWritableUnwatched(uint32_t physical_address);
 
   // Allocates virtual memory from the 'system' heap.
   // System memory is kept separate from game memory but is still accessible

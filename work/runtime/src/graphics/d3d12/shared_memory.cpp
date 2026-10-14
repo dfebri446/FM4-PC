@@ -327,6 +327,9 @@ bool D3D12SharedMemory::UploadRanges(
       std::memcpy(upload_buffer_mapping,
                   memory().TranslatePhysical(upload_range_start << page_size_log2()),
                   upload_buffer_size);
+      // The source, not the write-combined upload buffer, which is slow to read.
+      NoteUploadedPages(upload_range_start, uint32_t(upload_buffer_size >> page_size_log2()),
+                        memory().TranslatePhysical(upload_range_start << page_size_log2()));
       command_list.D3DCopyBufferRegion(buffer_, upload_range_start << page_size_log2(),
                                        upload_buffer, UINT64(upload_buffer_offset),
                                        UINT64(upload_buffer_size));

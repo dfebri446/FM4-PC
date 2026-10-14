@@ -12,6 +12,9 @@
 
 #include <cstdint>
 #include <mutex>
+#include <atomic>
+#include <fstream>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -95,6 +98,26 @@ class SharedMemory {
   // regions in those pages.
   void RangeWrittenByGpu(uint32_t start, uint32_t length);
 
+  // Incremented whenever guest writes invalidate pages, so callers can tell
+  // that a range they requested earlier may need to be requested again.
+  uint64_t invalidation_epoch() const {
+    return invalidation_epoch_.load(std::memory_order_acquire);
+  }
+
+  // REX_STALE_PAGE_TRACE: called at every swap.
+  void EndStalePageFrame();
+  // REX_STALE_PAGE_TRACE: a range whose earlier request would have been reused
+  // without the invalidation epoch; "K <frame> <start> <bytes> <differing
+  // bytes>" if the GPU copy differs from guest memory there.
+  void CheckReusedRequest(uint32_t start, uint32_t length);
+  // Diagnostics: pages in the range whose valid data was written by the GPU.
+  uint32_t CountGpuWrittenPages(uint32_t start, uint32_t length);
+
+  // Copies resolve readback data to guest memory, skipping pages that a guest
+  // write has invalidated since (their guest data is newer than the copy, which
+  // may also come from an earlier frame). Returns the number of skipped pages.
+  uint32_t CopyReadbackToGuest(uint32_t start, uint32_t length, const uint8_t* data);
+
  protected:
   SharedMemory(memory::Memory& memory);
   // Call in implementation-specific initialization.
@@ -139,6 +162,9 @@ class SharedMemory {
   // overall bounds of pages to be uploaded.
   virtual bool UploadRanges(
       const std::vector<std::pair<uint32_t, uint32_t>>& upload_page_ranges) = 0;
+  // REX_STALE_PAGE_TRACE: the guest data of uploaded pages, right after the copy
+  // for the GPU.
+  void NoteUploadedPages(uint32_t page_first, uint32_t page_count, const void* data);
 
  private:
   memory::Memory& memory_;
@@ -162,6 +188,35 @@ class SharedMemory {
   std::vector<std::pair<uint32_t, uint32_t>> upload_ranges_;
   // Reused by RequestRanges to avoid a heap allocation per request.
   std::vector<std::pair<uint32_t, uint32_t>> merged_ranges_;
+
+  std::atomic<uint64_t> invalidation_epoch_{0};
+
+  // Optional stale page trace (REX_STALE_PAGE_TRACE=<file>): a shadow copy of
+  // the uploaded data, and every 4th frame the bytes that requests cover in
+  // valid pages (in sync with guest memory, not GPU written) are compared with
+  // it, each 256-byte chunk once a frame. A difference means a guest write that
+  // did not invalidate the page, so the GPU uses old data. "S <frame> <first
+  // differing address> <request start> <request bytes> <differing bytes in the
+  // chunk> <Memory::DescribePhysicalPage>" per stale chunk (at most 256 a
+  // frame), then "F <frame> <steady ms> <stale chunks> <checked chunks>" on
+  // check frames. With REX_STALE_PAGE_FIX=1 pages with a stale chunk are
+  // invalidated and uploaded again by the same request.
+  static constexpr uint32_t kStaleChunkSizeLog2 = 8;
+  std::unique_ptr<std::ofstream> stale_output_;
+  uint8_t* stale_shadow_ = nullptr;    // kBufferSize, never freed (diagnostics).
+  std::vector<uint64_t> stale_known_;  // Pages with shadow data.
+  std::vector<uint32_t> stale_chunk_checked_;
+  // With REX_STALE_PAGE_UNWATCHED=1 (slow: about 15 fps), also "U <frame>
+  // <page> <GPU written> <Memory::DescribePhysicalPage>" for valid pages that
+  // the guest can write without a watch (at most 256 a frame; the count is the
+  // last number of "F"); REX_STALE_PAGE_FIX invalidates them.
+  std::vector<uint32_t> stale_page_checked_;
+  uint32_t stale_unwatched_ = 0;
+  bool stale_check_unwatched_ = false;
+  uint32_t stale_frame_ = 1;
+  uint32_t stale_found_ = 0, stale_checked_ = 0;
+  bool stale_fix_ = false;
+  bool stale_checking() const { return stale_output_ && stale_frame_ % 4 == 0; }
 
   // Mutex between the guest memory subsystem and the command processor, to be
   // locked when checking or updating validity of pages/ranges and when firing

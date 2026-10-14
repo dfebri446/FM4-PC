@@ -10,12 +10,15 @@
  */
 
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 
 #include <rex/assert.h>
 #include <rex/bit.h>
 #include <rex/dbg.h>
+#include <rex/hash.h>
 #include <rex/graphics/shared_memory.h>
 #include <rex/math.h>
 #include <rex/memory.h>
@@ -31,7 +34,113 @@ SharedMemory::~SharedMemory() {
   ShutdownCommon();
 }
 
+void SharedMemory::NoteUploadedPages(uint32_t page_first, uint32_t page_count, const void* data) {
+  if (!stale_output_)
+    return;
+  if (!stale_shadow_)
+    return;
+  page_count = std::min(page_count, (kBufferSize >> page_size_log2_) - page_first);
+  std::memcpy(stale_shadow_ + (size_t(page_first) << page_size_log2_), data,
+              size_t(page_count) << page_size_log2_);
+  for (uint32_t page = page_first; page < page_first + page_count; ++page) {
+    stale_known_[page >> 6] |= uint64_t(1) << (page & 63);
+  }
+}
+
+uint32_t SharedMemory::CopyReadbackToGuest(uint32_t start, uint32_t length, const uint8_t* data) {
+  if (!length || start >= kBufferSize)
+    return 0;
+  length = std::min(length, kBufferSize - start);
+  uint8_t* guest = memory_.TranslatePhysical(start);
+  if (!guest)
+    return 0;
+  // Under the lock, a guest write to a watched page waits for the copy, then
+  // invalidates the page, so the guest data always wins.
+  auto global_lock = global_critical_region_.Acquire();
+  uint32_t skipped = 0;
+  const uint32_t page_size = uint32_t(1) << page_size_log2_;
+  for (uint32_t offset = 0; offset < length;) {
+    const uint32_t page = (start + offset) >> page_size_log2_;
+    const uint32_t chunk =
+        std::min(length - offset, page_size - ((start + offset) & (page_size - 1)));
+    if ((system_page_flags_valid_[page >> 6] >> (page & 63)) & 1) {
+      std::memcpy(guest + offset, data + offset, chunk);
+    } else {
+      ++skipped;
+    }
+    offset += chunk;
+  }
+  return skipped;
+}
+
+uint32_t SharedMemory::CountGpuWrittenPages(uint32_t start, uint32_t length) {
+  if (!length || start >= kBufferSize)
+    return 0;
+  length = std::min(length, kBufferSize - start);
+  auto global_lock = global_critical_region_.Acquire();
+  uint32_t count = 0;
+  for (uint32_t page = start >> page_size_log2_; page <= (start + length - 1) >> page_size_log2_;
+       ++page) {
+    count += (system_page_flags_valid_and_gpu_written_[page >> 6] >> (page & 63)) & 1;
+  }
+  return count;
+}
+
+void SharedMemory::CheckReusedRequest(uint32_t start, uint32_t length) {
+  if (!stale_shadow_ || !length || start >= kBufferSize)
+    return;
+  length = std::min(length, kBufferSize - start);
+  auto global_lock = global_critical_region_.Acquire();
+  uint32_t differing = 0;
+  const auto* data = memory_.TranslatePhysical<const uint8_t*>(start);
+  for (uint32_t offset = 0; offset < length; ++offset) {
+    const uint32_t page = (start + offset) >> page_size_log2_;
+    const uint64_t bit = uint64_t(1) << (page & 63);
+    // Pages the GPU wrote, or never got from the guest, have no shadow data.
+    if (!(stale_known_[page >> 6] & bit) ||
+        (system_page_flags_valid_and_gpu_written_[page >> 6] & bit)) {
+      continue;
+    }
+    differing += data[offset] != stale_shadow_[start + offset];
+  }
+  if (differing) {
+    *stale_output_ << "K " << stale_frame_ << ' ' << std::hex << start << ' ' << std::dec << length
+                   << ' ' << differing << '\n';
+  }
+}
+
+void SharedMemory::EndStalePageFrame() {
+  if (!stale_output_)
+    return;
+  if (stale_checking()) {
+    *stale_output_ << "F " << stale_frame_ << ' '
+                   << std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now().time_since_epoch())
+                          .count()
+                   << ' ' << stale_found_ << ' ' << stale_checked_ << ' ' << stale_unwatched_
+                   << '\n';
+    if (stale_found_ || stale_unwatched_ || stale_frame_ % 240 == 0)
+      stale_output_->flush();
+  }
+  stale_found_ = stale_checked_ = stale_unwatched_ = 0;
+  ++stale_frame_;
+}
+
 void SharedMemory::InitializeCommon() {
+  if (const char* path = std::getenv("REX_STALE_PAGE_TRACE"); path && *path) {
+    stale_output_ = std::make_unique<std::ofstream>(path);
+    // Committed on first touch, so only uploaded pages take memory.
+    stale_shadow_ = static_cast<uint8_t*>(
+        rex::memory::AllocFixed(nullptr, kBufferSize, rex::memory::AllocationType::kReserveCommit,
+                                rex::memory::PageAccess::kReadWrite));
+    stale_known_.assign((kBufferSize >> page_size_log2_) / 64, 0);
+    stale_chunk_checked_.assign(kBufferSize >> kStaleChunkSizeLog2, 0);
+    stale_page_checked_.assign(kBufferSize >> page_size_log2_, 0);
+    const char* fix = std::getenv("REX_STALE_PAGE_FIX");
+    stale_fix_ = fix && fix[0] == '1';
+    const char* unwatched = std::getenv("REX_STALE_PAGE_UNWATCHED");
+    stale_check_unwatched_ = unwatched && unwatched[0] == '1';
+  }
   num_system_page_flags_ = ((kBufferSize >> page_size_log2_) + 63) / 64;
   system_page_flags_valid_.assign(num_system_page_flags_, 0);
   system_page_flags_valid_and_gpu_written_.assign(num_system_page_flags_, 0);
@@ -92,6 +201,7 @@ void SharedMemory::ShutdownCommon() {
 
 void SharedMemory::InvalidateAllPages() {
   auto global_lock = global_critical_region_.Acquire();
+  invalidation_epoch_.fetch_add(1, std::memory_order_acq_rel);
 
   std::fill(system_page_flags_valid_.begin(), system_page_flags_valid_.end(), uint64_t(0));
   std::fill(system_page_flags_valid_and_gpu_written_.begin(),
@@ -408,6 +518,69 @@ bool SharedMemory::RequestRanges(const std::pair<uint32_t, uint32_t>* ranges, si
     const uint64_t perf_lock_start = perf_trace::ZoneStart();
     auto global_lock = global_critical_region_.Acquire();
     perf_trace::ZoneEnd(perf_trace::Zone::kSharedMemoryLock, perf_lock_start);
+    if (stale_checking()) {
+      for (const std::pair<uint32_t, uint32_t>& range : merged_ranges) {
+        // Whole-buffer requests (memexport) would cost too much per draw.
+        if (range.second > (16u << 20))
+          continue;
+        const uint32_t range_end = range.first + range.second;
+        // Valid pages that the guest can write without the page being watched.
+        for (uint32_t page = range.first >> page_size_log2_;
+             page <= (range_end - 1) >> page_size_log2_; ++page) {
+          const uint64_t bit = uint64_t(1) << (page & 63);
+          if (!stale_check_unwatched_ || !(system_page_flags_valid_[page >> 6] & bit) ||
+              stale_page_checked_[page] == stale_frame_) {
+            continue;
+          }
+          stale_page_checked_[page] = stale_frame_;
+          if (!memory_.IsPhysicalPageWritableUnwatched(page << page_size_log2_))
+            continue;
+          if (stale_unwatched_++ < 256) {
+            *stale_output_ << "U " << stale_frame_ << ' ' << std::hex << (page << page_size_log2_)
+                           << std::dec << ' '
+                           << int((system_page_flags_valid_and_gpu_written_[page >> 6] & bit) != 0)
+                           << ' ' << memory_.DescribePhysicalPage(page << page_size_log2_) << '\n';
+          }
+          if (stale_fix_)
+            system_page_flags_valid_[page >> 6] &= ~bit;
+        }
+        const uint32_t chunk_last = (range_end - 1) >> kStaleChunkSizeLog2;
+        for (uint32_t chunk = range.first >> kStaleChunkSizeLog2; chunk <= chunk_last; ++chunk) {
+          const uint32_t page = chunk >> (page_size_log2_ - kStaleChunkSizeLog2);
+          const uint64_t bit = uint64_t(1) << (page & 63);
+          if (!(system_page_flags_valid_[page >> 6] & bit) ||
+              (system_page_flags_valid_and_gpu_written_[page >> 6] & bit) ||
+              !(stale_known_[page >> 6] & bit) || stale_chunk_checked_[chunk] == stale_frame_) {
+            continue;
+          }
+          // Only the requested bytes; whole chunks are checked once a frame.
+          const uint32_t start = std::max(range.first, chunk << kStaleChunkSizeLog2);
+          const uint32_t end = std::min(range_end, (chunk + 1) << kStaleChunkSizeLog2);
+          if (end - start == (uint32_t(1) << kStaleChunkSizeLog2)) {
+            stale_chunk_checked_[chunk] = stale_frame_;
+          }
+          ++stale_checked_;
+          const auto* data = memory_.TranslatePhysical<const uint8_t*>(start);
+          const uint8_t* shadow = stale_shadow_ + start;
+          if (!std::memcmp(data, shadow, end - start))
+            continue;
+          if (stale_found_++ < 256) {
+            uint32_t differing = 0, first = UINT32_MAX;
+            for (uint32_t i = 0; i < end - start; ++i) {
+              if (data[i] == shadow[i])
+                continue;
+              ++differing;
+              first = std::min(first, start + i);
+            }
+            *stale_output_ << "S " << stale_frame_ << ' ' << std::hex << first << ' ' << range.first
+                           << ' ' << std::dec << range.second << ' ' << differing << ' '
+                           << memory_.DescribePhysicalPage(page << page_size_log2_) << '\n';
+          }
+          if (stale_fix_)
+            system_page_flags_valid_[page >> 6] &= ~bit;
+        }
+      }
+    }
     for (const std::pair<uint32_t, uint32_t>& range : merged_ranges) {
       uint32_t page_first = range.first >> page_size_log2_;
       uint32_t page_last = (range.first + range.second - 1) >> page_size_log2_;
@@ -531,6 +704,7 @@ std::pair<uint32_t, uint32_t> SharedMemory::MemoryInvalidationCallback(
     system_page_flags_valid_[i] &= ~invalidate_bits;
     system_page_flags_valid_and_gpu_written_[i] &= ~invalidate_bits;
   }
+  invalidation_epoch_.fetch_add(1, std::memory_order_acq_rel);
 
   FireWatches(page_first, page_last, false);
 

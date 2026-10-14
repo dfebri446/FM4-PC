@@ -19,7 +19,12 @@
 #include <rex/system/xfile.h>
 #include <rex/thread/mutex.h>
 
+#include <chrono>
+#include <cstdlib>
+#include <fstream>
+#include <mutex>
 #include <span>
+#include <string>
 
 namespace rex::system {
 
@@ -102,6 +107,29 @@ X_STATUS XFile::QueryDirectory(X_FILE_DIRECTORY_INFORMATION* out_info, size_t le
   return X_STATUS_SUCCESS;
 }
 
+namespace {
+// Optional trace of guest file reads (REX_FILE_READ_TRACE=<file>): "<steady ms>
+// <status> <offset> <requested bytes> <read bytes> <guest buffer> <async>
+// <path>", hexadecimal except the times, sizes and the async flag.
+void TraceFileRead(const std::string& path, uint64_t offset, uint32_t length, uint32_t read,
+                   uint32_t buffer, uint32_t status, bool async) {
+  static std::mutex mutex;
+  static std::ofstream* output = [] {
+    const char* trace = std::getenv("REX_FILE_READ_TRACE");
+    return trace && *trace ? new std::ofstream(trace) : nullptr;
+  }();
+  if (!output)
+    return;
+  std::lock_guard<std::mutex> lock(mutex);
+  *output << std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now().time_since_epoch())
+                 .count()
+          << std::hex << ' ' << status << ' ' << offset << std::dec << ' ' << length << ' ' << read
+          << std::hex << ' ' << buffer << std::dec << ' ' << int(async) << ' ' << path << '\n';
+  output->flush();
+}
+}  // namespace
+
 X_STATUS XFile::Read(uint32_t buffer_guest_address, uint32_t buffer_length, uint64_t byte_offset,
                      uint32_t* out_bytes_read, uint32_t apc_context, bool notify_completion) {
   std::lock_guard<std::mutex> lock(file_lock_);
@@ -183,6 +211,9 @@ X_STATUS XFile::ReadInternal(uint32_t buffer_guest_address, uint32_t buffer_leng
   if (out_bytes_read) {
     *out_bytes_read = uint32_t(bytes_read);
   }
+
+  TraceFileRead(path(), byte_offset, buffer_length, uint32_t(bytes_read), buffer_guest_address,
+                uint32_t(result), notify_completion);
 
   if (notify_completion) {
     XIOCompletion::IONotification notify;

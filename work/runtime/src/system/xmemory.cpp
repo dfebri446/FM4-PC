@@ -394,6 +394,55 @@ void Memory::Reset() {
   heaps_.physical.Reset();
 }
 
+std::string Memory::DescribePhysicalPage(uint32_t physical_address) {
+  std::string out;
+  PhysicalHeap* heaps[] = {&heaps_.vA0000000, &heaps_.vC0000000, &heaps_.vE0000000};
+  const uint32_t view_bases[] = {0xA0000000, 0xC0000000, 0xE0000000};
+  for (uint32_t i = 0; i < 3; ++i) {
+    // The E0000000 view is offset by 4 KB (see PhysicalHeap::GetPhysicalAddress).
+    const uint32_t offset = i == 2 ? 0x1000 : 0;
+    if (physical_address < offset)
+      continue;
+    const uint32_t address = view_bases[i] + physical_address - offset;
+    HeapAllocationInfo info;
+    if (!heaps[i]->QueryRegionInfo(address, &info) ||
+        !(info.state & memory::kMemoryAllocationCommit)) {
+      continue;
+    }
+    const uint32_t host_page =
+        (address - view_bases[i] + heaps[i]->host_address_offset()) / system_page_size_;
+    size_t length = system_page_size_;
+    rex::memory::PageAccess access = rex::memory::PageAccess::kNoAccess;
+    rex::memory::QueryProtect(TranslateVirtual(address), length, access);
+    out +=
+        fmt::format("{}{:X}:p{:X}w{}h{}", out.empty() ? "" : " ", view_bases[i] >> 24, info.protect,
+                    int(heaps[i]->IsHostPageWriteWatched(host_page)), uint32_t(access));
+  }
+  return out.empty() ? "none" : out;
+}
+
+bool Memory::IsPhysicalPageWritableUnwatched(uint32_t physical_address) {
+  PhysicalHeap* heaps[] = {&heaps_.vA0000000, &heaps_.vC0000000, &heaps_.vE0000000};
+  const uint32_t view_bases[] = {0xA0000000, 0xC0000000, 0xE0000000};
+  for (uint32_t i = 0; i < 3; ++i) {
+    const uint32_t offset = i == 2 ? 0x1000 : 0;
+    if (physical_address < offset)
+      continue;
+    const uint32_t address = view_bases[i] + physical_address - offset;
+    HeapAllocationInfo info;
+    if (!heaps[i]->QueryRegionInfo(address, &info) ||
+        !(info.state & memory::kMemoryAllocationCommit) ||
+        !(info.protect & memory::kMemoryProtectWrite)) {
+      continue;
+    }
+    const uint32_t host_page =
+        (address - view_bases[i] + heaps[i]->host_address_offset()) / system_page_size_;
+    if (!heaps[i]->IsHostPageWriteWatched(host_page))
+      return true;
+  }
+  return false;
+}
+
 const BaseHeap* Memory::LookupHeap(uint32_t address) const {
   if (address < 0x40000000) {
     return &heaps_.v00000000;

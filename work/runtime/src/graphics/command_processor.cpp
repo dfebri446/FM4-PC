@@ -10,6 +10,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <tuple>
 #include <map>
@@ -17,6 +18,7 @@
 #include <cmath>
 #include <cstring>
 #include <string_view>
+#include <unordered_set>
 
 #include "util/perf_trace.h"
 
@@ -32,6 +34,7 @@
 #include <rex/graphics/pipeline/texture/info.h>
 #include <rex/graphics/sampler_info.h>
 #include <rex/graphics/xenos.h>
+#include <rex/hash.h>
 #include <rex/logging.h>
 #include <rex/math.h>
 #include <rex/memory.h>
@@ -669,8 +672,93 @@ IndirectBufferTrace* GetIndirectBufferTrace() {
 }
 }  // namespace
 
+namespace {
+// Optional late write trace (REX_LATE_WRITE_TRACE=<file>): guest memory that the
+// command processor consumed (indirect buffers, constants, registers and shaders
+// loaded from memory, vertex data of draws up to 256 KB per range) is hashed
+// when read and again at the next signal the guest CPU can observe (memory
+// writes from the command stream, interrupts, the swap). A different hash means
+// the CPU changed the data after the command processor had used it and before
+// it could know that the GPU was done with it; on the console the GPU runs
+// behind the kicked commands, so such a write could still reach the draw.
+// "L <kind> <address> <bytes> <draw in frame> <tag>" per changed range (kind is
+// CommandProcessor::GuestRead, the tag is the vertex shader hash for vertices,
+// hexadecimal except bytes and draw), at most 64 per frame, then at each swap
+// "F <frame> <steady ms> <changed ranges> <checked ranges> <hash us>".
+struct LateWriteTrace {
+  struct Read {
+    uint32_t kind, address, length, draw, tag;
+    uint64_t hash;
+  };
+  std::ofstream output;
+  std::vector<Read> reads;
+  std::unordered_set<uint64_t> seen;  // Address and length of the reads.
+  uint32_t frame = 0;
+  uint32_t draws = 0;
+  uint32_t changed = 0, checked = 0, lines = 0;
+  uint64_t hash_ns = 0;
+};
+LateWriteTrace* GetLateWriteTrace() {
+  static LateWriteTrace* trace = [] {
+    const char* path = std::getenv("REX_LATE_WRITE_TRACE");
+    if (!path || !*path)
+      return static_cast<LateWriteTrace*>(nullptr);
+    auto* result = new LateWriteTrace;
+    result->output.open(path);
+    return result;
+  }();
+  return trace;
+}
+uint64_t NowNs() {
+  return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                      std::chrono::steady_clock::now().time_since_epoch())
+                      .count());
+}
+}  // namespace
+
+void CommandProcessor::TraceGuestRead(GuestRead kind, uint32_t address, uint32_t length,
+                                      uint32_t tag) {
+  LateWriteTrace* trace = GetLateWriteTrace();
+  if (!trace || !length)
+    return;
+  if (kind == GuestRead::kVertices && length > (256u << 10))
+    return;
+  if (!trace->seen.insert(uint64_t(address) << 32 | length).second)
+    return;
+  const void* data = memory_->TranslatePhysical(address);
+  if (!data)
+    return;
+  const uint64_t start = NowNs();
+  trace->reads.push_back(
+      {uint32_t(kind), address, length, trace->draws, tag, XXH3_64bits(data, length)});
+  trace->hash_ns += NowNs() - start;
+}
+
+void CommandProcessor::CheckGuestReads() {
+  LateWriteTrace* trace = GetLateWriteTrace();
+  if (!trace)
+    return;
+  const uint64_t start = NowNs();
+  for (const LateWriteTrace::Read& read : trace->reads) {
+    ++trace->checked;
+    const void* data = memory_->TranslatePhysical(read.address);
+    if (!data || XXH3_64bits(data, read.length) == read.hash)
+      continue;
+    ++trace->changed;
+    if (trace->lines++ < 64) {
+      trace->output << "L " << read.kind << ' ' << std::hex << read.address << ' ' << std::dec
+                    << read.length << ' ' << read.draw << ' ' << std::hex << read.tag << std::dec
+                    << '\n';
+    }
+  }
+  trace->hash_ns += NowNs() - start;
+  trace->reads.clear();
+  trace->seen.clear();
+}
+
 void CommandProcessor::ExecuteIndirectBuffer(uint32_t ptr, uint32_t count) {
   SCOPE_profile_cpu_f("gpu");
+  TraceGuestRead(GuestRead::kIndirectBuffer, ptr, count * sizeof(uint32_t));
 
   IndirectBufferTrace* trace = GetIndirectBufferTrace();
   uint64_t draws_before = 0;
@@ -787,6 +875,36 @@ bool CommandProcessor::ExecutePacketType2(memory::RingBuffer* reader, uint32_t p
   return true;
 }
 
+namespace {
+// Optional census of draw packets (REX_BIN_TRACE=<file>, every
+// REX_BIN_TRACE_EVERY-th frame, default 10): at each swap "F <frame> <steady
+// ms>", then per vertex and pixel shader pair, bin select, bin mask and outcome
+// (0 skipped by predication, 1 predicated and run, 2 not predicated) "P <vertex
+// shader> <pixel shader> <select> <mask> <outcome> <draw packets>", hexadecimal
+// except the outcome and the count. Shader hashes are the low 32 bits of the
+// shaders active when the packet is reached.
+struct BinTrace {
+  std::ofstream output;
+  uint32_t every = 10;
+  uint32_t frame = 0;
+  std::map<std::tuple<uint32_t, uint32_t, uint64_t, uint64_t, uint32_t>, uint32_t> draws;
+};
+BinTrace* GetBinTrace() {
+  static BinTrace* trace = [] {
+    const char* path = std::getenv("REX_BIN_TRACE");
+    if (!path || !*path)
+      return static_cast<BinTrace*>(nullptr);
+    auto* result = new BinTrace;
+    result->output.open(path);
+    if (const char* every = std::getenv("REX_BIN_TRACE_EVERY")) {
+      result->every = std::max(1, std::atoi(every));
+    }
+    return result;
+  }();
+  return trace;
+}
+}  // namespace
+
 bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t packet) {
   // Type-3 packet.
   uint32_t opcode = (packet >> 8) & 0x7F;
@@ -802,6 +920,15 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
   // & 1 == predicate - when set, we do bin check to see if we should execute
   // the packet. Only type 3 packets are affected.
   // We also skip predicated swaps, as they are never valid (probably?).
+  if (opcode == PM4_DRAW_INDX || opcode == PM4_DRAW_INDX_2) {
+    if (BinTrace* trace = GetBinTrace(); trace && trace->frame % trace->every == 0) {
+      const uint32_t outcome = !(packet & 1) ? 2 : (bin_select_ & bin_mask_) != 0 ? 1 : 0;
+      ++trace
+            ->draws[{active_vertex_shader_ ? uint32_t(active_vertex_shader_->ucode_data_hash()) : 0,
+                     active_pixel_shader_ ? uint32_t(active_pixel_shader_->ucode_data_hash()) : 0,
+                     bin_select_, outcome == 2 ? 0 : bin_mask_, outcome}];
+    }
+  }
   if (packet & 1) {
     bool any_pass = (bin_select_ & bin_mask_) != 0;
     if (!any_pass || opcode == PM4_XE_SWAP) {
@@ -979,6 +1106,7 @@ bool CommandProcessor::ExecutePacketType3_INTERRUPT(memory::RingBuffer* reader, 
 
   // generate interrupt from the command stream
   uint32_t cpu_mask = reader->ReadAndSwap<uint32_t>();
+  CheckGuestReads();
   for (int n = 0; n < 6; n++) {
     if (cpu_mask & (1 << n)) {
       if (graphics_system_) {
@@ -1013,6 +1141,32 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
                     << '\n';
     }
     trace->frame_start_draws = trace->draws;
+  }
+  CheckGuestReads();
+  if (BinTrace* trace = GetBinTrace()) {
+    if (trace->frame % trace->every == 0) {
+      trace->output << "F " << trace->frame << ' '
+                    << std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count()
+                    << '\n'
+                    << std::hex;
+      for (const auto& [key, count] : trace->draws) {
+        const auto& [vs, ps, select, mask, outcome] = key;
+        trace->output << "P " << vs << ' ' << ps << ' ' << select << ' ' << mask << ' ' << std::dec
+                      << outcome << ' ' << count << std::hex << '\n';
+      }
+      trace->output << std::dec << std::flush;
+      trace->draws.clear();
+    }
+    ++trace->frame;
+  }
+  if (LateWriteTrace* trace = GetLateWriteTrace()) {
+    trace->output << "F " << trace->frame++ << ' ' << NowNs() / 1000000 << ' ' << trace->changed
+                  << ' ' << trace->checked << ' ' << trace->hash_ns / 1000 << std::endl;
+    trace->draws = 0;
+    trace->changed = trace->checked = trace->lines = 0;
+    trace->hash_ns = 0;
   }
 
   // Xenia-specific VdSwap hook.
@@ -1203,6 +1357,7 @@ bool CommandProcessor::ExecutePacketType3_REG_TO_MEM(memory::RingBuffer* reader,
   uint32_t mem_addr = reader->ReadAndSwap<uint32_t>();
 
   uint32_t reg_val = ReadRegisterValue(reg_addr);
+  CheckGuestReads();
 
   auto endianness = static_cast<xenos::Endian>(mem_addr & 0x3);
   mem_addr &= ~0x3;
@@ -1215,6 +1370,7 @@ bool CommandProcessor::ExecutePacketType3_REG_TO_MEM(memory::RingBuffer* reader,
 bool CommandProcessor::ExecutePacketType3_MEM_WRITE(memory::RingBuffer* reader, uint32_t packet,
                                                     uint32_t count) {
   uint32_t write_addr = reader->ReadAndSwap<uint32_t>();
+  CheckGuestReads();
   for (uint32_t i = 0; i < count - 1; i++) {
     uint32_t write_data = reader->ReadAndSwap<uint32_t>();
 
@@ -1279,6 +1435,7 @@ bool CommandProcessor::ExecutePacketType3_COND_WRITE(memory::RingBuffer* reader,
     // Write.
     if (wait_info & 0x100) {
       // Memory.
+      CheckGuestReads();
       auto endianness = static_cast<xenos::Endian>(write_reg_addr & 0x3);
       write_reg_addr &= ~0x3;
       write_data = GpuSwap(write_data, endianness);
@@ -1324,6 +1481,7 @@ bool CommandProcessor::ExecutePacketType3_EVENT_WRITE_SHD(memory::RingBuffer* re
     // Write value.
     data_value = value;
   }
+  CheckGuestReads();
   auto endianness = static_cast<xenos::Endian>(address & 0x3);
   address &= ~0x3;
   data_value = GpuSwap(data_value, endianness);
@@ -1399,6 +1557,8 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
                                               const char* opcode_name, uint32_t viz_query_condition,
                                               uint32_t count_remaining) {
   if (IndirectBufferTrace* trace = GetIndirectBufferTrace()) ++trace->draws;
+  if (LateWriteTrace* trace = GetLateWriteTrace())
+    ++trace->draws;
   // if viz_query_condition != 0, this is a conditional draw based on viz query.
   // This ID matches the one issued in PM4_VIZ_QUERY
   // uint32_t viz_id = viz_query_condition & 0x3F;
@@ -1599,6 +1759,10 @@ bool CommandProcessor::ExecutePacketType3_LOAD_ALU_CONSTANT(memory::RingBuffer* 
   size_dwords &= 0xFFF;
   uint32_t type = (offset_type >> 16) & 0xFF;
   uint32_t* xlat_address = memory_->TranslatePhysical<uint32_t*>(address);
+  if (type <= 4) {
+    TraceGuestRead(GuestRead(uint32_t(GuestRead::kAluConstants) + type), address,
+                   size_dwords * sizeof(uint32_t));
+  }
   switch (type) {
     case 0:  // ALU
       WriteALURangeFromMem(index, xlat_address, size_dwords);
@@ -1642,6 +1806,7 @@ bool CommandProcessor::ExecutePacketType3_IM_LOAD(memory::RingBuffer* reader, ui
   uint32_t start = start_size >> 16;
   uint32_t size_dwords = start_size & 0xFFFF;  // dwords
   assert_true(start == 0);
+  TraceGuestRead(GuestRead::kShader, addr, size_dwords * sizeof(uint32_t));
 
   auto shader =
       LoadShader(shader_type, addr, memory_->TranslatePhysical<uint32_t*>(addr), size_dwords);

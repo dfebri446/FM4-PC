@@ -114,9 +114,44 @@ REX_FRAME_GRAPH=<file.jsonl> (REX_FRAME_GRAPH_EVERY, default 600 frames) records
 the passes of sampled frames (surface pitch, MSAA, color and depth targets with
 EDRAM base and format, window offset), every resolve (source, clears,
 destination) and which resolve outputs each pass samples, also from earlier
-frames. Print a frame with:
+frames. With the host render target path each pass also has the smallest and
+largest EDRAM length its draws claimed per binding slot and its ownership
+transfers. GPU timestamps give each pass and resolve its GPU time (including
+the transfers and texture loads issued for it), plus the time between
+submissions and after the swap. It is cheap enough for REX_FRAME_GRAPH_EVERY=1;
+"frame" lines have the steady clock ("ms") to match captures\captures.txt.
+Print a frame with:
 
-  python outputs\FM4-build\e2erame_graph.py --build-root <BuildRoot> trace.jsonl [--frame N | --list]
+  python outputs\FM4-build\e2e\frame_graph.py --build-root <BuildRoot> trace.jsonl [--frame N | --list]
+
+Data race and stale data checks (for the RTV missing-road issue, usable for any
+renderer work; all write files outside the repository):
+- REX_LATE_WRITE_TRACE=<file>: hashes the memory the command processor
+  consumes (indirect buffers, constants and shaders loaded from memory, vertex
+  ranges up to 256 KB) and checks it again at the next signal the guest CPU can
+  observe; "L" lines are ranges the CPU changed in between.
+- REX_STALE_PAGE_TRACE=<file>: keeps a shadow copy of everything uploaded to
+  the GPU and, every 4th frame, compares the bytes that draws request in valid
+  pages with guest memory ("S" lines: the GPU copy is out of date); "K" lines
+  are vertex ranges whose reuse without the invalidation epoch would have drawn
+  out-of-date data. REX_STALE_PAGE_UNWATCHED=1 (slow, about 15 fps) also lists
+  valid pages that the guest could write without a write watch ("U" lines).
+  REX_STALE_PAGE_FIX=1 invalidates the stale pages so they are uploaded again.
+- REX_READBACK_SKIP_TRACE=<file>: resolve readbacks that left pages alone
+  because the guest wrote them after the resolve.
+- REX_BIN_TRACE=<file> (REX_BIN_TRACE_EVERY, default 10): every draw packet the
+  command processor reaches, per shader pair, bin select and mask, and whether
+  predication skipped it; tells "the game did not send it" from "skipped".
+- REX_FILE_READ_TRACE=<file>: every guest file read (time, status, offset,
+  sizes, buffer, async flag, path); compare runs to find streaming differences.
+- REX_DRAW_STATS=<file> (REX_DRAW_STATS_EVERY, default 60): per draw of a
+  sampled frame, the shader pair, buffers, render targets and window offset
+  with the D3D12 pipeline statistics: input assembler primitives, clipper
+  invocations and primitives, pixel shader invocations.
+- REX_DRAW_DUMP=<file> with REX_DRAW_DUMP_VS=<vertex shader hash, low 32 bits>
+  (REX_DRAW_DUMP_EVERY, default 30): the vertex fetch constants, index and
+  vertex data hashes and all vertex shader float constants of matching draws,
+  to compare the same draw between runs.
 
 Comparing runs
 --------------

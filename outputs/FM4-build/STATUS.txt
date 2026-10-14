@@ -158,6 +158,29 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   (default sekarang) 0 dari 25 run RTV kena (13 ber-trace, 12 tanpa trace,
   53-60 fps); dengan vblank tetap 8 dari 36 (2/8 sekarang, 6/28 sebelumnya),
   p sekitar 0,01. Penyebabnya tersembunyi, bukan diperbaiki; RTV tetap opsi.
+  Diagnosis ulang (15 Oktober 2026, RTV vblank tetap, sekitar 15% run kena):
+  kesimpulan "warna hilang di jalur render target" di atas keliru. Frame graph
+  tiap frame: di scene tidak ada transfer kepemilikan dan rentang klaim penuh
+  (1024 tile). Statistik pipeline per draw (REX_DRAW_STATS) dan sensus paket
+  draw di command processor (REX_BIN_TRACE): di area start game mengirim jauh
+  lebih sedikit draw jalan (pasangan 630d5385/8c08d24c 16-25 paket per frame vs
+  66-71 normal, 645fd4b2/89964d0 0 vs 36-46, ff6529eb/e3af5b04 5-7 vs 16-27);
+  tidak ada yang dilewati predikasi bin, dan semua yang dikirim tergambar benar
+  (vertex shader yang dijalankan di CPU dengan state guest yang sama memberi
+  hasil clipping yang sama dengan GPU). Yang juga dikecualikan: tulisan CPU
+  setelah data dipakai command processor, halaman shared memory basi pada
+  rentang yang diminta, halaman valid yang tidak diawasi, halaman vertex yang
+  ditulis GPU, readback resolve yang menimpa data guest, dan kecepatan (bug
+  juga muncul pada 16 fps). Penyebab yang ditemukan sejauh ini ada di
+  streaming track: trace baca file (REX_FILE_READ_TRACE) menunjukkan streamer
+  di run normal membaca satu item Media\tracks\Alps\bin.zip dari offset
+  0x4725000 sampai 0x4797000 (potongan 32 KB, dua buffer bergantian), di run
+  rusak hanya 64 KB pertamanya lalu langsung pindah ke item berikutnya dan sisa
+  item tidak pernah dibaca (juga baca 1 MB di 0x4725000 saat balapan tidak
+  terjadi). Jadi game sendiri meninggalkan data track area start; renderer
+  tidak terlibat. Belum diketahui kenapa streamer berhenti: kandidat di
+  emulator adalah semantik I/O asinkron (NtReadFile selesai sinkron, APC hanya
+  diantre bila apc_context bukan nol) atau race timing di kode game.
 - Perbandingan visual RTV vs ROV (14 Oktober 2026): menu utama identik (selisih
   rata-rata 0,01 level per kanal); Autovista Ferrari 458 statis setara (75%
   piksel sama persis, 24% berbeda 1 level, maksimum 5 level). Distribusi
@@ -242,6 +265,20 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   mengenali balapan; game berjalan), dengan profil dan cache yang disalin 6 dari
   6 run mencapai balapan, 0 frame jalan hilang. Selang-seling lama/baru: 49,4 /
   52,0 dan 57,4 / 58,7 fps. BuildRoot lama dengan sdk-source ditolak setup.
+- Waktu GPU per pass (B2, 14 Oktober 2026, REX_FRAME_GRAPH dengan timestamp):
+  frame balapan ROV 20,6 ms, sekitar 15 ms di pass scene tile atas (772 dan 525
+  draw, masing-masing sekitar 5,7 ms); tile bawah 0,75 ms; resolve dan
+  post-processing kurang dari 1 ms. RTV: pass scene yang sama sekitar 4,2 ms,
+  spion 635 draw 3,4 ms, dan pass pertama di surface baru sekitar 0,13-0,15 ms
+  (transfer kepemilikan EDRAM). Biaya utama ROV adalah shading scene dengan
+  interlock, bukan menggambar ulang tile.
+- Perbaikan runtime (15 Oktober 2026): cache residency vertex buffer memakai
+  epoch invalidasi shared memory. Sebelumnya permintaan rentang vertex dilewati
+  selama alamat dan ukuran fetch constant sama, juga antar frame, sehingga
+  buffer yang ditulis ulang di tempat tetap memakai salinan GPU lama
+  (REX_STALE_PAGE_TRACE baris K: satu buffer 32 KB saat loading, 76-192 byte
+  basi). Readback resolve tidak lagi menimpa halaman yang ditulis guest sejak
+  resolve. Keduanya bukan penyebab jalan hilang.
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------

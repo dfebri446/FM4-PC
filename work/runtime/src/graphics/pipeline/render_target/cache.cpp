@@ -400,6 +400,20 @@ void RenderTargetCache::ClearCache() {
   }
 }
 
+uint32_t RenderTargetCache::AppendLastUpdateTransfers(std::string& out) const {
+  if (GetPath() != Path::kHostRenderTargets)
+    return 0;
+  uint32_t count = 0;
+  for (uint32_t slot = 0; slot < 1 + xenos::kMaxColorRenderTargets; ++slot) {
+    for (const Transfer& transfer : last_update_transfers_[slot]) {
+      out += fmt::format("{}[{},{},{},{}]", out.empty() ? "" : ",", slot, transfer.start_tiles,
+                         transfer.end_tiles, transfer.source ? transfer.source->key().key : 0);
+      ++count;
+    }
+  }
+  return count;
+}
+
 void RenderTargetCache::BeginFrame() {
   ResetAccumulatedRenderTargets();
 }
@@ -539,6 +553,8 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
     }
   }
 
+  for (auto& range : last_update_ranges_)
+    range = {};
   // Clear ownership transfers before adding any.
   if (!interlock_barrier_only) {
     for (size_t i = 0; i < rex::countof(last_update_transfers_); ++i) {
@@ -696,6 +712,8 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
   for (uint32_t i = 0; i < edram_bases_sorted_count; ++i) {
     const std::pair<uint32_t, uint32_t>& rt_base_index = edram_bases_sorted[i];
     uint32_t rt_bit_index = rt_base_index.second;
+    last_update_ranges_[rt_bit_index] = {uint32_t(rt_keys[rt_bit_index].base_tiles),
+                                         rt_lengths_tiles[i]};
     ChangeOwnership(rt_keys[rt_bit_index], 0, rt_lengths_tiles[i],
                     interlock_barrier_only ? nullptr : &last_update_transfers_[rt_bit_index]);
   }

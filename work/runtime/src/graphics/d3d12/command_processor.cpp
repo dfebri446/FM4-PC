@@ -10,6 +10,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdarg>
 #include <cstdlib>
@@ -34,7 +35,9 @@
 #include <rex/graphics/flags.h>
 #include <rex/graphics/registers.h>
 #include <rex/graphics/util/draw.h>
+#include <rex/graphics/pipeline/shader/interpreter.h>
 #include <rex/graphics/xenos.h>
+#include <rex/hash.h>
 #include <rex/kernel/xboxkrnl/video.h>
 #include <rex/logging.h>
 #include <rex/memory/utils.h>
@@ -100,6 +103,21 @@ namespace rex::graphics::d3d12 {
 namespace {
 // Optional bounded publication timeline. Sampling is diagnostic only: a zero
 // sample does not prove that the entire resolved image is zero.
+// Optional trace of resolve readbacks that kept guest data
+// (REX_READBACK_SKIP_TRACE=<file>): "<steady ms> <address> <bytes> <pages
+// written by the guest since the resolve, not overwritten>".
+void TraceReadbackSkip(uint32_t address, uint32_t length, uint32_t skipped) {
+  static std::ofstream output = [] {
+    const char* path = std::getenv("REX_READBACK_SKIP_TRACE");
+    return path && *path ? std::ofstream(path) : std::ofstream();
+  }();
+  if (!skipped || !output.is_open())
+    return;
+  output << std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count()
+         << ' ' << std::hex << address << std::dec << ' ' << length << ' ' << skipped << std::endl;
+}
 void TraceResolvePublication(uint32_t address, uint32_t length, const uint8_t* bytes) {
   static std::ofstream output = [] {
     const char* path = std::getenv("REX_RESOLVE_PUBLICATION_TRACE");
@@ -297,29 +315,58 @@ void WriteGpuInventory(const GpuInventory& inventory) {
 // with the same surface state: EDRAM pitch, MSAA, written color targets with
 // base and format, depth base and format, window offset, edram mode; the
 // resolves whose output its textures read) and "resolve" (source, clears,
-// destination). Resolve outputs are tracked across frames to find readers.
+// destination), each with its "event" index in the frame, and later "gpu"
+// (the sampled frame's GPU time per event, between submissions and after the
+// swap; see FrameGraphMark). Resolve outputs are tracked across frames to find
+// readers. "frame" also has the steady clock in ms ("ms") to match captures.
+// Cheap enough for REX_FRAME_GRAPH_EVERY=1: the pass description is only
+// formatted when the surface state changes.
 struct FrameGraphTrace {
   struct Output {
-    uint32_t address, length, id, frame;
+    uint32_t length, id;
   };
   std::ofstream output;
   uint32_t every = 600;
   uint32_t frame = 0;
   uint32_t next_id = 0;
-  std::vector<Output> outputs;  // Most recent resolve per destination range.
-  std::string pass;             // Surface description of the open pass.
+  // Most recent resolve per destination range, by address, not overlapping.
+  std::map<uint32_t, Output> outputs;
+  std::array<uint32_t, 12> pass_key{};  // Surface state of the open pass.
+  bool pass_open = false;
+  std::string pass;  // Surface description of the open pass.
   uint32_t pass_draws = 0;
   std::set<uint32_t> pass_reads;
+  // Per slot: smallest and largest claimed EDRAM length in the pass.
+  std::array<std::pair<uint32_t, uint32_t>, 1 + xenos::kMaxColorRenderTargets> pass_ranges{};
+  std::string pass_transfers;  // At most 32 per pass.
+  uint32_t pass_transfer_count = 0;
+  uint32_t event = 0;  // Next pass or resolve index in the frame.
+  uint32_t pass_event = 0;
+  int32_t resolve_event = -1;
   bool sampled() const { return frame % every == 0; }
   void Flush() {
     if (!pass_draws) return;
-    output << "{\"pass\":" << pass << ",\"draws\":" << pass_draws << ",\"reads\":[";
+    output << "{\"event\":" << pass_event << ",\"pass\":" << pass << ",\"draws\":" << pass_draws
+           << ",\"reads\":[";
     bool first = true;
     for (uint32_t id : pass_reads) {
       output << (first ? "" : ",") << id;
       first = false;
     }
-    output << "]}\n";
+    output << "],\"ranges\":[";
+    bool first_range = true;
+    for (uint32_t slot = 0; slot < pass_ranges.size(); ++slot) {
+      if (!pass_ranges[slot].second)
+        continue;
+      output << (first_range ? "" : ",") << '[' << slot << ',' << pass_ranges[slot].first << ','
+             << pass_ranges[slot].second << ']';
+      first_range = false;
+    }
+    output << "],\"transfers\":" << pass_transfer_count << ",\"transfer_list\":[" << pass_transfers
+           << "]}\n";
+    pass_ranges = {};
+    pass_transfers.clear();
+    pass_transfer_count = 0;
     pass_draws = 0;
     pass_reads.clear();
   }
@@ -337,11 +384,52 @@ FrameGraphTrace* GetFrameGraphTrace() {
   }();
   return trace;
 }
-void FrameGraphDraw(const RegisterFile& regs, const Shader& vertex_shader, const Shader* pixel_shader,
-                    uint32_t color_mask, reg::RB_DEPTHCONTROL depth_control,
-                    xenos::EdramMode edram_mode) {
+std::string FrameGraphDescribePass(const RegisterFile& regs, uint32_t color_mask, bool depth_used,
+                                   xenos::EdramMode edram_mode);
+// Returns the event index if the draw starts a pass of a sampled frame, or -1.
+int32_t FrameGraphDraw(const RegisterFile& regs, const Shader& vertex_shader,
+                       const Shader* pixel_shader, uint32_t color_mask,
+                       reg::RB_DEPTHCONTROL depth_control, xenos::EdramMode edram_mode) {
   FrameGraphTrace* trace = GetFrameGraphTrace();
-  if (!trace || !trace->sampled()) return;
+  if (!trace || !trace->sampled())
+    return -1;
+  const bool depth_used = depth_control.z_enable || depth_control.stencil_enable;
+  std::array<uint32_t, 12> key = {regs.values[XE_GPU_REG_RB_SURFACE_INFO], uint32_t(edram_mode),
+                                  color_mask,
+                                  depth_used ? regs.values[XE_GPU_REG_RB_DEPTH_INFO] : 0,
+                                  regs.values[XE_GPU_REG_PA_SC_WINDOW_OFFSET]};
+  for (uint32_t i = 0; i < xenos::kMaxColorRenderTargets; ++i) {
+    if (color_mask >> (i * 4) & 0xF) {
+      key[5 + i] = regs.values[reg::RB_COLOR_INFO::rt_register_indices[i]];
+    }
+  }
+  int32_t started = -1;
+  if (!trace->pass_open || key != trace->pass_key) {
+    trace->Flush();
+    trace->pass_key = key;
+    trace->pass_open = true;
+    trace->pass = FrameGraphDescribePass(regs, color_mask, depth_used, edram_mode);
+    trace->pass_event = trace->event++;
+    started = int32_t(trace->pass_event);
+  }
+  ++trace->pass_draws;
+  for (const Shader* shader : {&vertex_shader, pixel_shader}) {
+    if (!shader)
+      continue;
+    for (const Shader::TextureBinding& binding : shader->texture_bindings()) {
+      const uint32_t address = regs.GetTextureFetch(binding.fetch_constant).base_address << 12;
+      auto it = trace->outputs.upper_bound(address);
+      if (it == trace->outputs.begin())
+        continue;
+      --it;
+      if (address < it->first + it->second.length)
+        trace->pass_reads.insert(it->second.id);
+    }
+  }
+  return started;
+}
+std::string FrameGraphDescribePass(const RegisterFile& regs, uint32_t color_mask, bool depth_used,
+                                   xenos::EdramMode edram_mode) {
   char buffer[96];
   std::string pass = "{";
   const auto surface = regs.Get<reg::RB_SURFACE_INFO>();
@@ -358,7 +446,7 @@ void FrameGraphDraw(const RegisterFile& regs, const Shader& vertex_shader, const
     first = false;
   }
   pass += "]";
-  if (depth_control.z_enable || depth_control.stencil_enable) {
+  if (depth_used) {
     const auto depth = regs.Get<reg::RB_DEPTH_INFO>();
     std::snprintf(buffer, sizeof(buffer), ",\"depth\":[%u,%u]",
                   depth.depth_base | depth.depth_base_bit_11 << 11, uint32_t(depth.depth_format));
@@ -368,22 +456,17 @@ void FrameGraphDraw(const RegisterFile& regs, const Shader& vertex_shader, const
   std::snprintf(buffer, sizeof(buffer), ",\"offset\":[%d,%d]}",
                 int32_t(window_offset << 17) >> 17, int32_t(window_offset << 1) >> 17);
   pass += buffer;
-  if (pass != trace->pass) {
-    trace->Flush();
-    trace->pass = pass;
-  }
-  ++trace->pass_draws;
-  for (const Shader* shader : {&vertex_shader, pixel_shader}) {
-    if (!shader) continue;
-    for (const Shader::TextureBinding& binding : shader->texture_bindings()) {
-      const uint32_t address = regs.GetTextureFetch(binding.fetch_constant).base_address << 12;
-      for (const FrameGraphTrace::Output& resolved : trace->outputs) {
-        if (address >= resolved.address && address < resolved.address + resolved.length) {
-          trace->pass_reads.insert(resolved.id);
-        }
-      }
-    }
-  }
+  return pass;
+}
+// Called before a resolve; returns its event index in a sampled frame, or -1.
+int32_t FrameGraphBeginResolve() {
+  FrameGraphTrace* trace = GetFrameGraphTrace();
+  if (!trace || !trace->sampled())
+    return -1;
+  trace->Flush();
+  trace->pass_open = false;
+  trace->resolve_event = int32_t(trace->event++);
+  return trace->resolve_event;
 }
 void FrameGraphResolve(const RegisterFile& regs, uint32_t address, uint32_t length) {
   FrameGraphTrace* trace = GetFrameGraphTrace();
@@ -391,18 +474,20 @@ void FrameGraphResolve(const RegisterFile& regs, uint32_t address, uint32_t leng
   const uint32_t id = trace->next_id++;
   if (length) {
     auto& outputs = trace->outputs;
-    outputs.erase(std::remove_if(outputs.begin(), outputs.end(),
-                                 [&](const FrameGraphTrace::Output& o) {
-                                   return o.address < address + length &&
-                                          address < o.address + o.length;
-                                 }),
-                  outputs.end());
-    outputs.push_back({address, length, id, trace->frame});
-    if (outputs.size() > 1024) outputs.erase(outputs.begin());
+    auto it = outputs.lower_bound(address);
+    if (it != outputs.begin() && std::prev(it)->first + std::prev(it)->second.length > address) {
+      --it;
+    }
+    while (it != outputs.end() && it->first < address + length)
+      it = outputs.erase(it);
+    outputs[address] = {length, id};
   }
   if (!trace->sampled()) return;
   trace->Flush();
-  trace->pass.clear();
+  trace->pass_open = false;
+  const uint32_t event =
+      trace->resolve_event >= 0 ? uint32_t(trace->resolve_event) : trace->event++;
+  trace->resolve_event = -1;
   const auto control = regs.Get<reg::RB_COPY_CONTROL>();
   const auto info = regs.Get<reg::RB_COPY_DEST_INFO>();
   const auto pitch = regs.Get<reg::RB_COPY_DEST_PITCH>();
@@ -419,26 +504,223 @@ void FrameGraphResolve(const RegisterFile& regs, uint32_t address, uint32_t leng
     source_format = uint32_t(color.color_format);
   }
   char buffer[320];
-  std::snprintf(buffer, sizeof(buffer),
-                "{\"resolve\":%u,\"source\":[%u,%u,%u],\"pitch\":%u,\"msaa\":%u,\"sample\":%u,"
-                "\"command\":%u,\"clear\":[%u,%u],\"dest\":[%u,%u,%u,%u,%u]}\n",
-                id, control.copy_src_select, source_base, source_format, surface.surface_pitch,
-                uint32_t(surface.msaa_samples), uint32_t(control.copy_sample_select),
-                uint32_t(control.copy_command), control.color_clear_enable,
-                control.depth_clear_enable, address, length, uint32_t(info.copy_dest_format),
-                pitch.copy_dest_pitch, pitch.copy_dest_height);
+  std::snprintf(
+      buffer, sizeof(buffer),
+      "{\"event\":%u,\"resolve\":%u,\"source\":[%u,%u,%u],\"pitch\":%u,\"msaa\":%u,\"sample\":%u,"
+      "\"command\":%u,\"clear\":[%u,%u],\"dest\":[%u,%u,%u,%u,%u]}\n",
+      event, id, control.copy_src_select, source_base, source_format, surface.surface_pitch,
+      uint32_t(surface.msaa_samples), uint32_t(control.copy_sample_select),
+      uint32_t(control.copy_command), control.color_clear_enable, control.depth_clear_enable,
+      address, length, uint32_t(info.copy_dest_format), pitch.copy_dest_pitch,
+      pitch.copy_dest_height);
   trace->output << buffer;
 }
-void FrameGraphSwap() {
+// Returns whether the frame that ends was sampled.
+bool FrameGraphSwap() {
   FrameGraphTrace* trace = GetFrameGraphTrace();
-  if (!trace) return;
-  if (trace->sampled()) {
+  if (!trace)
+    return false;
+  const bool sampled = trace->sampled();
+  if (sampled) {
     trace->Flush();
     trace->output << std::flush;
   }
-  trace->pass.clear();
+  trace->pass_open = false;
+  trace->event = 0;
+  trace->resolve_event = -1;
   if (++trace->frame % trace->every == 0) {
-    trace->output << "{\"frame\":" << trace->frame << "}\n";
+    trace->output << "{\"frame\":" << trace->frame << ",\"ms\":"
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count()
+                  << "}\n";
+  }
+  return sampled;
+}
+// After the render target update of a draw in a sampled frame.
+void FrameGraphRenderTargets(const RenderTargetCache& cache) {
+  FrameGraphTrace* trace = GetFrameGraphTrace();
+  if (!trace || !trace->sampled() || !trace->pass_open)
+    return;
+  for (uint32_t slot = 0; slot < trace->pass_ranges.size(); ++slot) {
+    const uint32_t length = cache.GetLastUpdateRange(slot).second;
+    if (!length)
+      continue;
+    auto& range = trace->pass_ranges[slot];
+    range.first = range.second ? std::min(range.first, length) : length;
+    range.second = std::max(range.second, length);
+  }
+  if (trace->pass_transfer_count < 32) {
+    trace->pass_transfer_count += cache.AppendLastUpdateTransfers(trace->pass_transfers);
+  } else {
+    std::string ignored;
+    trace->pass_transfer_count += cache.AppendLastUpdateTransfers(ignored);
+  }
+}
+uint32_t FrameGraphFrame() {
+  FrameGraphTrace* trace = GetFrameGraphTrace();
+  return trace ? trace->frame : 0;
+}
+void FrameGraphWriteGpu(uint32_t frame, const std::vector<double>& events, double gaps,
+                        double swap) {
+  FrameGraphTrace* trace = GetFrameGraphTrace();
+  if (!trace)
+    return;
+  char buffer[32];
+  trace->output << "{\"gpu\":" << frame << ",\"events\":[";
+  for (size_t i = 0; i < events.size(); ++i) {
+    std::snprintf(buffer, sizeof(buffer), "%s%.4f", i ? "," : "", events[i]);
+    trace->output << buffer;
+  }
+  std::snprintf(buffer, sizeof(buffer), "],\"gaps\":%.4f", gaps);
+  trace->output << buffer;
+  std::snprintf(buffer, sizeof(buffer), ",\"swap\":%.4f}\n", swap);
+  trace->output << buffer << std::flush;
+}
+
+// Optional dump of the inputs of selected draws (REX_DRAW_DUMP=<file>,
+// REX_DRAW_DUMP_VS=<vertex shader hash, low 32 bits, hexadecimal>, every
+// REX_DRAW_DUMP_EVERY-th frame, default 30), to compare the same draw between
+// runs: "V <frame> <steady ms> <draw in frame> <pixel shader> <guest index
+// base> <index bytes> <index data hash>", per vertex binding "B <fetch
+// constant> <address> <bytes> <endian> <stride words> <data hash>", then
+// "R <registers 0x2100-0x23FF>", "C <hash of the 256 vertex shader float
+// constants> <the 1024 dwords>" and "P" (the shader run on the CPU, below),
+// hexadecimal; hashes are XXH3 low 32 bits of guest memory at draw time.
+struct DrawDumpTrace {
+  std::ofstream output;
+  uint32_t vertex_shader = 0;
+  uint32_t every = 30;
+  uint32_t frame = 0;
+  uint32_t draw = 0;
+};
+DrawDumpTrace* GetDrawDumpTrace() {
+  static DrawDumpTrace* trace = [] {
+    const char* path = std::getenv("REX_DRAW_DUMP");
+    const char* vs = std::getenv("REX_DRAW_DUMP_VS");
+    if (!path || !*path || !vs)
+      return static_cast<DrawDumpTrace*>(nullptr);
+    auto* result = new DrawDumpTrace;
+    result->output.open(path);
+    result->vertex_shader = uint32_t(std::strtoul(vs, nullptr, 16));
+    if (const char* every = std::getenv("REX_DRAW_DUMP_EVERY")) {
+      result->every = std::max(1, std::atoi(every));
+    }
+    return result;
+  }();
+  return trace;
+}
+void DrawDump(const RegisterFile& regs, const memory::Memory& memory, const Shader& vertex_shader,
+              const Shader* pixel_shader, uint32_t index_base, uint32_t index_bytes) {
+  DrawDumpTrace* trace = GetDrawDumpTrace();
+  if (!trace)
+    return;
+  const uint32_t draw = trace->draw++;
+  if (trace->frame % trace->every ||
+      uint32_t(vertex_shader.ucode_data_hash()) != trace->vertex_shader) {
+    return;
+  }
+  auto hash = [&](uint32_t address, uint32_t length) {
+    const void* data = memory.TranslatePhysical(address);
+    return data && length ? uint32_t(XXH3_64bits(data, length)) : 0;
+  };
+  std::ostream& out = trace->output;
+  out << std::hex << "V " << trace->frame << ' '
+      << std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+             .count()
+      << ' ' << draw << ' ' << (pixel_shader ? uint32_t(pixel_shader->ucode_data_hash()) : 0) << ' '
+      << index_base << ' ' << index_bytes << ' ' << (index_base ? hash(index_base, index_bytes) : 0)
+      << '\n';
+  for (const Shader::VertexBinding& binding : vertex_shader.vertex_bindings()) {
+    const auto fetch = regs.GetVertexFetch(binding.fetch_constant);
+    out << "B " << binding.fetch_constant << ' ' << (fetch.address << 2) << ' ' << (fetch.size << 2)
+        << ' ' << uint32_t(fetch.endian) << ' ' << binding.stride_words << ' '
+        << hash(fetch.address << 2, fetch.size << 2) << '\n';
+  }
+  // Context registers 0x2100-0x23FF (vertex grouper, clipper, viewport,
+  // rasterizer setup, render backend).
+  out << "R";
+  for (uint32_t index = 0x2100; index < 0x2400; ++index)
+    out << ' ' << regs.values[index];
+  out << '\n';
+  const uint32_t* constants = &regs.values[XE_GPU_REG_SHADER_CONSTANT_000_X];
+  out << "C " << uint32_t(XXH3_64bits(constants, 256 * 4 * sizeof(uint32_t)));
+  for (uint32_t i = 0; i < 256 * 4; ++i)
+    out << ' ' << constants[i];
+  out << std::dec << '\n';
+  // The vertex shader on the CPU for the first 96 indices, from the same guest
+  // state: "P <vertices> <inside the clip volume> <x y z w of the first>".
+  if (!ShaderInterpreter::CanInterpretShader(vertex_shader))
+    return;
+  struct PositionSink : ShaderInterpreter::ExportSink {
+    float position[4] = {};
+    bool written = false;
+    void Export(ucode::ExportRegister export_register, const float* value,
+                uint32_t value_mask) override {
+      if (export_register != ucode::ExportRegister::kVSPosition)
+        return;
+      for (uint32_t i = 0; i < 4; ++i) {
+        if (value_mask & (1u << i))
+          position[i] = value[i];
+      }
+      written = true;
+    }
+  };
+  static ShaderInterpreter* interpreter = new ShaderInterpreter(regs, memory);
+  PositionSink sink;
+  interpreter->SetShader(vertex_shader);
+  interpreter->SetExportSink(&sink);
+  const auto initiator = regs.Get<reg::VGT_DRAW_INITIATOR>();
+  const auto dma_size = regs.Get<reg::VGT_DMA_SIZE>();
+  const bool dma = initiator.source_select == xenos::SourceSelect::kDMA;
+  const bool index_16 = initiator.index_size == xenos::IndexFormat::kInt16;
+  xenos::Endian index_endian = dma_size.swap_mode;
+  if (index_16) {
+    index_endian = index_endian == xenos::Endian::k8in32    ? xenos::Endian::k8in16
+                   : index_endian == xenos::Endian::k16in32 ? xenos::Endian::kNone
+                                                            : index_endian;
+  }
+  const auto* indices = memory.TranslatePhysical<const uint8_t*>(regs[XE_GPU_REG_VGT_DMA_BASE] &
+                                                                 ~uint32_t(index_16 ? 1 : 3));
+  const uint32_t reset_index = regs.Get<reg::VGT_MULTI_PRIM_IB_RESET_INDX>().reset_indx;
+  const bool reset = regs.Get<reg::PA_SU_SC_MODE_CNTL>().multi_prim_ib_ena;
+  const uint32_t offset = regs.Get<reg::VGT_INDX_OFFSET>().indx_offset;
+  const uint32_t min_index = regs.Get<reg::VGT_MIN_VTX_INDX>().min_indx;
+  const uint32_t max_index = regs.Get<reg::VGT_MAX_VTX_INDX>().max_indx;
+  uint32_t vertices = 0, inside = 0;
+  float first[4] = {};
+  for (uint32_t i = 0; i < std::min(initiator.num_indices, 96u); ++i) {
+    uint32_t index = i;
+    if (dma) {
+      if (i >= dma_size.num_words || !indices)
+        break;
+      index = index_16 ? uint32_t(reinterpret_cast<const uint16_t*>(indices)[i])
+                       : reinterpret_cast<const uint32_t*>(indices)[i];
+      index = xenos::GpuSwap(index, index_endian) & 0xFFFFFF;
+      if (reset && index == reset_index)
+        continue;
+    }
+    index = std::min(max_index, std::max(min_index, (index + offset) & 0xFFFFFF));
+    sink.written = false;
+    interpreter->temp_registers()[0] = float(index);
+    interpreter->Execute();
+    if (!sink.written)
+      continue;
+    const float* p = sink.position;
+    if (!vertices++)
+      std::memcpy(first, p, sizeof(first));
+    inside += std::abs(p[0]) <= p[3] && std::abs(p[1]) <= p[3] && p[2] >= 0.0f && p[2] <= p[3];
+  }
+  interpreter->SetExportSink(nullptr);
+  out << "P " << vertices << ' ' << inside << ' ' << first[0] << ' ' << first[1] << ' ' << first[2]
+      << ' ' << first[3] << '\n';
+}
+void DrawDumpSwap() {
+  if (DrawDumpTrace* trace = GetDrawDumpTrace()) {
+    ++trace->frame;
+    trace->draw = 0;
+    trace->output.flush();
   }
 }
 
@@ -2082,6 +2364,8 @@ bool D3D12CommandProcessor::SetupContext() {
 
   occlusion_query_resources_available_ = InitializeOcclusionQueryResources();
   InitializeGpuTimestamps();
+  InitializeFrameGraphMarks();
+  InitializeDrawStats();
   if (bindless_resources_used_) {
     WriteROVOcclusionUAVDescriptor(provider.OffsetViewDescriptor(
         view_bindless_heap_cpu_start_, uint32_t(SystemBindlessView::kOcclusionCounterRawUAV)));
@@ -2099,6 +2383,8 @@ void D3D12CommandProcessor::ShutdownContext() {
   InvalidateAllVertexBufferResidency();
   ShutdownOcclusionQueryResources();
   ShutdownGpuTimestamps();
+  ShutdownFrameGraphMarks();
+  ShutdownDrawStats();
 
   ui::d3d12::util::ReleaseAndNull(readback_buffer_);
   readback_buffer_size_ = 0;
@@ -2382,7 +2668,33 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
   if (GpuInventory* inventory = GetGpuInventory()) {
     if (++inventory->frame % 600 == 0) WriteGpuInventory(*inventory);
   }
-  FrameGraphSwap();
+  shared_memory_->EndStalePageFrame();
+  DrawDumpSwap();
+  if (draw_stats_output_) {
+    if (draw_stats_recording_) {
+      draw_stats_recording_ = false;
+      if (!draw_stats_draws_.empty() && submission_open_) {
+        deferred_command_list_.D3DResolveQueryData(
+            draw_stats_heap_.Get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS, 0,
+            uint32_t(draw_stats_draws_.size()), draw_stats_readback_.Get(), 0);
+        draw_stats_submission_ = submission_current_;
+        draw_stats_frame_recorded_ = draw_stats_frame_;
+      } else {
+        draw_stats_draws_.clear();
+      }
+    }
+    if (++draw_stats_frame_ % draw_stats_every_ == 0 && !draw_stats_submission_) {
+      draw_stats_recording_ = true;
+      draw_stats_draws_.clear();
+      draw_stats_frame_ms_ = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now().time_since_epoch())
+                                          .count());
+    }
+  }
+  if (FrameGraphSwap() && frame_graph_recording_) {
+    FrameGraphMark(kFrameGraphMarkSwap);
+    frame_graph_closing_ = true;
+  }
   if (DrawListTrace* draw_list = GetDrawListTrace()) {
     if (++draw_list->frame % draw_list->every == 0) {
       draw_list->output << "F " << draw_list->frame << ' '
@@ -2956,8 +3268,12 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   uint32_t normalized_color_mask =
       pixel_shader ? draw_util::GetNormalizedColorMask(regs, pixel_shader->writes_color_targets())
                    : 0;
-  FrameGraphDraw(regs, *vertex_shader, pixel_shader, normalized_color_mask, normalized_depth_control,
-                 edram_mode);
+  if (const int32_t event =
+          FrameGraphDraw(regs, *vertex_shader, pixel_shader, normalized_color_mask,
+                         normalized_depth_control, edram_mode);
+      event >= 0) {
+    FrameGraphMark(event);
+  }
   if (GpuInventory* inventory = GetGpuInventory()) {
     GpuInventory::Pair& pair = inventory->pairs[{vertex_shader->ucode_data_hash(),
                                                  pixel_shader ? pixel_shader->ucode_data_hash() : 0}];
@@ -3006,6 +3322,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
                                     normalized_color_mask, *vertex_shader)) {
     return false;
   }
+  FrameGraphRenderTargets(*render_target_cache_);
   perf_trace::ZoneEnd(perf_trace::Zone::kDrawRenderTargets, perf_start);
 
   // Create the pipeline (for this, need the actually used render target formats
@@ -3139,6 +3456,12 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   // Ensure vertex buffers are resident.
   perf_start = perf_trace::ZoneStart();
   const Shader::ConstantRegisterMap& constant_map_vertex = vertex_shader->constant_register_map();
+  const uint64_t memory_epoch = shared_memory_->invalidation_epoch();
+  if (memory_epoch != vertex_buffers_epoch_) {
+    vertex_buffers_in_sync_[0] = 0;
+    vertex_buffers_in_sync_[1] = 0;
+    vertex_buffers_epoch_ = memory_epoch;
+  }
   for (uint32_t i = 0; i < rex::countof(constant_map_vertex.vertex_fetch_bitmap); ++i) {
     uint32_t vfetch_bits_remaining = constant_map_vertex.vertex_fetch_bitmap[i];
     uint32_t j;
@@ -3168,10 +3491,15 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
                       vfetch_index, vfetch_constant.dword_0, vfetch_constant.dword_1);
           return false;
       }
+      TraceGuestRead(GuestRead::kVertices, vfetch_constant.address << 2, vfetch_constant.size << 2,
+                     uint32_t(vertex_shader->ucode_data_hash()));
       VertexBufferState& state = vertex_buffer_states_[vfetch_index];
       if (state.address == vfetch_constant.address && state.size == vfetch_constant.size) {
-        vertex_buffers_in_sync_[vfetch_index >> 6] |= vfetch_bit;
-        continue;
+        if (state.epoch == memory_epoch) {
+          vertex_buffers_in_sync_[vfetch_index >> 6] |= vfetch_bit;
+          continue;
+        }
+        shared_memory_->CheckReusedRequest(vfetch_constant.address << 2, vfetch_constant.size << 2);
       }
       if (!shared_memory_->RequestRange(vfetch_constant.address << 2, vfetch_constant.size << 2)) {
         REXGPU_ERROR(
@@ -3182,6 +3510,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
       }
       state.address = vfetch_constant.address;
       state.size = vfetch_constant.size;
+      state.epoch = memory_epoch;
       vertex_buffers_in_sync_[vfetch_index >> 6] |= vfetch_bit;
     }
   }
@@ -3281,6 +3610,27 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   SetPrimitiveTopology(primitive_topology);
   // Must not call anything that may change the primitive topology from now on!
 
+  DrawDump(
+      regs, *memory_, *vertex_shader, pixel_shader, primitive_processing_result.guest_index_base,
+      primitive_processing_result.host_draw_vertex_count *
+          (primitive_processing_result.host_index_format == xenos::IndexFormat::kInt16 ? 2 : 4));
+  uint32_t draw_stats_values[9] = {};
+  if (draw_stats_recording_) {
+    draw_stats_values[0] = uint32_t(vertex_shader->ucode_data_hash());
+    draw_stats_values[1] = pixel_shader ? uint32_t(pixel_shader->ucode_data_hash()) : 0;
+    if (!vertex_shader->vertex_bindings().empty()) {
+      const auto fetch = regs.GetVertexFetch(vertex_shader->vertex_bindings()[0].fetch_constant);
+      draw_stats_values[2] = fetch.address << 2;
+      draw_stats_values[8] =
+          shared_memory_->CountGpuWrittenPages(fetch.address << 2, fetch.size << 2);
+    }
+    draw_stats_values[3] = primitive_processing_result.guest_index_base;
+    draw_stats_values[4] = primitive_processing_result.host_draw_vertex_count;
+    draw_stats_values[5] = regs.values[reg::RB_COLOR_INFO::rt_register_indices[0]];
+    draw_stats_values[6] = regs.values[XE_GPU_REG_RB_DEPTH_INFO];
+    draw_stats_values[7] = regs.values[XE_GPU_REG_PA_SC_WINDOW_OFFSET];
+  }
+
   // Draw.
   if (primitive_processing_result.index_buffer_type ==
       PrimitiveProcessor::ProcessedIndexBufferType::kNone) {
@@ -3292,8 +3642,11 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
     SubmitBarriers();
     PROFILE_DRAW_CALL();
     PROFILE_VERTICES(primitive_processing_result.host_draw_vertex_count);
+    const bool draw_stats = BeginDrawStats(draw_stats_values);
     deferred_command_list_.D3DDrawInstanced(primitive_processing_result.host_draw_vertex_count, 1,
                                             0, 0);
+    if (draw_stats)
+      EndDrawStats();
   } else {
     D3D12_INDEX_BUFFER_VIEW index_buffer_view;
     index_buffer_view.SizeInBytes = primitive_processing_result.host_draw_vertex_count;
@@ -3351,8 +3704,11 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
     SubmitBarriers();
     PROFILE_DRAW_CALL();
     PROFILE_VERTICES(primitive_processing_result.host_draw_vertex_count);
+    const bool draw_stats = BeginDrawStats(draw_stats_values);
     deferred_command_list_.D3DDrawIndexedInstanced(
         primitive_processing_result.host_draw_vertex_count, 1, 0, 0, 0);
+    if (draw_stats)
+      EndDrawStats();
     if (scratch_index_buffer != nullptr) {
       ReleaseScratchGPUBuffer(scratch_index_buffer, D3D12_RESOURCE_STATE_INDEX_BUFFER);
     }
@@ -3544,6 +3900,9 @@ bool D3D12CommandProcessor::IssueCopy() {
   perf_trace::ZoneScope perf_zone(perf_trace::Zone::kCopy);
   if (!BeginSubmission(true)) {
     return false;
+  }
+  if (const int32_t event = FrameGraphBeginResolve(); event >= 0) {
+    FrameGraphMark(event);
   }
   ReadbackResolveMode readback_mode = GetReadbackResolveMode(REXCVAR_GET(d3d12_readback_resolve));
   if (readback_mode == ReadbackResolveMode::kDisabled) {
@@ -3804,7 +4163,12 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
       rb.mapped_data[read_index]) {
     uint8_t* destination = memory_->TranslatePhysical(written_address);
     if (destination) {
-      std::memcpy(destination, static_cast<uint8_t*>(rb.mapped_data[read_index]), written_length);
+      // Not over pages that the guest has written since: the copied range
+      // covers whole tiles (and may be from an earlier frame), so it can hold
+      // guest data next to the resolved texture.
+      const uint32_t skipped = shared_memory_->CopyReadbackToGuest(
+          written_address, written_length, static_cast<const uint8_t*>(rb.mapped_data[read_index]));
+      TraceReadbackSkip(written_address, written_length, skipped);
       perf_trace::CountReadback(written_length);
       TraceResolvePublication(written_address, written_length,
                               static_cast<const uint8_t*>(rb.mapped_data[read_index]));
@@ -4095,6 +4459,16 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
     gpu_timestamp_submission_ = BeginGpuTimestamp(GpuTimestampKind::kSubmission);
   }
   if (opening_submission) {
+    if (frame_graph_submission_ && submission_completed_ >= frame_graph_submission_) {
+      ReadFrameGraphMarks();
+    }
+    if (draw_stats_submission_ && submission_completed_ >= draw_stats_submission_) {
+      ReadDrawStats();
+    }
+    if (frame_graph_recording_)
+      FrameGraphMark(kFrameGraphMarkSubmissionBegin);
+  }
+  if (opening_submission) {
     OpenRTVOcclusionQuery();
   }
 
@@ -4149,6 +4523,17 @@ bool D3D12CommandProcessor::EndSubmission(bool is_swap) {
     gpu_timestamp_submission_ = kGpuTimestampInvalid;
     if (is_closing_frame) {
       ResolveGpuTimestampFrame();
+    }
+    if (frame_graph_recording_) {
+      FrameGraphMark(kFrameGraphMarkSubmissionEnd);
+      if (is_closing_frame && frame_graph_closing_) {
+        deferred_command_list_.D3DResolveQueryData(
+            frame_graph_heap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0,
+            uint32_t(frame_graph_labels_.size()), frame_graph_readback_.Get(), 0);
+        frame_graph_submission_ = submission_current_;
+        frame_graph_recording_ = false;
+        frame_graph_closing_ = false;
+      }
     }
 
     ID3D12CommandQueue* direct_queue = provider.GetDirectQueue();
@@ -5992,6 +6377,174 @@ bool D3D12CommandProcessor::WriteRTVOcclusionSnapshot(xenos::xe_gpu_depth_sample
   rtv_occlusion_segment_count_ = 0;
   OpenRTVOcclusionQuery();
   return QueueOcclusionSnapshot(pending, counts, awaited);
+}
+
+void D3D12CommandProcessor::InitializeDrawStats() {
+  draw_stats_recording_ = false;
+  draw_stats_submission_ = 0;
+  draw_stats_draws_.clear();
+  const char* path = std::getenv("REX_DRAW_STATS");
+  if (!path || !*path)
+    return;
+  if (const char* every = std::getenv("REX_DRAW_STATS_EVERY")) {
+    draw_stats_every_ = uint32_t(std::max(1, std::atoi(every)));
+  }
+  ID3D12Device* device = GetD3D12Provider().GetDevice();
+  D3D12_QUERY_HEAP_DESC heap_desc = {};
+  heap_desc.Type = D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS;
+  heap_desc.Count = kDrawStatsMax;
+  const size_t size = sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS) * kDrawStatsMax;
+  D3D12_RESOURCE_DESC buffer_desc;
+  ui::d3d12::util::FillBufferResourceDesc(buffer_desc, size, D3D12_RESOURCE_FLAG_NONE);
+  void* mapping = nullptr;
+  D3D12_RANGE read_range = {0, size};
+  if (FAILED(device->CreateQueryHeap(&heap_desc, IID_PPV_ARGS(&draw_stats_heap_))) ||
+      FAILED(device->CreateCommittedResource(
+          &ui::d3d12::util::kHeapPropertiesReadback, D3D12_HEAP_FLAG_NONE, &buffer_desc,
+          D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&draw_stats_readback_))) ||
+      FAILED(draw_stats_readback_->Map(0, &read_range, &mapping))) {
+    REXGPU_WARN("D3D12CommandProcessor: pipeline statistics unavailable for REX_DRAW_STATS");
+    ShutdownDrawStats();
+    return;
+  }
+  draw_stats_mapping_ = static_cast<const D3D12_QUERY_DATA_PIPELINE_STATISTICS*>(mapping);
+  draw_stats_output_ = std::make_unique<std::ofstream>(path);
+}
+
+void D3D12CommandProcessor::ShutdownDrawStats() {
+  if (draw_stats_readback_ && draw_stats_mapping_) {
+    draw_stats_readback_->Unmap(0, nullptr);
+  }
+  draw_stats_mapping_ = nullptr;
+  draw_stats_readback_.Reset();
+  draw_stats_heap_.Reset();
+  draw_stats_output_.reset();
+  draw_stats_recording_ = false;
+  draw_stats_submission_ = 0;
+}
+
+bool D3D12CommandProcessor::BeginDrawStats(const uint32_t* values) {
+  if (!draw_stats_recording_ || draw_stats_draws_.size() >= kDrawStatsMax)
+    return false;
+  DrawStatsDraw draw;
+  std::memcpy(draw.values, values, sizeof(draw.values));
+  draw_stats_draws_.push_back(draw);
+  deferred_command_list_.D3DBeginQuery(draw_stats_heap_.Get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS,
+                                       uint32_t(draw_stats_draws_.size() - 1));
+  return true;
+}
+
+void D3D12CommandProcessor::EndDrawStats() {
+  deferred_command_list_.D3DEndQuery(draw_stats_heap_.Get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS,
+                                     uint32_t(draw_stats_draws_.size() - 1));
+}
+
+void D3D12CommandProcessor::ReadDrawStats() {
+  draw_stats_submission_ = 0;
+  if (!draw_stats_mapping_ || !draw_stats_output_)
+    return;
+  std::ofstream& output = *draw_stats_output_;
+  output << "F " << draw_stats_frame_recorded_ << ' ' << draw_stats_frame_ms_ << '\n';
+  for (size_t i = 0; i < draw_stats_draws_.size(); ++i) {
+    const uint32_t* v = draw_stats_draws_[i].values;
+    const D3D12_QUERY_DATA_PIPELINE_STATISTICS& stats = draw_stats_mapping_[i];
+    output << "D " << i << std::hex;
+    for (uint32_t j = 0; j < 8; ++j)
+      output << ' ' << v[j];
+    output << std::dec << ' ' << stats.IAPrimitives << ' ' << stats.CInvocations << ' '
+           << stats.CPrimitives << ' ' << stats.PSInvocations << ' ' << v[8] << '\n';
+  }
+  output.flush();
+  draw_stats_draws_.clear();
+}
+
+void D3D12CommandProcessor::InitializeFrameGraphMarks() {
+  frame_graph_labels_.clear();
+  frame_graph_recording_ = false;
+  frame_graph_closing_ = false;
+  frame_graph_submission_ = 0;
+  if (!GetFrameGraphTrace())
+    return;
+  const ui::d3d12::D3D12Provider& provider = GetD3D12Provider();
+  ID3D12Device* device = provider.GetDevice();
+  D3D12_QUERY_HEAP_DESC heap_desc = {};
+  heap_desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+  heap_desc.Count = kFrameGraphMarks;
+  D3D12_RESOURCE_DESC buffer_desc;
+  ui::d3d12::util::FillBufferResourceDesc(buffer_desc, sizeof(uint64_t) * kFrameGraphMarks,
+                                          D3D12_RESOURCE_FLAG_NONE);
+  void* mapping = nullptr;
+  D3D12_RANGE read_range = {0, sizeof(uint64_t) * kFrameGraphMarks};
+  if (FAILED(provider.GetDirectQueue()->GetTimestampFrequency(&frame_graph_frequency_)) ||
+      !frame_graph_frequency_ ||
+      FAILED(device->CreateQueryHeap(&heap_desc, IID_PPV_ARGS(&frame_graph_heap_))) ||
+      FAILED(device->CreateCommittedResource(
+          &ui::d3d12::util::kHeapPropertiesReadback, D3D12_HEAP_FLAG_NONE, &buffer_desc,
+          D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&frame_graph_readback_))) ||
+      FAILED(frame_graph_readback_->Map(0, &read_range, &mapping))) {
+    REXGPU_WARN("D3D12CommandProcessor: GPU timestamps unavailable for the frame graph");
+    ShutdownFrameGraphMarks();
+    return;
+  }
+  frame_graph_mapping_ = static_cast<const uint64_t*>(mapping);
+}
+
+void D3D12CommandProcessor::ShutdownFrameGraphMarks() {
+  if (frame_graph_readback_ && frame_graph_mapping_) {
+    frame_graph_readback_->Unmap(0, nullptr);
+  }
+  frame_graph_mapping_ = nullptr;
+  frame_graph_readback_.Reset();
+  frame_graph_heap_.Reset();
+  frame_graph_recording_ = false;
+  frame_graph_submission_ = 0;
+}
+
+void D3D12CommandProcessor::FrameGraphMark(int32_t label) {
+  if (!frame_graph_mapping_ || !submission_open_)
+    return;
+  if (!frame_graph_recording_) {
+    // Only whole frames are recorded, one at a time.
+    if (label != 0 || frame_graph_submission_)
+      return;
+    frame_graph_recording_ = true;
+    frame_graph_frame_ = FrameGraphFrame();
+    frame_graph_labels_.clear();
+  }
+  // Keep room for the submission and swap marks.
+  if (frame_graph_labels_.size() >= kFrameGraphMarks - (label >= 0 ? 16 : 0))
+    return;
+  deferred_command_list_.D3DEndQuery(frame_graph_heap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+                                     uint32_t(frame_graph_labels_.size()));
+  frame_graph_labels_.push_back(label);
+}
+
+void D3D12CommandProcessor::ReadFrameGraphMarks() {
+  frame_graph_submission_ = 0;
+  if (!frame_graph_mapping_ || frame_graph_labels_.empty())
+    return;
+  const double ms = 1000.0 / double(frame_graph_frequency_);
+  std::vector<double> events;
+  double gaps = 0.0, swap = 0.0;
+  int32_t current = kFrameGraphMarkSubmissionEnd;
+  for (size_t i = 0; i + 1 < frame_graph_labels_.size(); ++i) {
+    const int32_t label = frame_graph_labels_[i];
+    const uint64_t begin = frame_graph_mapping_[i], end = frame_graph_mapping_[i + 1];
+    const double duration = end > begin ? double(end - begin) * ms : 0.0;
+    if (label >= 0 || label == kFrameGraphMarkSwap)
+      current = label;
+    if (label == kFrameGraphMarkSubmissionEnd) {
+      gaps += duration;
+    } else if (current == kFrameGraphMarkSwap) {
+      swap += duration;
+    } else if (current >= 0) {
+      if (events.size() <= size_t(current))
+        events.resize(size_t(current) + 1, 0.0);
+      events[size_t(current)] += duration;
+    }
+  }
+  FrameGraphWriteGpu(frame_graph_frame_, events, gaps, swap);
+  frame_graph_labels_.clear();
 }
 
 void D3D12CommandProcessor::InitializeGpuTimestamps() {

@@ -23,6 +23,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <fstream>
 #include <vector>
 
 #include <rex/assert.h>
@@ -444,6 +445,58 @@ class D3D12CommandProcessor : public CommandProcessor {
   uint32_t BeginGpuTimestamp(GpuTimestampKind kind);
   void EndGpuTimestamp(uint32_t pair);
   void ResolveGpuTimestampFrame();
+
+  // GPU marks of the REX_FRAME_GRAPH sampled frame: a timestamp at the start of
+  // every pass and resolve, at every submission end (the GPU gap until the next
+  // submission) and start, and at the swap. Resolved when the frame closes and
+  // read once that submission has completed. One frame at a time.
+  static constexpr uint32_t kFrameGraphMarks = 4096;
+  static constexpr int32_t kFrameGraphMarkSubmissionEnd = -1;
+  static constexpr int32_t kFrameGraphMarkSubmissionBegin = -2;
+  static constexpr int32_t kFrameGraphMarkSwap = -3;
+  Microsoft::WRL::ComPtr<ID3D12QueryHeap> frame_graph_heap_;
+  Microsoft::WRL::ComPtr<ID3D12Resource> frame_graph_readback_;
+  const uint64_t* frame_graph_mapping_ = nullptr;
+  uint64_t frame_graph_frequency_ = 0;
+  std::vector<int32_t> frame_graph_labels_;  // Event index or a kFrameGraphMark.
+  bool frame_graph_recording_ = false;
+  bool frame_graph_closing_ = false;
+  uint64_t frame_graph_submission_ = 0;  // Submission to await before reading, or 0.
+  uint32_t frame_graph_frame_ = 0;
+  void InitializeFrameGraphMarks();
+  void ShutdownFrameGraphMarks();
+  void FrameGraphMark(int32_t label);
+  void ReadFrameGraphMarks();
+
+  // Optional per-draw pipeline statistics (REX_DRAW_STATS=<file>, every
+  // REX_DRAW_STATS_EVERY-th frame, default 60): "F <frame> <steady ms>", then
+  // per draw "D <index> <vertex shader> <pixel shader> <vertex fetch 0 address>
+  // <guest index base> <host vertices> <RB_COLOR_INFO 0> <RB_DEPTH_INFO>
+  // <PA_SC_WINDOW_OFFSET> <input assembler primitives> <clipper invocations>
+  // <clipper primitives> <pixel shader invocations> <GPU-written pages in the
+  // vertex fetch 0 range>" (hexadecimal except the index and the counts),
+  // written once the frame has completed on the GPU.
+  struct DrawStatsDraw {
+    uint32_t values[9];
+  };
+  static constexpr uint32_t kDrawStatsMax = 8192;
+  Microsoft::WRL::ComPtr<ID3D12QueryHeap> draw_stats_heap_;
+  Microsoft::WRL::ComPtr<ID3D12Resource> draw_stats_readback_;
+  const D3D12_QUERY_DATA_PIPELINE_STATISTICS* draw_stats_mapping_ = nullptr;
+  std::unique_ptr<std::ofstream> draw_stats_output_;
+  uint32_t draw_stats_every_ = 60;
+  uint32_t draw_stats_frame_ = 0;
+  bool draw_stats_recording_ = false;
+  uint64_t draw_stats_submission_ = 0;  // Submission to await before reading, or 0.
+  uint64_t draw_stats_frame_ms_ = 0;
+  uint32_t draw_stats_frame_recorded_ = 0;
+  std::vector<DrawStatsDraw> draw_stats_draws_;
+  void InitializeDrawStats();
+  void ShutdownDrawStats();
+  // Before the host draw; returns whether EndDrawStats must be called after it.
+  bool BeginDrawStats(const uint32_t* values);
+  void EndDrawStats();
+  void ReadDrawStats();
   void WriteROVOcclusionUAVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) const;
   void ShutdownOcclusionQueryResources();
   bool BeginGuestOcclusionQuery(uint32_t sample_count_address);
@@ -772,12 +825,20 @@ class D3D12CommandProcessor : public CommandProcessor {
     uint32_t host_index = UINT32_MAX;
     bool valid = false;
   } active_occlusion_query_;
+  // The last request of each vertex fetch constant, reused while the address
+  // and size are the same and no guest write has invalidated shared memory
+  // since (SharedMemory::invalidation_epoch). Without the epoch, a vertex buffer
+  // rewritten in place (track streaming reuses equally sized road chunk
+  // buffers) kept its old GPU copy, and the RTV path sometimes drew road chunks
+  // with old vertices.
   struct VertexBufferState {
     uint32_t address = UINT32_MAX;
     uint32_t size = UINT32_MAX;
+    uint64_t epoch = 0;
   };
   std::array<VertexBufferState, 96> vertex_buffer_states_{};
   uint64_t vertex_buffers_in_sync_[2] = {};
+  uint64_t vertex_buffers_epoch_ = 0;
 
   // The current fixed-function drawing state.
   D3D12_VIEWPORT ff_viewport_;

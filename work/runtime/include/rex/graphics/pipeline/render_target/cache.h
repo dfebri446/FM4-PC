@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -179,6 +180,15 @@ class RenderTargetCache {
   // formats (resource formats, but if needed, with gamma taken into account) of
   // each.
   uint32_t GetLastUpdateBoundRenderTargets(uint32_t* depth_and_color_formats_out = nullptr) const;
+
+  // Diagnostics: the EDRAM range (base and length in tiles, 0 if unused) that
+  // the last Update claimed per binding slot ([0] depth, [1...] color), and its
+  // ownership transfers (host render targets only) appended to out as JSON
+  // arrays [slot, start tiles, end tiles, source key], returning the count.
+  std::pair<uint32_t, uint32_t> GetLastUpdateRange(uint32_t slot) const {
+    return last_update_ranges_[slot];
+  }
+  uint32_t AppendLastUpdateTransfers(std::string& out) const;
 
  protected:
   RenderTargetCache(const RegisterFile& register_file, const memory::Memory& memory,
@@ -684,6 +694,7 @@ class RenderTargetCache {
   // render targets. They are reordered so for one source, all transfers are
   // consecutive in the array.
   std::vector<Transfer> last_update_transfers_[1 + xenos::kMaxColorRenderTargets];
+  std::pair<uint32_t, uint32_t> last_update_ranges_[1 + xenos::kMaxColorRenderTargets] = {};
 };
 
 }  // namespace rex::graphics

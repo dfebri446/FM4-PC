@@ -178,6 +178,20 @@ class CommandProcessor {
   uint32_t ExecutePrimaryBuffer(uint32_t start_index, uint32_t end_index);
   virtual void OnPrimaryBufferEnd() {}
   void ExecuteIndirectBuffer(uint32_t ptr, uint32_t length);
+  // REX_LATE_WRITE_TRACE: guest memory consumed by the command processor and
+  // the check at the next signal the guest CPU can observe.
+  enum class GuestRead : uint32_t {
+    kIndirectBuffer,
+    kAluConstants,
+    kFetchConstants,
+    kBoolConstants,
+    kLoopConstants,
+    kRegisters,
+    kShader,
+    kVertices,
+  };
+  void TraceGuestRead(GuestRead kind, uint32_t address, uint32_t length, uint32_t tag = 0);
+  void CheckGuestReads();
   bool ExecutePacket(memory::RingBuffer* reader);
   bool ExecutePacketType0(memory::RingBuffer* reader, uint32_t packet);
   bool ExecutePacketType1(memory::RingBuffer* reader, uint32_t packet);
