@@ -57,7 +57,13 @@ entry_inputs_end_code_begin_compute_xe
   byte_buffer_align16_store16_xe(
       xe_resolve_dest, dest_address,
       XeEndianSwap64(packed_01, resolve_info.dest_endian_128));
-  dest_address += XeResolveLocalXAddressXor(2u, 3u);
+  #ifdef XE_RESOLVE_RESOLUTION_SCALED
+    // Pixels 2 and 3 are in the next resolution scaling group (2 blocks).
+    dest_address = XeResolveDestPixelAddress(
+        resolve_info, pixel_index + uint2_xe(2u, 0u), 3u);
+  #else
+    dest_address += XeResolveLocalXAddressXor(2u, 3u);
+  #endif
   byte_buffer_align16_store16_xe(
       xe_resolve_dest, dest_address,
       XeEndianSwap64(packed_23, resolve_info.dest_endian_128));

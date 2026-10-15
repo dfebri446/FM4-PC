@@ -124,6 +124,16 @@ Print a frame with:
 
   python outputs\FM4-build\e2e\frame_graph.py --build-root <BuildRoot> trace.jsonl [--frame N | --list]
 
+REX_TRANSFER_DRAW_TRACE=<file> (REX_TRANSFER_DRAW_EVERY, default 60 frames)
+lists every draw whose host render target update needed ownership transfers:
+shader hashes, primitive type and index count, pixel shader flags, normalized
+depth control and color mask, the registers that decide whether the draw
+overwrites what it claims (depth/stencil control and reference, color mask,
+blend, surface, render target infos, viewport, scissors, window offset) and the
+transfers as [slot, start tile, end tile, source render target key]; see
+kTransferDrawRegisters in work\runtime\src\graphics\d3d12\command_processor.cpp
+for the column order.
+
 Data race and stale data checks (for the RTV missing-road issue, usable for any
 renderer work; all write files outside the repository):
 - REX_LATE_WRITE_TRACE=<file>: hashes the memory the command processor

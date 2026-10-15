@@ -10,6 +10,7 @@ param(
     [switch]$SingleTile,
     [switch]$FixedVblank,
     [switch]$Rov,
+    [ValidateRange(1,3)][int]$ResolutionScale = 1,
     [ValidateRange(30,240)][int]$FrameRate
 )
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,7 @@ if ($Flavor) { $arguments += @('--flavor', $Flavor) }
 if ($SingleTile) { $arguments += @('--single-tile') }
 if ($FixedVblank) { $arguments += @('--fixed-vblank') }
 if ($Rov) { $arguments += @('--rov') }
+if ($ResolutionScale -gt 1) { $arguments += @('--resolution-scale', "$ResolutionScale") }
 if ($FrameRate) { $arguments += @('--frame-rate', "$FrameRate") }
 & $Python @arguments
 if ($LASTEXITCODE -ne 0) { throw "FM4 workflow failed (exit $LASTEXITCODE). See the build-root logs." }

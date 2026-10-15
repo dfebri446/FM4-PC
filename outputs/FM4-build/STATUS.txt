@@ -316,6 +316,47 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   jam 1,001; hanya FrameRate 120 pada 60 Hz: tetap 60. GPU sekitar 5 ms per
   frame; batasnya command processor. Belum diuji: karier, replay penuh,
   photo mode, split screen, dan fisika/handling secara subjektif.
+  Koreksi (15 Oktober 2026): angka 114,7 fps di atas berasal dari 20 detik
+  terakhir run ketika mobil (gas ditahan tanpa setir) menghadap dinding,
+  sekitar 850 draw per frame. Per detik dikelompokkan menurut draw per frame:
+  sekitar 2.400-2.800 draw (lintasan terbuka) 70-75 fps dengan thread command
+  processor sibuk sekitar 880 ms/s, GPU 8-9 ms per frame; 120 fps hanya saat
+  draw jauh lebih sedikit. Untuk 120 fps di lintasan, kerja command processor
+  per draw harus turun (B3).
+- Transfer EDRAM jalur RTV (B2, 15 Oktober 2026): sepertiga waktu GPU frame
+  balapan (frame graph, 10,8 ms) ada di pass yang memicu transfer kepemilikan,
+  terutama clear satu draw. REX_TRANSFER_DRAW_TRACE: clear FM4 berupa rectangle
+  list 3 vertex berkoordinat layar, clipping mati, scissor 8192, depth/stencil
+  ALWAYS + REPLACE, sering di MSAA 4x setengah pitch (640 untuk 1280 2x, 280
+  untuk 560 1x). Tanpa posisi vertex, estimator tinggi draw menganggap clear
+  itu memakai EDRAM sampai akhir (sampai 2048 tile), sehingga tiap clear
+  mentransfer seluruh EDRAM; transfer depth di NVIDIA mahal (stencil per bit,
+  tanpa SV_StencilRef). execute_unclipped_draw_vs_on_cpu (default true di
+  Xenia, false di ReXGlue SDK) mengevaluasi vertex shader clear itu di CPU; kini
+  default true di runtime. Frame balapan 1x: GPU 10,8 -> 7,8 ms, pass bertransfer
+  4,5 -> 1,6 ms; skala 2x: 16,0 -> 11,0 ms, 9,5 -> 3,5 ms. Waktu command
+  processor tidak berubah (60 fps 600 -> 573 ms/s; 120 Hz pada 2.400-2.800
+  draw per frame 74,5 vs 74,0 fps). Quick Race 3 run: 57,3 / 58,2 / 59,2 fps,
+  p99 20-22 ms, GPU 7,2-8,3 ms; siklus kamera 59,9 fps; ROV 58,1 fps, p99 27 ms
+  (sebelumnya 54,3 / 35 ms); semua tanpa crash, tanpa frame warna clear, error
+  sama dengan baseline. Sisa transfer: clear berukuran nyata di format 4x
+  setengah pitch dan pass berikutnya di format asli (sekitar 0,5-0,8 ms di 1x).
+  Kandidat berikutnya: menggambar clear itu langsung ke render target format
+  asli (viewport x2), sehingga transfer masuk dan keluar hilang.
+- Skala resolusi (15 Oktober 2026): draw_resolution_scale 2 dan 3 berjalan di
+  RTV, tetapi semua isi yang lewat resolve full (scene 7e3 -> 2_10_10_10 dan
+  rantai post-processing) tampil bergerigi seperti sisir, juga tanpa MSAA.
+  Penyebab: shader resolve full FM4 (dari Xenia Canary) menulis data
+  diskalakan dalam grup Canary (32bpp: 16x2 blok), sedangkan load tekstur dan
+  resolve fast ReXGlue f5337cdc membaca grup lama satu baris 16 byte (8 byte
+  untuk 8bpp). Perbaikan di fm4-resolve/texture_address.xesli (grup ReXGlue) dan
+  resolve_full_64bpp.xesli (pasangan piksel kedua di alamat grupnya); bytecode
+  1x identik. Quick Race: skala 2 (2560x1440) 57,3 fps, p99 22 ms, GPU 11,3 ms;
+  skala 3 (3840x2160) 56,5 fps, p99 24,5 ms, GPU 16,7 ms; gambar tajam, menu,
+  pra-balapan dan balapan normal, tanpa frame warna clear. Launcher:
+  Build.ps1 -Action run -ResolutionScale 2|3. Belum diuji: photo mode, replay,
+  karier, Autovista dan readback CPU dari resolve diskalakan (shader downscale
+  ReXGlue memakai tata letak per piksel, bukan grup).
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------

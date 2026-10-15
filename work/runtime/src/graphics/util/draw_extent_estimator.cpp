@@ -24,7 +24,12 @@
 #include <rex/memory.h>
 #include <rex/ui/graphics_util.h>
 
-REXCVAR_DEFINE_BOOL(execute_unclipped_draw_vs_on_cpu, false, "GPU",
+// On as in Xenia (the ReXGlue SDK had it off): FM4 clears its render targets with
+// screen-space rectangles and an 8192 scissor, and without the vertex positions
+// each clear claims the EDRAM up to its end, so the host render target path
+// transfers up to all 2048 tiles around every clear. Quick Race on RTV: GPU 10.8
+// -> 7.8 ms a race frame, command processor time unchanged.
+REXCVAR_DEFINE_BOOL(execute_unclipped_draw_vs_on_cpu, true, "GPU",
                     "Execute unclipped draw vertex shader on CPU");
 
 REXCVAR_DEFINE_BOOL(execute_unclipped_draw_vs_on_cpu_with_scissor, false, "GPU",

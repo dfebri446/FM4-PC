@@ -243,6 +243,71 @@ struct DrawListEntry {
   }
 };
 
+// Optional list of the draws whose render target update needed ownership
+// transfers (REX_TRANSFER_DRAW_TRACE), with the state that decides whether the
+// draw overwrites what it claims, for every REX_TRANSFER_DRAW_EVERY-th frame
+// (default 60). Lines, hexadecimal: frame, vertex and pixel shader hashes,
+// primitive type, index count, pixel shader flags (1 writes depth, 2 kills
+// pixels, 4 position input, 8 texture fetches), normalized depth control and
+// color mask, the registers of kTransferDrawRegisters, then the transfers as
+// slot:start-end:source key.
+constexpr uint32_t kTransferDrawRegisters[] = {
+    XE_GPU_REG_RB_MODECONTROL,         XE_GPU_REG_RB_DEPTHCONTROL,
+    XE_GPU_REG_RB_STENCILREFMASK,      XE_GPU_REG_RB_STENCILREFMASK_BF,
+    XE_GPU_REG_RB_COLOR_MASK,          XE_GPU_REG_RB_COLORCONTROL,
+    XE_GPU_REG_RB_BLENDCONTROL0,       XE_GPU_REG_RB_COLOR_INFO,
+    XE_GPU_REG_RB_DEPTH_INFO,          XE_GPU_REG_RB_SURFACE_INFO,
+    XE_GPU_REG_PA_SU_SC_MODE_CNTL,     XE_GPU_REG_PA_CL_VTE_CNTL,
+    XE_GPU_REG_PA_CL_CLIP_CNTL,        XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL,
+    XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR, XE_GPU_REG_PA_SC_SCREEN_SCISSOR_TL,
+    XE_GPU_REG_PA_SC_SCREEN_SCISSOR_BR, XE_GPU_REG_PA_SC_WINDOW_OFFSET,
+    XE_GPU_REG_PA_SC_AA_MASK,          XE_GPU_REG_PA_CL_VPORT_XSCALE,
+    XE_GPU_REG_PA_CL_VPORT_XOFFSET,    XE_GPU_REG_PA_CL_VPORT_YSCALE,
+    XE_GPU_REG_PA_CL_VPORT_YOFFSET,    XE_GPU_REG_PA_CL_VPORT_ZSCALE,
+    XE_GPU_REG_PA_CL_VPORT_ZOFFSET,
+};
+struct TransferDrawTrace {
+  std::ofstream output;
+  uint32_t every = 60;
+  uint32_t frame = 0;
+};
+TransferDrawTrace* GetTransferDrawTrace() {
+  static TransferDrawTrace* trace = [] {
+    const char* path = std::getenv("REX_TRANSFER_DRAW_TRACE");
+    if (!path || !*path) return static_cast<TransferDrawTrace*>(nullptr);
+    auto* result = new TransferDrawTrace;
+    result->output.open(path);
+    if (const char* every = std::getenv("REX_TRANSFER_DRAW_EVERY")) {
+      result->every = std::max(1, std::atoi(every));
+    }
+    return result;
+  }();
+  return trace;
+}
+void TraceTransferDraw(const RegisterFile& regs, const RenderTargetCache& cache,
+                       const Shader& vertex_shader, const Shader* pixel_shader,
+                       xenos::PrimitiveType primitive_type, uint32_t index_count,
+                       uint32_t ps_param_gen_pos, reg::RB_DEPTHCONTROL depth_control,
+                       uint32_t color_mask) {
+  TransferDrawTrace* trace = GetTransferDrawTrace();
+  if (!trace || trace->frame % trace->every != 0) return;
+  std::string transfers;
+  if (!cache.AppendLastUpdateTransfers(transfers)) return;
+  uint32_t ps_flags = 0;
+  if (pixel_shader) {
+    ps_flags |= uint32_t(pixel_shader->writes_depth()) | uint32_t(pixel_shader->kills_pixels()) << 1 |
+                uint32_t(ps_param_gen_pos != UINT32_MAX) << 2 |
+                uint32_t(!pixel_shader->texture_bindings().empty()) << 3;
+  }
+  std::ostream& out = trace->output;
+  out << std::hex << trace->frame << ' ' << uint32_t(vertex_shader.ucode_data_hash()) << ' '
+      << (pixel_shader ? uint32_t(pixel_shader->ucode_data_hash()) : 0) << ' '
+      << uint32_t(primitive_type) << ' ' << index_count << ' ' << ps_flags << ' '
+      << depth_control.value << ' ' << color_mask;
+  for (uint32_t index : kTransferDrawRegisters) out << ' ' << regs.values[index];
+  out << std::dec << ' ' << transfers << '\n';
+}
+
 // Optional inventory of the guest GPU state per shader pair (REX_GPU_INVENTORY),
 // rewritten as JSON every 600 frames, for planning a native renderer.
 struct GpuInventory {
@@ -2695,6 +2760,11 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
     FrameGraphMark(kFrameGraphMarkSwap);
     frame_graph_closing_ = true;
   }
+  if (TransferDrawTrace* transfer_draws = GetTransferDrawTrace()) {
+    if (++transfer_draws->frame % transfer_draws->every == 0) {
+      transfer_draws->output << std::flush;
+    }
+  }
   if (DrawListTrace* draw_list = GetDrawListTrace()) {
     if (++draw_list->frame % draw_list->every == 0) {
       draw_list->output << "F " << draw_list->frame << ' '
@@ -3323,6 +3393,9 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
     return false;
   }
   FrameGraphRenderTargets(*render_target_cache_);
+  TraceTransferDraw(regs, *render_target_cache_, *vertex_shader, pixel_shader, primitive_type,
+                    index_count, ps_param_gen_pos, normalized_depth_control,
+                    normalized_color_mask);
   perf_trace::ZoneEnd(perf_trace::Zone::kDrawRenderTargets, perf_start);
 
   // Create the pipeline (for this, need the actually used render target formats

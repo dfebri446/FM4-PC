@@ -257,7 +257,7 @@ def build_game(root,fxc,jobs,flavor=()):
     (root/f'build-result{suffix}.json').write_text(json.dumps(report,indent=2))
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
-def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False):
+def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,resolution_scale=1):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -279,6 +279,10 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False):
         # instead of 10, for comparisons when the host render target path misbehaves.
         cvars.pop('edram_single_rt_no_wrap')
         cvars.update({'render_target_path_d3d12':'rov','rov_occlusion_async':'all'})
+    if resolution_scale>1:
+        # Render targets and resolved textures at N times 1280x720 on both axes;
+        # CPU readbacks of resolves are downscaled.
+        cvars['draw_resolution_scale_x']=cvars['draw_resolution_scale_y']=str(resolution_scale)
     if frame_rate:
         # The display refresh the title sees (and the guest vblank rate), and the
         # FrameRate of its render scenarios (races 60, replays and photo mode 30).
@@ -326,6 +330,8 @@ def main():
                         help='run: hold every swap to the fixed 60 Hz vblank grid (vblank_vrr=false)')
     parser.add_argument('--frame-rate',type=int,choices=range(30,241),metavar='30-240',
                         help='run: unlock the 30/60 fps limits (for example 120)')
+    parser.add_argument('--resolution-scale',type=int,choices=range(1,4),default=1,metavar='1-3',
+                        help='run: render at 2x (2560x1440) or 3x (3840x2160) of 1280x720')
     parser.add_argument('--rov',action='store_true',
                         help='run: the slower pixel shader interlock render target path instead of RTV')
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
@@ -349,7 +355,7 @@ def main():
     if args.action in ('setup','all'): setup(root,fxc,args.jobs)
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
     if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
-    if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov)
+    if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,args.resolution_scale)
     if args.action=='warmcache': warm_cache(root)
 
 if __name__=='__main__':

@@ -69,14 +69,21 @@ Optional actions for performance work:
   their own settings.
 - run -FrameRate 120 lifts the title's 30/60 fps limits: the refresh rate it
   sees and its render scenario FrameRate become 120, and the title scales its
-  time step (race clock against wall time 1.001). Quick Race: frame time
-  median 8.4 ms (about 119 fps), p95 11.6 ms, p99 16.1 ms, every frame fully
-  rendered; GPU about 5 ms and the command processor set the ceiling. 30-240
-  accepted.
+  time step (race clock against wall time 1.001). Quick Race: 70-80 fps on
+  the open track (about 2,400 draws a frame) and up to 120 where fewer draws
+  are visible; every frame is fully rendered. The command processor thread
+  (about 880 ms busy a second) sets the ceiling, not the GPU (8-9 ms a frame).
+  30-240 accepted.
+- run -ResolutionScale 2 renders at 2560x1440 and -ResolutionScale 3 at
+  3840x2160 instead of 1280x720 (draw_resolution_scale_x/y; CPU readbacks of
+  resolves are downscaled). Quick Race: 57 fps with GPU about 11 ms a frame at
+  2, 56.5 fps with GPU about 16.7 ms at 3 (at the 60 fps budget), sharp HUD
+  and scene. Tested in the menus and Quick Race only; photo mode, replays and
+  career have not been checked at these scales.
 - run -Rov uses the earlier pixel shader interlock render target path
   (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
-  Quick Race 54.3 fps, frame p99 35 ms, GPU 17.5 ms a frame, too slow for
-  -FrameRate above 60.
+  Quick Race 58.1 fps, frame p99 27 ms, GPU 16.6 ms a frame, too slow for
+  -FrameRate above 60 or -ResolutionScale.
 - warmcache drives the e2e Quick Race timeline once (no network) so the shader
   and pipeline cache under BuildRoot\cache is filled before playing.
 - build -Flavor thinlto,v3,pgo-gen,pgo-use builds a compiler experiment into
@@ -110,8 +117,8 @@ What happens
    Disc 2 packages if provided and starts the interactive game. Shader compilation
    is synchronous; the existing shadow workaround is enabled. Rendering uses the
    host render target path (render_target_path_d3d12=rtv with
-   edram_single_rt_no_wrap=true): GPU about 10 ms a race frame instead of 17.5
-   on the pixel shader interlock path, a stable 60 fps in Quick Race. Occlusion
+   edram_single_rt_no_wrap=true): GPU about 7-8 ms a race frame instead of
+   16.6 on the pixel shader interlock path, a stable 60 fps in Quick Race. Occlusion
    reports are published at once from the previous frame's samples
    (rov_occlusion_async=previous) and resolve readbacks do not wait for the GPU
    (readback_resolve=fast). A frame that misses a guest vblank gets it as soon

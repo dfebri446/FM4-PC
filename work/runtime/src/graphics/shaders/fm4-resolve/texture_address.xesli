@@ -162,9 +162,12 @@ int XenosTextureTiledAddressXInMacroXor(const int x,
 // Expected to be called for a compile-time constant.
 uint2_xe XeniaTextureResolutionScaledGroupBlocksLog2(
     const uint bytes_per_block_log2) {
-  // Based on the tiled address properties, see the comment above for details.
-  return uint2_xe(bytes_per_block_log2 >= 3u ? 5u - bytes_per_block_log2 : 4u,
-                  3u - min(bytes_per_block_log2, 2u));
+  // FM4 adaptation: the ReXGlue f5337cdc texture loads and fast resolves, which
+  // read and write the same resolution-scaled memory, use the older group of one
+  // row of 8 bytes for 1bpb and 16 bytes otherwise, not the groups described
+  // above. With the upstream groups, every scaled full resolve was read back with
+  // its blocks shuffled (comb-like edges at draw_resolution_scale 2).
+  return uint2_xe(min(3u, 4u - bytes_per_block_log2), 0u);
 }
 
 struct XeniaTextureResolutionScaledAddressing {
