@@ -89,6 +89,9 @@ class CommandProcessor {
   // True while PM4_WAIT_REG_MEM polls a condition that does not hold yet, for
   // example the swap waiting for the guest's vblank interrupt.
   bool is_waiting_reg_mem() const { return waiting_reg_mem_.load(std::memory_order_relaxed); }
+  // Ends the current PM4_WAIT_REG_MEM sleep early so the condition is checked
+  // again at once, for example after the vblank interrupt.
+  void WakeWaitRegMem() { wait_reg_mem_event_->Set(); }
 
   Shader* active_vertex_shader() const { return active_vertex_shader_; }
   Shader* active_pixel_shader() const { return active_pixel_shader_; }
@@ -146,6 +149,20 @@ class CommandProcessor {
   virtual void ShutdownContext() = 0;
 
   virtual void WriteRegister(uint32_t index, uint32_t value);
+  // Packets write most registers without side effects: those are stored
+  // directly, and only hooked registers (side effects here or in a backend,
+  // which marks its own with SetRegisterWritesHooked, and unknown registers
+  // for the debug log) go through the virtual WriteRegister.
+  void WriteRegisterFast(uint32_t index, uint32_t value) {
+    if (index < RegisterFile::kRegisterCount &&
+        !((register_write_hooked_[index >> 6] >> (index & 63)) & 1)) {
+      // Volatile for the WAIT_REG_MEM loop.
+      const_cast<volatile uint32_t&>(register_file_->values[index]) = value;
+    } else {
+      WriteRegister(index, value);
+    }
+  }
+  void SetRegisterWritesHooked(uint32_t first, uint32_t last);
   uint32_t ReadRegisterValue(uint32_t index) const;
   virtual void WriteRegistersFromMem(uint32_t start_index, uint32_t* base, uint32_t num_registers);
   virtual void WriteRegisterRangeFromRing(memory::RingBuffer* ring, uint32_t base,
@@ -169,6 +186,10 @@ class CommandProcessor {
   virtual void OnGammaRampPWLValueWritten() {}
 
   virtual void MakeCoherent();
+  // Before the command processor does something the guest can observe and
+  // order its reads by: memory writes from the command stream, interrupts, the
+  // swap.
+  virtual void OnGuestVisibleSignal() {}
   virtual void PrepareForWait();
   virtual void ReturnFromWait();
   // Called repeatedly while the command processor waits for the guest. Returns
@@ -274,12 +295,16 @@ class CommandProcessor {
   uint32_t read_ptr_writeback_ptr_ = 0;
 
   std::unique_ptr<rex::thread::Event> write_ptr_index_event_;
+  std::unique_ptr<rex::thread::Event> wait_reg_mem_event_;
   std::atomic<uint32_t> write_ptr_index_;
 
   // Some titles submit writes beyond the emulated register file range in PM4
   // packets. Preserve these values so dependent packet logic can still observe
   // them instead of dropping the write entirely.
   std::unordered_map<uint32_t, uint32_t> extended_register_values_;
+  static constexpr size_t kRegisterBitWords = (RegisterFile::kRegisterCount + 63) / 64;
+  uint64_t register_write_hooked_[kRegisterBitWords] = {};
+  uint64_t register_unknown_[kRegisterBitWords] = {};
 
   uint64_t bin_select_ = 0xFFFFFFFFull;
   uint64_t bin_mask_ = 0xFFFFFFFFull;

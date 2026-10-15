@@ -69,11 +69,11 @@ Optional actions for performance work:
   their own settings.
 - run -FrameRate 120 lifts the title's 30/60 fps limits: the refresh rate it
   sees and its render scenario FrameRate become 120, and the title scales its
-  time step (race clock against wall time 1.001). Quick Race: 88-98 fps on
-  the open track (2,000-3,200 draws a frame) and up to 120 where fewer draws
-  are visible; every frame is fully rendered. The command processor thread
-  (about 780 ms busy a second) sets the ceiling, not the GPU (about 2.3 ms a
-  frame). 30-240 accepted.
+  time step (race clock against wall time 1.001). Quick Race, three runs:
+  119.9 fps, frame p99 8.8-9.8 ms, 120 fps on the open track at 2,000-3,200
+  draws a frame; every frame is fully rendered. The command processor thread
+  needs about 4-5 ms a race frame, the GPU about 2.2 ms. At 240 the race runs
+  at 191-201 fps, set by the command processor. 30-240 accepted.
 - run -ResolutionScale 2 renders at 2560x1440 and -ResolutionScale 3 at
   3840x2160 instead of 1280x720 (draw_resolution_scale_x/y; CPU readbacks of
   resolves are downscaled). Quick Race: 59.7 fps with GPU about 3.7 ms a
@@ -127,8 +127,10 @@ What happens
    edram_single_rt_no_wrap=true): GPU about 2.5 ms a race frame instead of
    9.5 on the pixel shader interlock path, a stable 60 fps in Quick Race. Guest
    memory the CPU wrote is uploaded to the GPU once, not again every frame
-   (clear_memory_page_state=false), and command lists are recorded and
-   executed on a thread of their own (d3d12_submit_thread=true). Occlusion
+   (clear_memory_page_state=false), command lists are recorded and executed
+   on a thread of their own (d3d12_submit_thread=true), and so are the copies
+   of resolve readbacks into guest memory (d3d12_readback_publish_thread=true).
+   Occlusion
    reports are published at once from the previous frame's samples
    (rov_occlusion_async=previous) and resolve readbacks do not wait for the GPU
    (readback_resolve=fast). A frame that misses a guest vblank gets it as soon

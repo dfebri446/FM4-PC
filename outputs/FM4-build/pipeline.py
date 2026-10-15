@@ -264,6 +264,48 @@ def build_game(root,fxc,jobs,flavor=()):
     (root/f'build-result{suffix}.json').write_text(json.dumps(report,indent=2))
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
+def build_profiling(root,fxc,jobs):
+    """game-build-prof: game-build with a runtime that has line tables and PDBs, for the
+    command processor sampling profiler (REX_CP_PROFILE, e2e/README.txt). The runtime writes its
+    outputs into <source>/out, so this compiles a mirror of runtime-source (runtime-source-prof)
+    and leaves the default build alone."""
+    game=root/'game-build'
+    if not (game/'fm4_rex.exe').is_file():
+        raise RuntimeError('Run build first.')
+    sync_runtime(root)
+    fetch_thirdparty(root)
+    compile_resolve_shaders(root,fxc)
+    source,mirror,build=root/'runtime-source',root/'runtime-source-prof',root/'runtime-build-prof'
+    current=set()
+    for path in source.rglob('*'):
+        relative=path.relative_to(source)
+        if relative.parts[0]=='out' or not path.is_file():
+            continue
+        current.add(relative)
+        (mirror/relative).parent.mkdir(parents=True,exist_ok=True)
+        copy_source(path,mirror/relative)
+    for path in list(mirror.rglob('*')):
+        relative=path.relative_to(mirror)
+        if relative.parts[0]!='out' and path.is_file() and relative not in current:
+            path.unlink()
+    flags='-march=x86-64-v2 -gline-tables-only -gcodeview'
+    if not (build/'build.ninja').is_file():
+        run(['cmake','-S',mirror,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
+             '-DCMAKE_C_COMPILER=clang','-DCMAKE_CXX_COMPILER=clang++',
+             f'-DCMAKE_C_FLAGS={flags}',f'-DCMAKE_CXX_FLAGS={flags}',
+             '-DCMAKE_SHARED_LINKER_FLAGS=-Xlinker /DEBUG','-DCMAKE_EXE_LINKER_FLAGS=-Xlinker /DEBUG',
+             '-DREXGLUE_ENABLE_TRACY=OFF','-DREXGLUE_BUILD_TESTS=OFF','-DREXGLUE_USE_VULKAN=OFF'],
+            log=root/'logs/runtime-configure-prof.log')
+    run(['cmake','--build',build,'--parallel',jobs],log=root/'logs/runtime-build-prof.log')
+    profiling=root/'game-build-prof'
+    profiling.mkdir(exist_ok=True)
+    for path in game.iterdir():
+        if path.suffix in ('.exe','.dll'):
+            shutil.copyfile(path,profiling/path.name)
+    for name in ('rexgpu-xenos.dll','rexgpu-xenos.pdb','rexruntime.dll','rexruntime.pdb'):
+        shutil.copyfile(mirror/'out/win-amd64'/name,profiling/name)
+    print(f'Profiling build in {profiling}: e2e/e2e.py --game-build game-build-prof, then e2e/cp_profile.py.')
+
 def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,resolution_scale=1,
            full_rate_mirror=False):
     state = json.loads((root/'local.json').read_text())
@@ -326,8 +368,10 @@ def launch_cvars(root,disc1,log_file):
             'rov_occlusion_awaited_report_divisor':'2','rov_occlusion_async':'previous','vblank_vrr':'true',
             # FM4 writes guest memory only through watched pages (REX_STALE_PAGE_TRACE finds no
             # stale data), so CPU-uploaded pages need not be re-uploaded every frame; command lists
-            # are recorded and executed off the command processor thread.
+            # are recorded and executed, and resolve readbacks copied into guest memory, off the
+            # command processor thread.
             'clear_memory_page_state':'false','d3d12_submit_thread':'true',
+            'd3d12_readback_publish_thread':'true',
             'input_backend':'sdl','mnk_mode':'true','mnk_mouse':'false',
             'keybind_right_trigger':'W','keybind_left_trigger':'S',
             'keybind_lstick_left':'A','keybind_lstick_right':'D',
@@ -338,7 +382,8 @@ def launch_cvars(root,disc1,log_file):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=['doctor','setup','generate','build','all','run','warmcache'])
+    parser.add_argument('action',choices=['doctor','setup','generate','build','all','run','warmcache',
+                                          'profbuild'])
     parser.add_argument('--build-root',type=Path,default=REPO/'work/portable-fm4')
     parser.add_argument('--disc1',type=Path)
     parser.add_argument('--disc2',type=Path)
@@ -379,6 +424,7 @@ def main():
     if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,
                                      args.resolution_scale,args.full_rate_mirror)
     if args.action=='warmcache': warm_cache(root)
+    if args.action=='profbuild': build_profiling(root,fxc,args.jobs)
 
 if __name__=='__main__':
     try: main()

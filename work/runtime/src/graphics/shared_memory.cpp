@@ -60,16 +60,23 @@ uint32_t SharedMemory::CopyReadbackToGuest(uint32_t start, uint32_t length, cons
   uint8_t* guest = memory_.TranslatePhysical(start);
   if (!guest)
     return 0;
-  // Under the lock, a guest write to a watched page waits for the copy, then
-  // invalidates the page, so the guest data always wins.
-  auto global_lock = global_critical_region_.Acquire();
+  // A guest write to a watched page invalidates it under readback_copy_mutex_
+  // (MemoryInvalidationCallback) before the write is let through, so it waits
+  // for the copy of that page, and the guest data always wins. Only pages that
+  // still hold GPU-written data: a page the guest wrote and that was uploaded
+  // again is valid, but holds guest data. Locked per page with its own mutex,
+  // not the global lock: this may run on a worker thread next to the command
+  // processor, which takes the global lock often.
   uint32_t skipped = 0;
   const uint32_t page_size = uint32_t(1) << page_size_log2_;
+  const auto* gpu_written_blocks =
+      reinterpret_cast<const volatile uint64_t*>(system_page_flags_valid_and_gpu_written_.data());
   for (uint32_t offset = 0; offset < length;) {
     const uint32_t page = (start + offset) >> page_size_log2_;
     const uint32_t chunk =
         std::min(length - offset, page_size - ((start + offset) & (page_size - 1)));
-    if ((system_page_flags_valid_[page >> 6] >> (page & 63)) & 1) {
+    std::lock_guard<std::mutex> copy_lock(readback_copy_mutex_);
+    if ((gpu_written_blocks[page >> 6] >> (page & 63)) & 1) {
       std::memcpy(guest + offset, data + offset, chunk);
     } else {
       ++skipped;
@@ -477,6 +484,28 @@ bool SharedMemory::RequestRanges(const std::pair<uint32_t, uint32_t>* ranges, si
     return true;
   }
 
+  // Most requests (vertex buffers, textures) find every page valid already.
+  // Reading the bits without the lock is equivalent to checking them under the
+  // lock and releasing it: a guest write can invalidate a page right after
+  // either way.
+  if (!stale_checking()) {
+    bool all_valid = true;
+    for (const std::pair<uint32_t, uint32_t>& range : merged_ranges) {
+      if (!AreAllPagesValidUnlocked(range.first, range.second)) {
+        all_valid = false;
+        break;
+      }
+    }
+    if (all_valid) {
+      for (const std::pair<uint32_t, uint32_t>& range : merged_ranges) {
+        if (!EnsureHostGpuMemoryAllocated(range.first, range.second)) {
+          return false;
+        }
+      }
+      return true;
+    }
+  }
+
   SCOPE_profile_cpu_f("gpu");
 
   std::sort(merged_ranges.begin(), merged_ranges.end(),
@@ -651,6 +680,26 @@ bool SharedMemory::RequestRanges(const std::pair<uint32_t, uint32_t>* ranges, si
   return UploadRanges(upload_ranges_);
 }
 
+bool SharedMemory::AreAllPagesValidUnlocked(uint32_t start, uint32_t length) const {
+  const uint32_t page_first = start >> page_size_log2_;
+  const uint32_t page_last = (start + length - 1) >> page_size_log2_;
+  const auto* valid_blocks =
+      reinterpret_cast<const volatile uint64_t*>(system_page_flags_valid_.data());
+  for (uint32_t block = page_first >> 6; block <= page_last >> 6; ++block) {
+    uint64_t needed = UINT64_MAX;
+    if (block == page_first >> 6) {
+      needed &= ~((uint64_t(1) << (page_first & 63)) - 1);
+    }
+    if (block == page_last >> 6 && (page_last & 63) != 63) {
+      needed &= (uint64_t(1) << ((page_last & 63) + 1)) - 1;
+    }
+    if ((valid_blocks[block] & needed) != needed) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool SharedMemory::RequestRange(uint32_t start, uint32_t length) {
   std::pair<uint32_t, uint32_t> range(start, length);
   return RequestRanges(&range, 1);
@@ -702,16 +751,20 @@ std::pair<uint32_t, uint32_t> SharedMemory::MemoryInvalidationCallback(
     }
   }
 
-  for (uint32_t i = block_first; i <= block_last; ++i) {
-    uint64_t invalidate_bits = UINT64_MAX;
-    if (i == block_first) {
-      invalidate_bits &= ~((uint64_t(1) << (page_first & 63)) - 1);
+  {
+    // Waits for a readback copy into these pages (CopyReadbackToGuest).
+    std::lock_guard<std::mutex> copy_lock(readback_copy_mutex_);
+    for (uint32_t i = block_first; i <= block_last; ++i) {
+      uint64_t invalidate_bits = UINT64_MAX;
+      if (i == block_first) {
+        invalidate_bits &= ~((uint64_t(1) << (page_first & 63)) - 1);
+      }
+      if (i == block_last && (page_last & 63) != 63) {
+        invalidate_bits &= (uint64_t(1) << ((page_last & 63) + 1)) - 1;
+      }
+      system_page_flags_valid_[i] &= ~invalidate_bits;
+      system_page_flags_valid_and_gpu_written_[i] &= ~invalidate_bits;
     }
-    if (i == block_last && (page_last & 63) != 63) {
-      invalidate_bits &= (uint64_t(1) << ((page_last & 63) + 1)) - 1;
-    }
-    system_page_flags_valid_[i] &= ~invalidate_bits;
-    system_page_flags_valid_and_gpu_written_[i] &= ~invalidate_bits;
   }
   invalidation_epoch_.fetch_add(1, std::memory_order_acq_rel);
   perf_trace::CountInvalidation(uint64_t(page_last - page_first + 1) << page_size_log2_);

@@ -462,8 +462,11 @@ void TextureCache::RequestTextures(uint32_t used_texture_mask) {
 
   // Update the texture keys and the textures.
   uint32_t bindings_changed = 0;
-  std::vector<PendingTextureLoad> pending_texture_loads;
-  std::vector<PendingSharedMemoryRange> pending_shared_memory_ranges;
+  std::vector<PendingTextureLoad>& pending_texture_loads = pending_texture_loads_;
+  std::vector<PendingSharedMemoryRange>& pending_shared_memory_ranges =
+      pending_shared_memory_ranges_;
+  pending_texture_loads.clear();
+  pending_shared_memory_ranges.clear();
   auto queue_pending_texture_load = [&](Texture* texture) {
     if (texture == nullptr) {
       return;
@@ -571,9 +574,10 @@ void TextureCache::RequestTextures(uint32_t used_texture_mask) {
                     uint32_t(pending_shared_memory_ranges.size()));
 
   bool batched_shared_memory_request_succeeded = true;
-  std::vector<std::pair<uint32_t, uint32_t>> pending_shared_memory_range_pairs;
+  std::vector<std::pair<uint32_t, uint32_t>>& pending_shared_memory_range_pairs =
+      pending_shared_memory_range_pairs_;
+  pending_shared_memory_range_pairs.clear();
   if (!pending_shared_memory_ranges.empty()) {
-    pending_shared_memory_range_pairs.reserve(pending_shared_memory_ranges.size());
     for (const PendingSharedMemoryRange& pending_range : pending_shared_memory_ranges) {
       pending_shared_memory_range_pairs.emplace_back(pending_range.start, pending_range.length);
     }

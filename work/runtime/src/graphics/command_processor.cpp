@@ -118,8 +118,29 @@ CommandProcessor::CommandProcessor(GraphicsSystem* graphics_system,
       register_file_(graphics_system_->register_file()),
       worker_running_(true),
       write_ptr_index_event_(rex::thread::Event::CreateAutoResetEvent(false)),
+      wait_reg_mem_event_(rex::thread::Event::CreateAutoResetEvent(false)),
       write_ptr_index_(0) {
   assert_not_null(write_ptr_index_event_);
+  assert_not_null(wait_reg_mem_event_);
+  for (uint32_t i = 0; i < RegisterFile::kRegisterCount; ++i) {
+    if (!RegisterFile::GetRegisterInfo(i)) {
+      register_unknown_[i >> 6] |= uint64_t(1) << (i & 63);
+      register_write_hooked_[i >> 6] |= uint64_t(1) << (i & 63);
+    }
+  }
+  // The registers with side effects in WriteRegister.
+  SetRegisterWritesHooked(XE_GPU_REG_SCRATCH_REG0, XE_GPU_REG_SCRATCH_REG7);
+  for (uint32_t index : {XE_GPU_REG_COHER_STATUS_HOST, XE_GPU_REG_DC_LUT_RW_INDEX,
+                         XE_GPU_REG_DC_LUT_SEQ_COLOR, XE_GPU_REG_DC_LUT_PWL_DATA,
+                         XE_GPU_REG_DC_LUT_30_COLOR}) {
+    SetRegisterWritesHooked(index, index);
+  }
+}
+
+void CommandProcessor::SetRegisterWritesHooked(uint32_t first, uint32_t last) {
+  for (uint32_t i = first; i <= last && i < RegisterFile::kRegisterCount; ++i) {
+    register_write_hooked_[i >> 6] |= uint64_t(1) << (i & 63);
+  }
 }
 
 CommandProcessor::~CommandProcessor() = default;
@@ -159,6 +180,7 @@ bool CommandProcessor::Initialize() {
 void CommandProcessor::Shutdown() {
   worker_running_ = false;
   write_ptr_index_event_->Set();
+  wait_reg_mem_event_->Set();
   worker_thread_->Wait(0, 0, 0, nullptr);
   worker_thread_.reset();
 }
@@ -369,7 +391,7 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
 
   // Volatile for the WAIT_REG_MEM loop.
   const_cast<volatile uint32_t&>(regs.values[index]) = value;
-  if (!regs.GetRegisterInfo(index)) {
+  if ((register_unknown_[index >> 6] >> (index & 63)) & 1) {
     REXGPU_DEBUG("GPU: Write to unknown register ({:04X} = {:08X})", index, value);
   }
 
@@ -380,6 +402,7 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
       // Enabled - write to address.
       uint32_t scratch_addr = regs.values[XE_GPU_REG_SCRATCH_ADDR];
       uint32_t mem_addr = scratch_addr + (scratch_reg * 4);
+      OnGuestVisibleSignal();
       memory::store_and_swap<uint32_t>(memory_->TranslatePhysical(mem_addr), value);
     }
   } else {
@@ -509,7 +532,7 @@ void CommandProcessor::WriteRegistersFromMem(uint32_t start_index, uint32_t* bas
                                              uint32_t num_registers) {
   for (uint32_t i = 0; i < num_registers; ++i) {
     uint32_t data = memory::load_and_swap<uint32_t>(base + i);
-    WriteRegister(start_index + i, data);
+    WriteRegisterFast(start_index + i, data);
   }
 }
 
@@ -848,10 +871,16 @@ bool CommandProcessor::ExecutePacketType0(memory::RingBuffer* reader, uint32_t p
 
   uint32_t base_index = (packet & 0x7FFF);
   uint32_t write_one_reg = (packet >> 15) & 0x1;
+  if (!write_one_reg) {
+    // Consecutive registers: backends handle whole ranges of constants at once
+    // (WriteRegistersFromMem), the rest are written one by one as below.
+    WriteRegisterRangeFromRing(reader, base_index, count);
+    return true;
+  }
   for (uint32_t m = 0; m < count; m++) {
     uint32_t reg_data = reader->ReadAndSwap<uint32_t>();
     uint32_t target_index = write_one_reg ? base_index : base_index + m;
-    WriteRegister(target_index, reg_data);
+    WriteRegisterFast(target_index, reg_data);
   }
 
   return true;
@@ -864,8 +893,8 @@ bool CommandProcessor::ExecutePacketType1(memory::RingBuffer* reader, uint32_t p
   uint32_t reg_index_2 = (packet >> 11) & 0x7FF;
   uint32_t reg_data_1 = reader->ReadAndSwap<uint32_t>();
   uint32_t reg_data_2 = reader->ReadAndSwap<uint32_t>();
-  WriteRegister(reg_index_1, reg_data_1);
-  WriteRegister(reg_index_2, reg_data_2);
+  WriteRegisterFast(reg_index_1, reg_data_1);
+  WriteRegisterFast(reg_index_2, reg_data_2);
   return true;
 }
 
@@ -1106,6 +1135,7 @@ bool CommandProcessor::ExecutePacketType3_INTERRUPT(memory::RingBuffer* reader, 
 
   // generate interrupt from the command stream
   uint32_t cpu_mask = reader->ReadAndSwap<uint32_t>();
+  OnGuestVisibleSignal();
   CheckGuestReads();
   for (int n = 0; n < 6; n++) {
     if (cpu_mask & (1 << n)) {
@@ -1142,6 +1172,7 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
     }
     trace->frame_start_draws = trace->draws;
   }
+  OnGuestVisibleSignal();
   CheckGuestReads();
   if (BinTrace* trace = GetBinTrace()) {
     if (trace->frame % trace->every == 0) {
@@ -1202,13 +1233,15 @@ bool CommandProcessor::ExecutePacketType3_INDIRECT_BUFFER(memory::RingBuffer* re
 namespace {
 // Optional summary of PM4_WAIT_REG_MEM waits (REX_WAIT_REG_MEM_TRACE): per
 // condition, how often it was executed, how often it had to wait and for how
-// long. Rewritten every 4096 packets.
+// long, and how many sleeps WakeWaitRegMem ended early (woken). Rewritten
+// every 4096 packets.
 void TraceWaitRegMem(bool is_memory, uint32_t address, uint32_t wait_info, uint32_t ref,
-                     uint32_t mask, uint32_t wait, uint32_t iterations, uint64_t wait_ns) {
+                     uint32_t mask, uint32_t wait, uint32_t iterations, uint32_t woken,
+                     uint64_t wait_ns) {
   static const char* path = std::getenv("REX_WAIT_REG_MEM_TRACE");
   if (!path || !*path) return;
   struct Entry {
-    uint64_t packets = 0, waited = 0, iterations = 0, ns = 0;
+    uint64_t packets = 0, waited = 0, iterations = 0, woken = 0, ns = 0;
   };
   static std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t>, Entry> entries;
   static uint32_t calls = 0;
@@ -1217,6 +1250,7 @@ void TraceWaitRegMem(bool is_memory, uint32_t address, uint32_t wait_info, uint3
   ++entry.packets;
   entry.waited += iterations > 1;
   entry.iterations += iterations;
+  entry.woken += woken;
   entry.ns += wait_ns;
   if (++calls % 4096) return;
   std::ofstream output(path, std::ios::trunc);
@@ -1224,7 +1258,7 @@ void TraceWaitRegMem(bool is_memory, uint32_t address, uint32_t wait_info, uint3
     output << std::hex << "info " << std::get<0>(key) << " addr " << std::get<1>(key) << " ref "
            << std::get<2>(key) << " mask " << std::get<3>(key) << " wait " << std::get<4>(key)
            << std::dec << " packets " << e.packets << " waited " << e.waited << " iterations "
-           << e.iterations << " ms " << e.ns / 1000000 << "\n";
+           << e.iterations << " woken " << e.woken << " ms " << e.ns / 1000000 << "\n";
   }
 }
 }  // namespace
@@ -1245,7 +1279,8 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
 
   bool matched = false;
   uint64_t wait_ticks = 0;
-  uint32_t iterations = 0;
+  uint32_t iterations = 0, woken = 0;
+  bool wake_armed = false;
   do {
     ++iterations;
     uint32_t value = 0;
@@ -1287,7 +1322,17 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
         break;
     }
     if (!matched) {
-      waiting_reg_mem_.store(true, std::memory_order_relaxed);
+      if (!waiting_reg_mem_.exchange(true, std::memory_order_relaxed)) {
+        graphics_system_->WakeVsyncWorker();
+      }
+      if (wait >= 0x100 && !wake_armed) {
+        // Wakes from before this packet must not end its first sleep: clear
+        // them (only now, most conditions hold at once), then check again, as
+        // the vblank interrupt may have written the value before the reset.
+        wait_reg_mem_event_->Reset();
+        wake_armed = true;
+        continue;
+      }
       // Wait.
       if (wait >= 0x100) {
         PrepareForWait();
@@ -1296,7 +1341,13 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
           // User wants it fast and dangerous.
           rex::thread::MaybeYield();
         } else {
-          rex::thread::Sleep(std::chrono::milliseconds(wait / 0x100));
+          // Sleep for the requested time, or less when the vsync thread
+          // delivers a vblank (WakeWaitRegMem): polling with a plain sleep
+          // added about a millisecond after every vblank, and the vsync
+          // thread's own polling another one.
+          woken += rex::thread::Wait(wait_reg_mem_event_.get(), false,
+                                     std::chrono::milliseconds(wait / 0x100)) ==
+                   rex::thread::WaitResult::kSuccess;
         }
         wait_ticks += perf_trace::Now() - perf_start;
         perf_trace::AddWait(perf_start, perf_trace::Wait::kWaitRegMem);
@@ -1317,7 +1368,8 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
     }
   } while (!matched);
   waiting_reg_mem_.store(false, std::memory_order_relaxed);
-  TraceWaitRegMem(is_memory, poll_reg_addr, wait_info, ref, mask, wait, iterations, wait_ticks);
+  TraceWaitRegMem(is_memory, poll_reg_addr, wait_info, ref, mask, wait, iterations, woken,
+                  wait_ticks);
 
   return true;
 }
@@ -1357,6 +1409,7 @@ bool CommandProcessor::ExecutePacketType3_REG_TO_MEM(memory::RingBuffer* reader,
   uint32_t mem_addr = reader->ReadAndSwap<uint32_t>();
 
   uint32_t reg_val = ReadRegisterValue(reg_addr);
+  OnGuestVisibleSignal();
   CheckGuestReads();
 
   auto endianness = static_cast<xenos::Endian>(mem_addr & 0x3);
@@ -1370,6 +1423,7 @@ bool CommandProcessor::ExecutePacketType3_REG_TO_MEM(memory::RingBuffer* reader,
 bool CommandProcessor::ExecutePacketType3_MEM_WRITE(memory::RingBuffer* reader, uint32_t packet,
                                                     uint32_t count) {
   uint32_t write_addr = reader->ReadAndSwap<uint32_t>();
+  OnGuestVisibleSignal();
   CheckGuestReads();
   for (uint32_t i = 0; i < count - 1; i++) {
     uint32_t write_data = reader->ReadAndSwap<uint32_t>();
@@ -1435,6 +1489,7 @@ bool CommandProcessor::ExecutePacketType3_COND_WRITE(memory::RingBuffer* reader,
     // Write.
     if (wait_info & 0x100) {
       // Memory.
+      OnGuestVisibleSignal();
       CheckGuestReads();
       auto endianness = static_cast<xenos::Endian>(write_reg_addr & 0x3);
       write_reg_addr &= ~0x3;
@@ -1453,7 +1508,7 @@ bool CommandProcessor::ExecutePacketType3_EVENT_WRITE(memory::RingBuffer* reader
   // generate an event that creates a write to memory when completed
   uint32_t initiator = reader->ReadAndSwap<uint32_t>();
   // Writeback initiator.
-  WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
+  WriteRegisterFast(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
   if (count == 1) {
     // Just an event flag? Where does this write?
   } else {
@@ -1472,7 +1527,7 @@ bool CommandProcessor::ExecutePacketType3_EVENT_WRITE_SHD(memory::RingBuffer* re
   uint32_t value = reader->ReadAndSwap<uint32_t>();
 
   // Writeback initiator.
-  WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
+  WriteRegisterFast(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
   uint32_t data_value;
   if ((initiator >> 31) & 0x1) {
     // Write counter (GPU vblank counter?).
@@ -1481,6 +1536,7 @@ bool CommandProcessor::ExecutePacketType3_EVENT_WRITE_SHD(memory::RingBuffer* re
     // Write value.
     data_value = value;
   }
+  OnGuestVisibleSignal();
   CheckGuestReads();
   auto endianness = static_cast<xenos::Endian>(address & 0x3);
   address &= ~0x3;
@@ -1495,7 +1551,7 @@ bool CommandProcessor::ExecutePacketType3_EVENT_WRITE_EXT(memory::RingBuffer* re
   uint32_t initiator = reader->ReadAndSwap<uint32_t>();
   uint32_t address = reader->ReadAndSwap<uint32_t>();
   // Writeback initiator.
-  WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
+  WriteRegisterFast(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
   auto endianness = static_cast<xenos::Endian>(address & 0x3);
   address &= ~0x3;
 
@@ -1524,7 +1580,7 @@ bool CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffer* re
   assert_true(count == 1);
   uint32_t initiator = reader->ReadAndSwap<uint32_t>();
   // Writeback initiator.
-  WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
+  WriteRegisterFast(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
 
   // Occlusion queries:
   // This command is send on query begin and end.
@@ -1576,7 +1632,7 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
   reg::VGT_DRAW_INITIATOR vgt_draw_initiator;
   vgt_draw_initiator.value = reader->ReadAndSwap<uint32_t>();
   --count_remaining;
-  WriteRegister(XE_GPU_REG_VGT_DRAW_INITIATOR, vgt_draw_initiator.value);
+  WriteRegisterFast(XE_GPU_REG_VGT_DRAW_INITIATOR, vgt_draw_initiator.value);
 
   bool draw_succeeded = true;
   // TODO(Triang3l): Remove IndexBufferInfo and replace handling of all this
@@ -1598,7 +1654,7 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
       }
       uint32_t vgt_dma_base = reader->ReadAndSwap<uint32_t>();
       --count_remaining;
-      WriteRegister(XE_GPU_REG_VGT_DMA_BASE, vgt_dma_base);
+      WriteRegisterFast(XE_GPU_REG_VGT_DMA_BASE, vgt_dma_base);
       reg::VGT_DMA_SIZE vgt_dma_size;
       assert_not_zero(count_remaining);
       if (!count_remaining) {
@@ -1607,7 +1663,7 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
       }
       vgt_dma_size.value = reader->ReadAndSwap<uint32_t>();
       --count_remaining;
-      WriteRegister(XE_GPU_REG_VGT_DMA_SIZE, vgt_dma_size.value);
+      WriteRegisterFast(XE_GPU_REG_VGT_DMA_SIZE, vgt_dma_size.value);
 
       uint32_t index_size_bytes = vgt_draw_initiator.index_size == xenos::IndexFormat::kInt16
                                       ? sizeof(uint16_t)
@@ -1878,11 +1934,11 @@ bool CommandProcessor::ExecutePacketType3_VIZ_QUERY(memory::RingBuffer* reader, 
     // On hardware this clears the internal state of the scan converter (which
     // is different to the register)
     perf_trace::Increment(perf_trace::Count::kVizQueries);
-    WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, VIZQUERY_START);
+    WriteRegisterFast(XE_GPU_REG_VGT_EVENT_INITIATOR, VIZQUERY_START);
     REXGPU_INFO("Begin viz query ID {:02X}", id);
   } else {
     // end the viz query
-    WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, VIZQUERY_END);
+    WriteRegisterFast(XE_GPU_REG_VGT_EVENT_INITIATOR, VIZQUERY_END);
     REXGPU_INFO("End viz query ID {:02X}", id);
     // The scan converter writes the internal result back to the register here.
     // We just fake it and say it was visible in case it is read back.

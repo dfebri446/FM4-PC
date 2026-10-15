@@ -31,6 +31,15 @@
 #include <rex/ui/window.h>
 #include <rex/ui/windowed_app_context.h>
 
+#include "util/perf_trace.h"
+
+#if REX_PLATFORM_WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif  // REX_PLATFORM_WIN32
+
 REXCVAR_DEFINE_BOOL(vblank_vrr, false, "GPU",
                     "Variable guest vblank: once a refresh interval has passed, deliver the next "
                     "vblank as soon as the command processor waits (for example a swap waiting "
@@ -155,8 +164,19 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
 
   // Guest vblank timer based on the configured guest video mode.
   vsync_worker_running_ = true;
+  vsync_wake_event_ = rex::thread::Event::CreateAutoResetEvent(false);
   vsync_worker_thread_ = system::object_ref<system::XHostThread>(
       new system::XHostThread(kernel_state_, 128 * 1024, 0, [this]() {
+#if REX_PLATFORM_WIN32
+        // Sleeps until the next vblank is due with sub-millisecond precision
+        // (a plain 1 ms sleep loop delivered vblanks up to about 2 ms late).
+        HANDLE due_timer = CreateWaitableTimerExW(nullptr, nullptr,
+                                                  CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                                  TIMER_ALL_ACCESS);
+        if (!due_timer) {
+          due_timer = CreateWaitableTimerW(nullptr, FALSE, nullptr);
+        }
+#endif  // REX_PLATFORM_WIN32
         system::X_VIDEO_MODE video_mode;
         kernel::xboxkrnl::VdQueryVideoMode(&video_mode);
         double refresh_rate_hz = std::max(1.0, double(float(video_mode.refresh_rate)));
@@ -177,17 +197,20 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
               // A frame that missed its vblank is ready: deliver it now and
               // start a new phase, even right after a forced vblank.
               MarkVblank();
+              perf_trace::CountVblank(1);
               last_frame_time = current_time;
               vblank_late = false;
             } else if (elapsed >= interval_ticks) {
               if (waiting && elapsed < 2 * interval_ticks) {
                 // On time: stay on the refresh grid.
                 MarkVblank();
+                perf_trace::CountVblank(0);
                 last_frame_time += interval_ticks;
               } else if (elapsed >= 2 * interval_ticks) {
                 // Nothing waited for two intervals (loading, or a long frame):
                 // keep vblanks coming, but the next wait still gets one at once.
                 MarkVblank();
+                perf_trace::CountVblank(2);
                 last_frame_time = current_time;
                 vblank_late = !waiting;
               } else {
@@ -197,11 +220,45 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
           } else {
             while (current_time - last_frame_time >= interval_ticks) {
               MarkVblank();
+              perf_trace::CountVblank(0);
               last_frame_time += interval_ticks;
             }
           }
-          rex::thread::Sleep(std::chrono::milliseconds(1));
+          // Sleep until the next vblank is due: the next grid vblank, or with
+          // vblank_vrr after a missed one the forced vblank two intervals
+          // after the last; a command processor that starts waiting wakes
+          // the thread earlier (WakeVsyncWorker). At most 2 ms, so a changed
+          // guest clock is noticed.
+          const uint64_t due_ticks =
+              last_frame_time + (vblank_late ? 2 * interval_ticks : interval_ticks);
+          current_time = chrono::Clock::QueryGuestTickCount();
+          const uint64_t remaining_ticks = due_ticks > current_time ? due_ticks - current_time : 0;
+          const int64_t remaining_100ns = std::min<int64_t>(
+              int64_t(double(remaining_ticks) * 1.0e7 / double(guest_tick_frequency)), 20000);
+#if REX_PLATFORM_WIN32
+          if (due_timer) {
+            LARGE_INTEGER due_time;
+            // Negative: relative to now.
+            due_time.QuadPart = -std::max<int64_t>(remaining_100ns, 1);
+            if (SetWaitableTimer(due_timer, &due_time, 0, nullptr, nullptr, FALSE)) {
+              HANDLE handles[] = {static_cast<HANDLE>(vsync_wake_event_->native_handle()),
+                                  due_timer};
+              WaitForMultipleObjects(DWORD(rex::countof(handles)), handles, FALSE, 4);
+              continue;
+            }
+          }
+#endif  // REX_PLATFORM_WIN32
+          rex::thread::Wait(vsync_wake_event_.get(), false,
+                            std::chrono::milliseconds(remaining_100ns >= 10000 ? 1 : 0));
+          if (remaining_100ns < 10000) {
+            rex::thread::MaybeYield();
+          }
         }
+#if REX_PLATFORM_WIN32
+        if (due_timer) {
+          CloseHandle(due_timer);
+        }
+#endif  // REX_PLATFORM_WIN32
         return 0;
       }));
   // TODO: set_can_debugger_suspend not yet ported
@@ -220,6 +277,7 @@ void GraphicsSystem::Shutdown() {
 
   if (vsync_worker_thread_) {
     vsync_worker_running_ = false;
+    WakeVsyncWorker();
     vsync_worker_thread_->Wait(0, 0, 0, nullptr);
     vsync_worker_thread_.reset();
   }
@@ -363,6 +421,11 @@ void GraphicsSystem::MarkVblank() {
   //     something wrong and the CP will block waiting for code that
   //     needs to be run in the interrupt.
   DispatchInterruptCallback(0, 2);
+
+  // A swap usually waits (PM4_WAIT_REG_MEM) for what the interrupt writes.
+  if (command_processor_) {
+    command_processor_->WakeWaitRegMem();
+  }
 }
 
 void GraphicsSystem::ClearCaches() {

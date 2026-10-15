@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('doctor','setup','generate','build','all','run','warmcache')][string]$Action = 'doctor',
+    [ValidateSet('doctor','setup','generate','build','all','run','warmcache','profbuild')][string]$Action = 'doctor',
     [string]$Disc1,
     [string]$Disc2,
     [string]$BuildRoot,

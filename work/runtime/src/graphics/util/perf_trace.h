@@ -22,6 +22,7 @@ enum class Wait : uint32_t {
   kOcclusion,        // Occlusion query results.
   kMemexport,        // Memexport readback.
   kWaitRegMem,       // Sleeping or yielding in PM4_WAIT_REG_MEM until its condition holds.
+  kReadbackPublish,  // Resolve readback copies into guest memory on their thread.
   kOther,
   kCount
 };
@@ -161,6 +162,15 @@ inline void CountInvalidation(uint64_t bytes) {
   }
 }
 
+// Guest vblanks by how the vsync thread delivered them (any thread): on the
+// refresh grid, late (vblank_vrr: the grid vblank passed while the command
+// processor worked and was delivered when it waited), forced (two intervals
+// without a wait).
+inline std::atomic<uint32_t> vblanks[3]{};
+inline void CountVblank(uint32_t kind) {
+  if (Get()) vblanks[kind].fetch_add(1, std::memory_order_relaxed);
+}
+
 inline void CountUpload(uint64_t bytes) {
   if (State* state = Get()) {
     ++state->counts[size_t(Count::kUploadRanges)];
@@ -266,7 +276,8 @@ inline void OnSwap() {
   if (elapsed < state->frequency) return;
   const auto ms = [&](uint64_t ticks) { return double(ticks) * 1000.0 / double(state->frequency); };
   static const char* const kNames[] = {"guest_idle", "frame_latency", "resolve_readback",
-                                       "occlusion", "memexport", "wait_reg_mem", "other"};
+                                       "occlusion", "memexport", "wait_reg_mem",
+                                       "readback_publish", "other"};
   state->output << "{\"t\":" << ms(now - state->origin) / 1000.0
                 << ",\"window_ms\":" << ms(elapsed)
                 << ",\"fps\":" << double(state->swaps) * 1000.0 / ms(elapsed)
@@ -277,6 +288,9 @@ inline void OnSwap() {
                 << ",\"invalidations\":" << invalidations.exchange(0, std::memory_order_relaxed)
                 << ",\"invalidated_kb\":"
                 << (invalidated_bytes.exchange(0, std::memory_order_relaxed) >> 10)
+                << ",\"vblanks\":{\"grid\":" << vblanks[0].exchange(0, std::memory_order_relaxed)
+                << ",\"late\":" << vblanks[1].exchange(0, std::memory_order_relaxed)
+                << ",\"forced\":" << vblanks[2].exchange(0, std::memory_order_relaxed) << '}'
                 << ",\"wait_ms\":{";
   for (size_t i = 0; i < size_t(Wait::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kNames[i] << "\":" << ms(state->wait_ticks[i]);

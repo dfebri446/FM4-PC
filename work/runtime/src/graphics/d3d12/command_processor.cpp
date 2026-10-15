@@ -99,6 +99,18 @@ REXCVAR_DEFINE_BOOL(d3d12_submit_thread, false, "GPU/D3D12",
                     "D3D12 recording cost off the command processor thread")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
+REXCVAR_DEFINE_BOOL(d3d12_readback_publish_thread, false, "GPU/D3D12",
+                    "Copy resolve readbacks (readback_resolve=fast/some) into guest memory on a "
+                    "separate thread, in order. The first data of a resolve destination is "
+                    "still copied before the command processor continues")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+REXCVAR_DEFINE_BOOL(d3d12_readback_publish_await_signals, false, "GPU/D3D12",
+                    "With d3d12_readback_publish_thread, wait for the queued copies before "
+                    "anything the guest can observe (fence writes, interrupts, the swap). The "
+                    "published data is from an earlier completed submission either way, so this "
+                    "only changes timing; it costs about the copy time")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 REXCVAR_DEFINE_INT32(async_shader_draw_wait_us, 0, "GPU/D3D12",
                      "With async_shader_compilation, how long a draw waits for its pipeline "
                      "before it is dropped, in microseconds. 0 drops it immediately")
@@ -969,6 +981,12 @@ D3D12CommandProcessor::D3D12CommandProcessor(D3D12GraphicsSystem* graphics_syste
                                              system::KernelState* kernel_state)
     : CommandProcessor(graphics_system, kernel_state), deferred_command_list_(*this) {
   legacy_readback_memexport_cvar_name_ = "d3d12_readback_memexport";
+  // The ranges with side effects in D3D12CommandProcessor::WriteRegister.
+  SetRegisterWritesHooked(XE_GPU_REG_SHADER_CONSTANT_000_X, XE_GPU_REG_SHADER_CONSTANT_511_W);
+  SetRegisterWritesHooked(XE_GPU_REG_SHADER_CONSTANT_BOOL_000_031,
+                          XE_GPU_REG_SHADER_CONSTANT_LOOP_31);
+  SetRegisterWritesHooked(XE_GPU_REG_SHADER_CONSTANT_FETCH_00_0,
+                          XE_GPU_REG_SHADER_CONSTANT_FETCH_31_5);
 }
 D3D12CommandProcessor::~D3D12CommandProcessor() = default;
 
@@ -1815,6 +1833,11 @@ bool D3D12CommandProcessor::SetupContext() {
     submit_shutdown_ = false;
     submit_thread_ = std::thread([this]() { SubmitThreadMain(); });
   }
+  if (REXCVAR_GET(d3d12_readback_publish_thread)) {
+    readback_publish_await_signals_ = REXCVAR_GET(d3d12_readback_publish_await_signals);
+    readback_publish_shutdown_ = false;
+    readback_publish_thread_ = std::thread([this]() { ReadbackPublishThreadMain(); });
+  }
 
   fence_completion_event_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
   if (fence_completion_event_ == nullptr) {
@@ -2588,6 +2611,7 @@ bool D3D12CommandProcessor::SetupContext() {
 }
 
 void D3D12CommandProcessor::ShutdownContext() {
+  ShutdownReadbackPublishThread();
   ShutdownSubmitThread();
   AwaitAllQueueOperationsCompletion();
   InvalidateAllVertexBufferResidency();
@@ -3705,9 +3729,11 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   viewport_key.normalized_depth_control = normalized_depth_control.value;
   std::memcpy(viewport_key.vport_regs, &regs[XE_GPU_REG_PA_CL_VPORT_XSCALE],
               sizeof(viewport_key.vport_regs));
+  // The depth format decides the float24 depth bounds conversion.
   viewport_key.flags = (uint32_t(convert_z_to_float24) << 0) |
                        (uint32_t(host_render_targets_used) << 1) | (uint32_t(ps_writes_depth) << 2) |
-                       (uniform_draw_scale_x << 3) | (uniform_draw_scale_y << 5);
+                       (uniform_draw_scale_x << 3) | (uniform_draw_scale_y << 5) |
+                       (uint32_t(regs.Get<reg::RB_DEPTH_INFO>().depth_format) << 8);
 
   draw_util::ViewportInfo viewport_info;
   if (viewport_cache_valid_ && viewport_key == previous_viewport_key_) {
@@ -4081,6 +4107,7 @@ bool D3D12CommandProcessor::IssueDraw_MemexportReadbackFullPath(uint32_t total_s
   }
 
   const uint8_t* readback_bytes = reinterpret_cast<const uint8_t*>(readback_mapping);
+  AwaitAllReadbackPublish();
   for (const draw_util::MemExportRange& memexport_range : memexport_ranges_) {
     std::memcpy(memory_->TranslatePhysical(memexport_range.base_address_dwords << 2),
                 readback_bytes, memexport_range.size_bytes);
@@ -4178,6 +4205,7 @@ bool D3D12CommandProcessor::IssueDraw_MemexportReadbackFastPath(uint32_t total_s
   }
 
   const uint8_t* readback_bytes = static_cast<const uint8_t*>(readback.mapped_data[read_index]);
+  AwaitAllReadbackPublish();
   for (const draw_util::MemExportRange& memexport_range : memexport_ranges_) {
     std::memcpy(memory_->TranslatePhysical(memexport_range.base_address_dwords << 2),
                 readback_bytes, memexport_range.size_bytes);
@@ -4247,6 +4275,8 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
 
   uint32_t write_index = rb.current_index;
   uint32_t size = AlignReadbackBufferSize(written_length);
+  // The slot may be replaced or written by the GPU again below.
+  AwaitReadbackPublish(rb.publish_sequence[write_index]);
 
   if (size > rb.sizes[write_index]) {
     const ui::d3d12::D3D12Provider& provider = GetD3D12Provider();
@@ -4461,9 +4491,20 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
       // Not over pages that the guest has written since: the copied range
       // covers whole tiles (and may be from an earlier frame), so it can hold
       // guest data next to the resolved texture.
-      const uint32_t skipped = shared_memory_->CopyReadbackToGuest(
-          written_address, written_length, static_cast<const uint8_t*>(rb.mapped_data[read_index]));
-      TraceReadbackSkip(written_address, written_length, skipped);
+      const auto* data = static_cast<const uint8_t*>(rb.mapped_data[read_index]);
+      if (readback_publish_thread_.joinable()) {
+        rb.publish_sequence[read_index] =
+            QueueReadbackPublish(written_address, written_length, data);
+        if (is_cache_miss) {
+          // The first data of a key is in guest memory before the command
+          // processor continues, as without the thread.
+          AwaitReadbackPublish(rb.publish_sequence[read_index]);
+        }
+      } else {
+        const uint32_t skipped =
+            shared_memory_->CopyReadbackToGuest(written_address, written_length, data);
+        TraceReadbackSkip(written_address, written_length, skipped);
+      }
       perf_trace::CountReadback(written_length);
       TraceResolvePublication(written_address, written_length,
                               static_cast<const uint8_t*>(rb.mapped_data[read_index]));
@@ -6227,6 +6268,9 @@ void D3D12CommandProcessor::EvictOldReadbackBuffers(
       continue;
     }
     for (uint32_t i = 0; i < kReadbackSlots; ++i) {
+      AwaitReadbackPublish(readback.publish_sequence[i]);
+    }
+    for (uint32_t i = 0; i < kReadbackSlots; ++i) {
       if (readback.buffers[i]) {
         if (readback.mapped_data[i]) {
           readback.buffers[i]->Unmap(0, nullptr);
@@ -6608,6 +6652,58 @@ void D3D12CommandProcessor::FlushSubmitThread() {
   if (!submit_thread_.joinable()) return;
   std::unique_lock<std::mutex> lock(submit_mutex_);
   submit_done_cond_.wait(lock, [this]() { return submit_jobs_.empty() && !submit_busy_; });
+}
+
+void D3D12CommandProcessor::ReadbackPublishThreadMain() {
+  std::unique_lock<std::mutex> lock(readback_publish_mutex_);
+  while (true) {
+    readback_publish_request_cond_.wait(
+        lock, [this]() { return readback_publish_shutdown_ || !readback_publish_jobs_.empty(); });
+    if (readback_publish_jobs_.empty()) {
+      break;
+    }
+    const ReadbackPublishJob job = readback_publish_jobs_.front();
+    readback_publish_jobs_.pop_front();
+    lock.unlock();
+    const uint32_t skipped = shared_memory_->CopyReadbackToGuest(job.address, job.length, job.data);
+    TraceReadbackSkip(job.address, job.length, skipped);
+    lock.lock();
+    readback_publish_done_atomic_.store(++readback_publish_done_, std::memory_order_release);
+    readback_publish_done_cond_.notify_all();
+  }
+}
+
+uint64_t D3D12CommandProcessor::QueueReadbackPublish(uint32_t address, uint32_t length,
+                                                     const uint8_t* data) {
+  uint64_t sequence;
+  {
+    std::lock_guard<std::mutex> lock(readback_publish_mutex_);
+    readback_publish_jobs_.push_back({address, length, data});
+    sequence = ++readback_publish_queued_;
+  }
+  readback_publish_request_cond_.notify_one();
+  return sequence;
+}
+
+void D3D12CommandProcessor::AwaitReadbackPublish(uint64_t sequence) {
+  if (sequence <= readback_publish_done_atomic_.load(std::memory_order_acquire)) {
+    return;
+  }
+  const uint64_t perf_start = perf_trace::Now();
+  std::unique_lock<std::mutex> lock(readback_publish_mutex_);
+  readback_publish_done_cond_.wait(lock,
+                                   [this, sequence]() { return readback_publish_done_ >= sequence; });
+  perf_trace::AddWait(perf_start, perf_trace::Wait::kReadbackPublish);
+}
+
+void D3D12CommandProcessor::ShutdownReadbackPublishThread() {
+  if (!readback_publish_thread_.joinable()) return;
+  {
+    std::lock_guard<std::mutex> lock(readback_publish_mutex_);
+    readback_publish_shutdown_ = true;
+  }
+  readback_publish_request_cond_.notify_all();
+  readback_publish_thread_.join();
 }
 
 void D3D12CommandProcessor::ShutdownSubmitThread() {

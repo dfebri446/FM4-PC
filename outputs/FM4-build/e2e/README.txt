@@ -60,7 +60,14 @@ draws, copies (resolves), readbacks, readback_kb, and wait_ms per cause for the
 GPU command-processor thread: guest_idle (waiting for guest commands, i.e.
 CPU-bound), frame_latency (GPU-bound), resolve_readback, occlusion, memexport
 wait_reg_mem (PM4_WAIT_REG_MEM sleeping until its condition holds; in FM4
-mostly the swap waiting for vblank) and other. counts holds events per window: occlusion_awaited/unawaited (ROV
+the swap waiting for the flag the guest vblank interrupt clears),
+readback_publish (waiting for the resolve readback copies of
+d3d12_readback_publish_thread: before a readback slot is reused, or with
+d3d12_readback_publish_await_signals at fence writes, interrupts and the swap)
+and other. vblanks counts the guest vblanks the vsync thread delivered: on the
+refresh grid, late (vblank_vrr: the grid vblank passed while the command
+processor worked, delivered when it waited) and forced (two intervals without
+a wait). counts holds events per window: occlusion_awaited/unawaited (ROV
 occlusion snapshots whose report the guest spins on, or not), viz_queries,
 viz_draws (draws conditional on a viz query), bin_selects (SET_BIN_SELECT and
 _LO; tiling), predicated_run/predicated_skipped (bin-predicated packets),
@@ -84,10 +91,20 @@ such as the road surface was not drawn. compare.py warns when it rises.
 Diagnostics (environment variables, off by default; files are local)
 ------------------------------------------------------------------
 Pass with --env NAME=value. REX_CP_PROFILE=<file> samples the GPU
-command-processor thread stacks (REX_CP_PROFILE_DELAY / _SECONDS, default 0 /
-30 s; symbolize with llvm-symbolizer against an SDK built with
--gline-tables-only). REX_WAIT_REG_MEM_TRACE=<file> summarizes WAIT_REG_MEM
-conditions. REX_OCCLUSION_SEGMENT_TRACE, REX_OCCLUSION_DRAW_TRACE and
+command-processor thread stacks about every millisecond (REX_CP_PROFILE_DELAY /
+_SECONDS, default 0 / 30 s). Build the runtime with line tables first
+(Build.ps1 -Action profbuild: BuildRoot\game-build-prof, the default build is
+not touched), run with --game-build game-build-prof, and summarize:
+
+  python outputs\FM4-build\e2e\cp_profile.py stacks.txt <BuildRoot>\game-build-prof
+  python outputs\FM4-build\e2e\cp_profile.py stacks.txt <BuildRoot>\game-build-prof --function IssueDraw
+
+(per runtime function, or per source line of one function). For a Quick Race,
+REX_CP_PROFILE_DELAY=156 starts sampling in the race; at 240 Hz
+(--arg=--video_mode_refresh_rate=240 --env FM4_FRAME_RATE=240) the command
+processor, not the vblank, sets the frame rate.
+REX_WAIT_REG_MEM_TRACE=<file> summarizes WAIT_REG_MEM conditions (how often
+each waited, its polls, how many sleeps a vblank ended early, its wait time). REX_OCCLUSION_SEGMENT_TRACE, REX_OCCLUSION_DRAW_TRACE and
 REX_DRAW_DEPTH_HIST trace occlusion snapshot segments, the draw after each
 snapshot and per-frame depth state; rtv_occlusion_debug=noqueries|fake changes
 RTV occlusion reports for experiments. REX_DRAW_LIST_TRACE=<file> lists every

@@ -566,6 +566,10 @@ class TextureCache {
                           PendingSharedMemoryRange* pending_ranges_out,
                           size_t& pending_range_count_out);
   bool CommitPreparedTextureLoad(const PendingTextureLoad& pending_load);
+  // Reused by RequestTextures to avoid heap allocations per draw.
+  std::vector<PendingTextureLoad> pending_texture_loads_;
+  std::vector<PendingSharedMemoryRange> pending_shared_memory_ranges_;
+  std::vector<std::pair<uint32_t, uint32_t>> pending_shared_memory_range_pairs_;
 
   void UpdateTexturesTotalHostMemoryUsage(uint64_t add, uint64_t subtract);
 

@@ -205,6 +205,9 @@ class D3D12CommandProcessor : public CommandProcessor {
   void ShutdownContext() override;
 
   void WriteRegister(uint32_t index, uint32_t value) override;
+  void OnGuestVisibleSignal() override {
+    if (readback_publish_await_signals_) AwaitAllReadbackPublish();
+  }
   void WriteRegistersFromMem(uint32_t start_index, uint32_t* base, uint32_t num_registers) override;
   bool ExecutePacketType3_EVENT_WRITE_ZPD(memory::RingBuffer* reader, uint32_t packet,
                                           uint32_t count) override;
@@ -393,6 +396,8 @@ class D3D12CommandProcessor : public CommandProcessor {
     uint64_t last_used_frame = 0;
     // Submission of the copy last written to guest memory (fast/some).
     uint64_t published_submission = 0;
+    // d3d12_readback_publish_thread: the publish job last queued per slot.
+    uint64_t publish_sequence[kReadbackSlots] = {};
   };
   void EvictOldReadbackBuffers(std::unordered_map<uint64_t, ReadbackBuffer>& buffer_map);
   static constexpr uint32_t kReadbackBufferSizeIncrement = 16 * 1024 * 1024;
@@ -575,6 +580,33 @@ class D3D12CommandProcessor : public CommandProcessor {
   void FlushSubmitThread();
   void ShutdownSubmitThread();
 
+  // d3d12_readback_publish_thread: resolve readbacks are copied into guest
+  // memory by a worker thread, in order. Before a readback slot is written
+  // again or released, before another write of guest memory (memexport), and
+  // with d3d12_readback_publish_await_signals before anything the guest can
+  // observe (fence writes, interrupts, the swap), the command processor waits
+  // for the copies queued so far.
+  struct ReadbackPublishJob {
+    uint32_t address;
+    uint32_t length;
+    const uint8_t* data;
+  };
+  std::thread readback_publish_thread_;
+  std::mutex readback_publish_mutex_;
+  std::condition_variable readback_publish_request_cond_;
+  std::condition_variable readback_publish_done_cond_;
+  std::deque<ReadbackPublishJob> readback_publish_jobs_;
+  uint64_t readback_publish_queued_ = 0;
+  uint64_t readback_publish_done_ = 0;
+  std::atomic<uint64_t> readback_publish_done_atomic_{0};
+  bool readback_publish_shutdown_ = false;
+  bool readback_publish_await_signals_ = false;
+  void ReadbackPublishThreadMain();
+  uint64_t QueueReadbackPublish(uint32_t address, uint32_t length, const uint8_t* data);
+  void AwaitReadbackPublish(uint64_t sequence);
+  void AwaitAllReadbackPublish() { AwaitReadbackPublish(readback_publish_queued_); }
+  void ShutdownReadbackPublishThread();
+
   bool debug_markers_enabled_ = false;
 
   // Viewport info caching - avoids redundant GetHostViewportInfo recalculation
@@ -587,7 +619,7 @@ class D3D12CommandProcessor : public CommandProcessor {
     uint32_t pa_sc_window_offset;
     uint32_t normalized_depth_control;
     uint32_t vport_regs[6];  // XSCALE, XOFFSET, YSCALE, YOFFSET, ZSCALE, ZOFFSET
-    uint32_t flags;          // packed: convert_z_to_float24, full_float24, ps_writes_depth
+    uint32_t flags;  // packed: convert_z_to_float24, host RTs, ps_writes_depth, scales, depth format
     bool operator==(const ViewportCacheKey&) const = default;
   };
   ViewportCacheKey previous_viewport_key_{};

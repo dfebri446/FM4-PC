@@ -77,6 +77,12 @@ class GraphicsSystem : public system::IGraphicsSystem {
   void SetInterruptCallback(uint32_t callback, uint32_t user_data) override;
   void DispatchInterruptCallback(uint32_t source, uint32_t cpu);
 
+  // Called by the command processor when PM4_WAIT_REG_MEM starts waiting: the
+  // vsync thread decides at once whether a vblank is due (vblank_vrr).
+  void WakeVsyncWorker() {
+    if (vsync_wake_event_) vsync_wake_event_->Set();
+  }
+
   virtual void ClearCaches();
   virtual void InvalidateGpuMemory();
 
@@ -119,6 +125,7 @@ class GraphicsSystem : public system::IGraphicsSystem {
   uint32_t interrupt_callback_data_ = 0;
 
   std::atomic<bool> vsync_worker_running_;
+  std::unique_ptr<rex::thread::Event> vsync_wake_event_;
   system::object_ref<system::XHostThread> vsync_worker_thread_;
 
   RegisterFile register_file_;

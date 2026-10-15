@@ -440,6 +440,58 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   shared_memory_copy/protect. Untuk 120 fps di lintasan masih perlu
   mengurangi kerja CP per draw (draw sekitar 420 ms/s, resolve 105 ms/s pada
   120 Hz) dan menyelidiki tunggu WAIT_REG_MEM (sekitar 230 ms/s pada 120 Hz).
+- B3 lanjutan, command processor (15 Oktober 2026), tiga target:
+  1. Tunggu WAIT_REG_MEM pada 120 Hz (sekitar 200-230 ms/s di lintasan).
+     REX_WAIT_REG_MEM_TRACE: hanya satu kondisi yang menunggu, flag memori
+     guest (0x1fca4006 == 0) yang dibersihkan interrupt vblank guest; setiap
+     frame menunggunya, rata-rata 5 poll Sleep(1). Dua serah-terima memakai
+     polling: thread vsync baru melihat CP menunggu pada tidur 1 ms
+     berikutnya, dan CP baru melihat flag pada akhir Sleep(1)-nya, sehingga
+     frame yang lewat grid vblank kehilangan sekitar 2 ms. Kini event: CP
+     membangunkan thread vsync saat mulai menunggu (WakeVsyncWorker), thread
+     vsync membangunkan CP setelah interrupt (WakeWaitRegMem), dan grid
+     vblank memakai timer waitable resolusi tinggi. Trace: sekitar 1,1
+     bangun per tunggu, jadi interrupt memang membersihkan flag. 120 Hz
+     balapan 88-92 -> 100-106 fps di 2.800-3.000 draw per frame, tunggu
+     200 -> 25-50 ms/s; Quick Race 104,2 / 95,0 -> 113,0 / 113,4 fps, p99
+     13,6-14,8 -> 11,9 ms; 60 Hz p99 20-21 -> 17,5 ms.
+  2. Profil CPU bersimbol (Build.ps1 -Action profbuild, e2e/cp_profile.py)
+     pada 120 Hz: tulis register 22% sampel (ExecutePacketType0 -> dua
+     WriteRegister virtual, dan GetRegisterInfo, switch 3.443 kasus hanya
+     untuk log debug, 4,8%), CopyReadbackToGuest 10% (memcpy readback
+     resolve 10,8 MB per frame), RequestRanges 5,9% (2,65% untuk index
+     buffer), UpdateBindings 5,5%, RequestTextures 4,9%.
+  3. Perbaikan: register tanpa efek samping disimpan langsung
+     (WriteRegisterFast; tabel bit register ber-hook: scratch, COHER,
+     DC_LUT_*, register tak dikenal, rentang konstanta/fetch D3D12); paket
+     type-0 berurutan lewat WriteRegistersFromMem, sehingga konstanta shader
+     disalin per rentang dengan satu pemeriksaan dirty (sebelumnya 10,8%
+     sampel di WriteRegister per konstanta); RequestRanges tanpa lock, sort
+     dan scan bila semua halaman sudah valid; readback resolve disalin ke
+     memori guest oleh thread sendiri (d3d12_readback_publish_thread,
+     launcher true; data pertama sebuah tujuan tetap sinkron, slot ditunggu
+     sebelum dipakai ulang, hanya halaman yang masih berisi data GPU yang
+     ditimpa, per halaman di bawah mutex sendiri yang juga diambil invalidasi
+     tulis guest, bukan lock global proses: dengan lock global, CP menunggu
+     lock itu di muat tekstur, 2,4% + 1,6% sampel); vektor sementara
+     RequestTextures dipakai ulang; kunci cache viewport kini memuat format
+     depth (bug laten: batas float24 bisa basi). Menunggu salinan readback di
+     setiap fence (d3d12_readback_publish_await_signals, default off) memakan
+     hampir seluruh waktu salin, karena hampir setiap resolve diikuti fence;
+     datanya dari submission yang sudah selesai sebelumnya pada kedua cara.
+  Hasil per frame balapan 120 Hz (2.400-2.800 draw): CP 8,6-8,9 -> 4,6 ms,
+  draw sendiri sekitar 3,5 -> 2,9-3,0 ms (1,35 -> 1,13 us per draw), kerja di
+  luar draw (parsing PM4, register) sekitar 4,2 -> 1,5 ms, resolve 1,15 ->
+  0,12 ms. Validasi final: Quick Race 120 Hz 3 run 119,94 / 119,96 / 119,91
+  fps, p99 8,8-9,8 ms, 0 hitch; 240 Hz 213 fps rata-rata, balapan 191-201
+  fps (CP sibuk sekitar 890-940 ms/s); 60 Hz 60,0 fps p99 17,2; siklus kamera
+  60,0; 3x 60,0 GPU 6,7 ms; ROV 59,99 GPU 7,1 ms. Tanpa crash, tanpa frame
+  warna clear, error sama, capture siklus kamera normal (HUD, spion, kokpit).
+  Profil akhir pada 240 Hz datar: UpdateBindings 6%, jalur tekstur sekitar
+  8%, salin register 9%, flush thread submit saat swap 5%, hash shader
+  LoadShader 2,4%, zona perf trace sendiri sekitar 7% (hanya dengan
+  REX_PERF_TRACE_FILE). Perf trace kini mencatat vblanks (grid/late/forced)
+  dan tunggu readback_publish.
 - Readback CPU pada skala resolusi (15 Oktober 2026): readback resolve
   (readback_resolve=fast) mengecilkan data diskalakan ke 1x untuk memori guest
   dengan resolve_downscale.cs.hlsl, yang mengasumsikan scale_x * scale_y piksel

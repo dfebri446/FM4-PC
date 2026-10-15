@@ -30,6 +30,7 @@
 !/outputs/FM4-build/dump-image.cpp
 !/outputs/FM4-build/e2e/README.txt
 !/outputs/FM4-build/e2e/compare.py
+!/outputs/FM4-build/e2e/cp_profile.py
 !/outputs/FM4-build/e2e/inventory.py
 !/outputs/FM4-build/e2e/frame_graph.py
 !/outputs/FM4-build/e2e/race_clock.py

@@ -81,6 +81,9 @@ class SharedMemory {
   // the range has been fully updated and is usable.
   bool RequestRanges(const std::pair<uint32_t, uint32_t>* ranges, size_t count);
   bool RequestRange(uint32_t start, uint32_t length);
+  // Whether every page of the range is valid, without the lock (the result may
+  // be out of date at once, like a check under the lock).
+  bool AreAllPagesValidUnlocked(uint32_t start, uint32_t length) const;
 
   // Marks the range and, if not exact_range, potentially its surroundings
   // (to up to the first GPU-written page, as an access violation exception
@@ -115,7 +118,8 @@ class SharedMemory {
 
   // Copies resolve readback data to guest memory, skipping pages that a guest
   // write has invalidated since (their guest data is newer than the copy, which
-  // may also come from an earlier frame). Returns the number of skipped pages.
+  // may also come from an earlier frame) and pages that no longer hold GPU
+  // data. May be called from any thread. Returns the number of skipped pages.
   uint32_t CopyReadbackToGuest(uint32_t start, uint32_t length, const uint8_t* data);
 
  protected:
@@ -222,6 +226,9 @@ class SharedMemory {
   // locked when checking or updating validity of pages/ranges and when firing
   // watches.
   rex::thread::global_critical_region global_critical_region_;
+  // Orders CopyReadbackToGuest against invalidations by guest writes, without
+  // the process-wide global lock (the copy may run on its own thread).
+  std::mutex readback_copy_mutex_;
 
   // ***************************************************************************
   // Things below should be fully protected by global_critical_region.
