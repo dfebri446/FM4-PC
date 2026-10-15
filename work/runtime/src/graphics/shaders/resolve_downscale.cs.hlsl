@@ -11,6 +11,16 @@
 // Operates on 32x32 tiled data format used by Xbox 360.
 // Each thread handles one output pixel (one 32x32 tile = 1024 threads).
 //
+// FM4 adaptation: the scaled data is laid out as the ReXGlue texture loads and
+// resolves (and the FM4 full resolves, XeniaTextureResolutionScaledGroupBlocksLog2)
+// address it: in groups of one row of 8 bytes for 8bpp and 16 bytes otherwise.
+// The guest group at guest offset G is stored at G * scale_x * scale_y, as
+// scale_x * scale_y host groups in column-major order (host group column *
+// scale_y + row), and guest block b of the group covers host blocks
+// b * scale_x ... (b + 1) * scale_x - 1 of each of its scale_y rows. The
+// original code assumed scale_x * scale_y consecutive host pixels per guest
+// pixel, which shuffled the pixels of every scaled readback.
+//
 // By default, picks the top-left pixel of each scale_x * scale_y block.
 // When xe_downscale_half_pixel_offset is set, samples from (scale/2, scale/2)
 // within each block to compensate for the half-pixel offset becoming a
@@ -56,28 +66,36 @@ void main(uint3 xe_group_id : SV_GroupID,
   uint pixel_size = 1u << xe_downscale_pixel_size_log2;
   uint tile_size_1x = 32 * 32 * pixel_size;
   uint scale_xy = xe_downscale_scale_x * xe_downscale_scale_y;
-  uint tile_size_scaled = tile_size_1x * scale_xy;
 
-  // Compute offset within each scaled block to sample from.
-  // Without half-pixel correction: sample from (0, 0) = linear offset 0.
+  // Compute the host sample within each scaled guest pixel to sample from.
+  // Without half-pixel correction: sample from (0, 0).
   // With half-pixel correction: sample from (scale/2, scale/2) to compensate
   // for the D3D9-style half-pixel offset shifting content by (N/2, N/2) pixels
   // at Nx resolution.
-  uint block_sample_offset = 0u;
+  uint offset_x = 0u;
+  uint offset_y = 0u;
   [branch] if (xe_downscale_half_pixel_offset != 0u && scale_xy > 1u) {
-    uint offset_x = xe_downscale_scale_x >> 1u;
-    uint offset_y = xe_downscale_scale_y >> 1u;
-    block_sample_offset = offset_x + offset_y * xe_downscale_scale_x;
+    offset_x = xe_downscale_scale_x >> 1u;
+    offset_y = xe_downscale_scale_y >> 1u;
   }
-
-  // Source offset: base of the scaled block plus offset within block
-  uint src_offset = tile_index * tile_size_scaled +
-                    pixel_index * pixel_size * scale_xy +
-                    block_sample_offset * pixel_size;
 
   // Destination offset in 1x buffer
   uint dst_offset = tile_index * tile_size_1x +
                     pixel_index * pixel_size;
+
+  // Source offset: the guest group scaled, the host group within it, and the
+  // host block within that (see the layout above).
+  uint group_bytes_log2 = xe_downscale_pixel_size_log2 == 0u ? 3u : 4u;
+  uint group_blocks_log2 = group_bytes_log2 - xe_downscale_pixel_size_log2;
+  uint group_blocks_mask = (1u << group_blocks_log2) - 1u;
+  uint guest_group_offset = dst_offset & ~((1u << group_bytes_log2) - 1u);
+  uint block_in_group = (dst_offset >> xe_downscale_pixel_size_log2) & group_blocks_mask;
+  uint host_block_x = block_in_group * xe_downscale_scale_x + offset_x;
+  uint host_group_index =
+      (host_block_x >> group_blocks_log2) * xe_downscale_scale_y + offset_y;
+  uint src_offset = guest_group_offset * scale_xy +
+                    (host_group_index << group_bytes_log2) +
+                    ((host_block_x & group_blocks_mask) << xe_downscale_pixel_size_log2);
 
   // Copy pixel based on size
   [branch] switch (xe_downscale_pixel_size_log2) {

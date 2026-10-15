@@ -2382,10 +2382,6 @@
       "provenance": "runtime-fork"
     },
     {
-      "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_downscale_cs.h",
-      "provenance": "runtime-fork"
-    },
-    {
       "path": "work/runtime/src/graphics/shaders/bytecode/d3d12_5_1/resolve_fast_32bpp_1x2xmsaa_cs.h",
       "provenance": "runtime-fork"
     },

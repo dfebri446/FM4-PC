@@ -125,6 +125,35 @@ void TraceReadbackSkip(uint32_t address, uint32_t length, uint32_t skipped) {
                 .count()
          << ' ' << std::hex << address << std::dec << ' ' << length << ' ' << skipped << std::endl;
 }
+// Optional dump of resolve readbacks into guest memory (REX_READBACK_DUMP=<directory>,
+// REX_READBACK_DUMP_ADDRESS=<guest address, hexadecimal>, every
+// REX_READBACK_DUMP_EVERY-th readback of that address, default 120): files
+// <address>_<sequence>.bin with a header line "RBDUMP <RB_COPY_DEST_INFO>
+// <RB_COPY_DEST_PITCH> <length>" (hexadecimal) followed by the bytes copied.
+void DumpReadback(const RegisterFile& regs, uint32_t address, uint32_t length,
+                  const uint8_t* bytes) {
+  static const char* directory = std::getenv("REX_READBACK_DUMP");
+  if (!directory || !*directory) return;
+  static const uint32_t dump_address = [] {
+    const char* value = std::getenv("REX_READBACK_DUMP_ADDRESS");
+    return value ? uint32_t(std::strtoul(value, nullptr, 16)) : uint32_t(0);
+  }();
+  static const uint32_t every = [] {
+    const char* value = std::getenv("REX_READBACK_DUMP_EVERY");
+    return value ? std::max(1, std::atoi(value)) : 120;
+  }();
+  static uint32_t sequence = 0;
+  if (address != dump_address || sequence++ % every) return;
+  char name[32];
+  std::snprintf(name, sizeof(name), "%08x_%06u.bin", address, sequence - 1);
+  std::ofstream output(std::filesystem::path(directory) / name, std::ios::binary);
+  char header[64];
+  int header_length = std::snprintf(header, sizeof(header), "RBDUMP %x %x %x\n",
+                                    regs[XE_GPU_REG_RB_COPY_DEST_INFO],
+                                    regs[XE_GPU_REG_RB_COPY_DEST_PITCH], length);
+  output.write(header, header_length);
+  output.write(reinterpret_cast<const char*>(bytes), length);
+}
 void TraceResolvePublication(uint32_t address, uint32_t length, const uint8_t* bytes) {
   static std::ofstream output = [] {
     const char* path = std::getenv("REX_RESOLVE_PUBLICATION_TRACE");
@@ -4438,6 +4467,8 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
       perf_trace::CountReadback(written_length);
       TraceResolvePublication(written_address, written_length,
                               static_cast<const uint8_t*>(rb.mapped_data[read_index]));
+      DumpReadback(*register_file_, written_address, written_length,
+                   static_cast<const uint8_t*>(rb.mapped_data[read_index]));
     }
   }
   return true;

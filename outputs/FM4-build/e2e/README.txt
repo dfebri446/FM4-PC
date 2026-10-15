@@ -152,6 +152,11 @@ renderer work; all write files outside the repository):
   REX_STALE_PAGE_FIX=1 invalidates the stale pages so they are uploaded again.
 - REX_READBACK_SKIP_TRACE=<file>: resolve readbacks that left pages alone
   because the guest wrote them after the resolve.
+- REX_READBACK_DUMP=<directory> with REX_READBACK_DUMP_ADDRESS=<guest address,
+  hexadecimal> (REX_READBACK_DUMP_EVERY, default 120): the bytes a resolve
+  readback copies into guest memory, after a line with RB_COPY_DEST_INFO,
+  RB_COPY_DEST_PITCH and the length; for checking the downscaled readbacks of
+  resolution scaling against 1x.
 - REX_BIN_TRACE=<file> (REX_BIN_TRACE_EVERY, default 10): every draw packet the
   command processor reaches, per shader pair, bin select and mask, and whether
   predication skipped it; tells "the game did not send it" from "skipped".

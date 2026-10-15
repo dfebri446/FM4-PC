@@ -411,8 +411,19 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   skala 3 (3840x2160) 56,5 fps, p99 24,5 ms, GPU 16,7 ms; gambar tajam, menu,
   pra-balapan dan balapan normal, tanpa frame warna clear. Launcher:
   Build.ps1 -Action run -ResolutionScale 2|3. Belum diuji: photo mode, replay,
-  karier, Autovista dan readback CPU dari resolve diskalakan (shader downscale
-  ReXGlue memakai tata letak per piksel, bukan grup).
+  karier dan Autovista.
+- Readback CPU pada skala resolusi (15 Oktober 2026): readback resolve
+  (readback_resolve=fast) mengecilkan data diskalakan ke 1x untuk memori guest
+  dengan resolve_downscale.cs.hlsl, yang mengasumsikan scale_x * scale_y piksel
+  host berurutan per piksel guest, padahal data ditulis dalam grup satu baris
+  16 byte (8 byte untuk 8bpp) dengan grup host kolom-major. Akibatnya piksel
+  ganjil setiap grup menyalin tetangganya (tepi bergerigi selang-seling di
+  memori guest). Shader kini memakai tata letak grup dan dikompilasi saat
+  build bersama shader resolve FM4 (bytecode ReXGlue lamanya dihapus dari
+  repo). Dump readback (REX_READBACK_DUMP) resolve 2_10_10_10 1280 x 224 di
+  0x1ba91000, selisih luma kolom genap/ganjil: lama 2x 0,44, baru 2x 1,01, 1x
+  1,02 (1 = gambar normal). Quick Race 2x 58,6 fps, 3x 58,6 fps, tanpa frame
+  warna clear.
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------

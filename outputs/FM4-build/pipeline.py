@@ -133,18 +133,25 @@ def fetch_thirdparty(root):
     marker.write_text(json.dumps(wanted))
 
 def compile_resolve_shaders(root, fxc):
-    """FM4 resolve shaders -> DXBC headers; only when their sources changed."""
+    """FM4 resolve shaders and the scaled readback downscale shader -> DXBC headers; only
+    when their sources changed."""
     source = root/'runtime-source'
-    shader_source = source/'src/graphics/shaders/fm4-resolve'
-    inputs = hashlib.sha256(b''.join(path.read_bytes() for path in sorted(shader_source.glob('*.xesl*'))))
+    shaders = source/'src/graphics/shaders'
+    shader_source = shaders/'fm4-resolve'
+    downscale = shaders/'resolve_downscale.cs.hlsl'
+    inputs = hashlib.sha256(b''.join(path.read_bytes() for path in
+                                     sorted(shader_source.glob('*.xesl*'))+[downscale]))
     marker = source/'.fm4-resolve-shaders'
-    outputs = [source/f'src/graphics/shaders/bytecode/d3d12_5_1/{name}_cs.h' for name in RESOLVE_SHADERS]
+    bytecode = shaders/'bytecode/d3d12_5_1'
+    outputs = [bytecode/f'{name}_cs.h' for name in RESOLVE_SHADERS]+[bytecode/'resolve_downscale_cs.h']
     if marker.is_file() and marker.read_text() == inputs.hexdigest() and all(path.is_file() for path in outputs):
         return
+    flags = ['/T','cs_5_1','/O3','/Qstrip_reflect','/Qstrip_debug','/Qstrip_priv','/Gfp','/nologo']
     for name,output in zip(RESOLVE_SHADERS,outputs):
-        run([fxc,'/D','SHADING_LANGUAGE_HLSL_XE=1','/T','cs_5_1','/O3',
-             '/Qstrip_reflect','/Qstrip_debug','/Qstrip_priv','/Gfp','/nologo',
+        run([fxc,'/D','SHADING_LANGUAGE_HLSL_XE=1',*flags,
              '/Fh',output,'/Vn',name+'_cs',shader_source/(name+'.cs.xesl')],log=root/f'logs/{name}.log')
+    run([fxc,*flags,'/Fh',outputs[-1],'/Vn','resolve_downscale_cs',downscale],
+        log=root/'logs/resolve_downscale.log')
     marker.write_text(inputs.hexdigest())
 
 def build_runtime(root, fxc, jobs):
