@@ -130,9 +130,12 @@ shader hashes, primitive type and index count, pixel shader flags, normalized
 depth control and color mask, the registers that decide whether the draw
 overwrites what it claims (depth/stencil control and reference, color mask,
 blend, surface, render target infos, viewport, scissors, window offset) and the
-transfers as [slot, start tile, end tile, source render target key]; see
-kTransferDrawRegisters in work\runtime\src\graphics\d3d12\command_processor.cpp
-for the column order.
+transfers as [slot, start tile, end tile, source render target key], then the
+clear check (u<code>) and the clear rectangle bounds and transfer cutout that
+the render target cache used; see kTransferDrawRegisters in
+work\runtime\src\graphics\d3d12\command_processor.cpp for the column order and
+the codes. --arg=--rtv_uniform_draws=false turns the clear handling (transfer
+cutouts and 4x MSAA clear remapping) off for comparisons.
 
 Data race and stale data checks (for the RTV missing-road issue, usable for any
 renderer work; all write files outside the repository):
@@ -180,7 +183,8 @@ game and the vblank rate. race_clock.py reads the race timer of the captures
 - REX_DRAW_DUMP=<file> with REX_DRAW_DUMP_VS=<vertex shader hash, low 32 bits>
   (REX_DRAW_DUMP_EVERY, default 30): the vertex fetch constants, index and
   vertex data hashes and all vertex shader float constants of matching draws,
-  to compare the same draw between runs.
+  to compare the same draw between runs, and the positions of the first three
+  vertices computed on the CPU.
 
 Comparing runs
 --------------

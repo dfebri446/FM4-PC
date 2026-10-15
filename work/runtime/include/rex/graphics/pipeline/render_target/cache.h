@@ -175,6 +175,40 @@ class RenderTargetCache {
   virtual bool Update(bool is_rasterization_done, reg::RB_DEPTHCONTROL normalized_depth_control,
                       uint32_t normalized_color_mask, const Shader& vertex_shader);
 
+  // A screen-space rectangle (kRectangleList, 3 vertices, clipping disabled)
+  // that writes the same values to every sample of the pixels it covers, such
+  // as a clear. Set by the implementation for the next Update only (host render
+  // targets). Ownership transfers into the tiles that the rectangle covers
+  // entirely are skipped for the slots it fully overwrites ([0] depth and
+  // stencil, [1...] every channel of a color render target), and the MSAA
+  // sample count of the next draw using its render targets is remembered per
+  // signature, so a 4x MSAA clear at half the pitch can be drawn into the render
+  // targets of that sample count instead (scale_x and scale_y: render target
+  // pixels per guest pixel of the draw). bounds: the rectangle in guest pixels
+  // (EstimateRectangleBounds), needed for skipping transfers.
+  struct UniformDraw {
+    uint64_t signature = 0;
+    uint32_t overwritten_slots = 0;
+    uint32_t scale_x = 1;
+    uint32_t scale_y = 1;
+    bool bounds_valid = false;
+    float bounds[4] = {};
+  };
+  void SetUniformDraw(const UniformDraw& uniform_draw) { uniform_draw_ = uniform_draw; }
+  // See DrawExtentEstimator::EstimateRectangleBounds.
+  bool EstimateRectangleBounds(const Shader& vertex_shader, float bounds_out[4],
+                               bool* flat_z_out, uint32_t interpolator_mask,
+                               bool* flat_interpolators_out) {
+    return draw_extent_estimator_.EstimateRectangleBounds(
+        vertex_shader, bounds_out, flat_z_out, interpolator_mask, flat_interpolators_out);
+  }
+  // The sample count that the render targets of the last uniform draw with this
+  // signature were next used with, 4x if not known.
+  xenos::MsaaSamples GetUniformDrawNextMsaa(uint64_t signature) const {
+    auto it = uniform_draw_next_msaa_.find(signature);
+    return it != uniform_draw_next_msaa_.end() ? it->second : xenos::MsaaSamples::k4X;
+  }
+
   // Returns bits where 0 is whether a depth render target is currently bound on
   // the host and 1... are whether the same applies to color render targets, and
   // formats (resource formats, but if needed, with gamma taken into account) of
@@ -189,6 +223,9 @@ class RenderTargetCache {
     return last_update_ranges_[slot];
   }
   uint32_t AppendLastUpdateTransfers(std::string& out) const;
+  // Diagnostics: the uniform draw of the last Update as received (slots, bounds)
+  // and the transfer cutout made from it (slots, x, y, width, height).
+  std::string DescribeLastUpdateUniformDraw() const;
 
  protected:
   RenderTargetCache(const RegisterFile& register_file, const memory::Memory& memory,
@@ -695,6 +732,16 @@ class RenderTargetCache {
   // consecutive in the array.
   std::vector<Transfer> last_update_transfers_[1 + xenos::kMaxColorRenderTargets];
   std::pair<uint32_t, uint32_t> last_update_ranges_[1 + xenos::kMaxColorRenderTargets] = {};
+
+  UniformDraw uniform_draw_;
+  UniformDraw last_update_uniform_draw_;
+  Transfer::Rectangle last_update_overwrite_cutout_ = {};
+  uint32_t last_update_overwrite_cutout_slots_ = 0;
+  // The render targets of the last uniform draw (keys with 1x MSAA), until a
+  // draw that isn't uniform uses one of them.
+  uint64_t pending_uniform_draw_signature_ = 0;
+  RenderTargetKey pending_uniform_draw_keys_[1 + xenos::kMaxColorRenderTargets];
+  std::unordered_map<uint64_t, xenos::MsaaSamples> uniform_draw_next_msaa_;
 };
 
 }  // namespace rex::graphics

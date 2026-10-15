@@ -400,6 +400,18 @@ void RenderTargetCache::ClearCache() {
   }
 }
 
+std::string RenderTargetCache::DescribeLastUpdateUniformDraw() const {
+  const UniformDraw& uniform_draw = last_update_uniform_draw_;
+  if (!uniform_draw.bounds_valid) {
+    return std::string();
+  }
+  const Transfer::Rectangle& cutout = last_update_overwrite_cutout_;
+  return fmt::format("s{:x}:{},{},{},{}>c{:x}:{},{},{},{}", uniform_draw.overwritten_slots,
+                     uniform_draw.bounds[0], uniform_draw.bounds[1], uniform_draw.bounds[2],
+                     uniform_draw.bounds[3], last_update_overwrite_cutout_slots_, cutout.x_pixels,
+                     cutout.y_pixels, cutout.width_pixels, cutout.height_pixels);
+}
+
 uint32_t RenderTargetCache::AppendLastUpdateTransfers(std::string& out) const {
   if (GetPath() != Path::kHostRenderTargets)
     return 0;
@@ -423,6 +435,12 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
                                uint32_t normalized_color_mask, const Shader& vertex_shader) {
   const RegisterFile& regs = register_file();
   bool interlock_barrier_only = GetPath() == Path::kPixelShaderInterlock;
+  // For this update only.
+  const UniformDraw uniform_draw = uniform_draw_;
+  uniform_draw_ = UniformDraw();
+  last_update_uniform_draw_ = uniform_draw;
+  last_update_overwrite_cutout_ = {};
+  last_update_overwrite_cutout_slots_ = 0;
 
   auto rb_surface_info = regs.Get<reg::RB_SURFACE_INFO>();
   xenos::MsaaSamples msaa_samples = rb_surface_info.msaa_samples;
@@ -595,7 +613,8 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
                    interlock_barrier_only
                        ? REXCVAR_GET(execute_unclipped_draw_vs_on_cpu_for_psi_render_backend)
                        : true,
-                   vertex_shader));
+                   vertex_shader) *
+                   uniform_draw.scale_y);
 
   // Sorted by EDRAM base and then by index in the pipeline - for simplicity,
   // treat render targets placed closer to the end of the EDRAM as truncating
@@ -709,13 +728,75 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
   // draw with whatever contents currently are in the render target in this
   // case).
 
+  // The render target pixels that a uniform draw covers entirely, for the slots
+  // it overwrites: transfers of tile ranges within them would be overwritten.
+  Transfer::Rectangle overwrite_cutout = {};
+  uint32_t overwrite_cutout_slots = 0;
+  if (!interlock_barrier_only && uniform_draw.bounds_valid &&
+      (uniform_draw.overwritten_slots & depth_and_color_rts_used_bits)) {
+    const float* bounds = uniform_draw.bounds;
+    draw_util::Scissor scissor;
+    draw_util::GetScissor(regs, scissor, false);
+    // Pixels with all samples inside: [ceil(x0), floor(x1)) in guest pixels.
+    int32_t x0 = std::max(int32_t(std::ceil(bounds[0])), int32_t(scissor.offset[0]));
+    int32_t y0 = std::max(int32_t(std::ceil(bounds[1])), int32_t(scissor.offset[1]));
+    int32_t x1 =
+        std::min(int32_t(std::floor(bounds[2])), int32_t(scissor.offset[0] + scissor.extent[0]));
+    int32_t y1 =
+        std::min(int32_t(std::floor(bounds[3])), int32_t(scissor.offset[1] + scissor.extent[1]));
+    x0 = std::max(x0, int32_t(0));
+    y0 = std::max(y0, int32_t(0));
+    if (x1 > x0 && y1 > y0) {
+      overwrite_cutout.x_pixels = uint32_t(x0) * uniform_draw.scale_x;
+      overwrite_cutout.y_pixels = uint32_t(y0) * uniform_draw.scale_y;
+      overwrite_cutout.width_pixels = uint32_t(x1 - x0) * uniform_draw.scale_x;
+      overwrite_cutout.height_pixels = uint32_t(y1 - y0) * uniform_draw.scale_y;
+      overwrite_cutout_slots = uniform_draw.overwritten_slots;
+    }
+  }
+  last_update_overwrite_cutout_ = overwrite_cutout;
+  last_update_overwrite_cutout_slots_ = overwrite_cutout_slots;
   for (uint32_t i = 0; i < edram_bases_sorted_count; ++i) {
     const std::pair<uint32_t, uint32_t>& rt_base_index = edram_bases_sorted[i];
     uint32_t rt_bit_index = rt_base_index.second;
     last_update_ranges_[rt_bit_index] = {uint32_t(rt_keys[rt_bit_index].base_tiles),
                                          rt_lengths_tiles[i]};
     ChangeOwnership(rt_keys[rt_bit_index], 0, rt_lengths_tiles[i],
-                    interlock_barrier_only ? nullptr : &last_update_transfers_[rt_bit_index]);
+                    interlock_barrier_only ? nullptr : &last_update_transfers_[rt_bit_index],
+                    (overwrite_cutout_slots >> rt_bit_index) & 1 ? &overwrite_cutout : nullptr);
+  }
+
+  // Remember the sample count that the render targets of a uniform draw are
+  // next used with (keys compared without the sample count).
+  if (!interlock_barrier_only) {
+    auto without_msaa = [](RenderTargetKey key) {
+      key.msaa_samples = xenos::MsaaSamples::k1X;
+      return key;
+    };
+    if (uniform_draw.signature) {
+      pending_uniform_draw_signature_ = uniform_draw.signature;
+      for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
+        pending_uniform_draw_keys_[i] = (depth_and_color_rts_used_bits >> i) & 1
+                                            ? without_msaa(rt_keys[i])
+                                            : RenderTargetKey();
+      }
+    } else if (pending_uniform_draw_signature_) {
+      for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
+        if (!((depth_and_color_rts_used_bits >> i) & 1)) {
+          continue;
+        }
+        RenderTargetKey key = without_msaa(rt_keys[i]);
+        bool matches = false;
+        for (const RenderTargetKey& pending_key : pending_uniform_draw_keys_) {
+          matches |= !pending_key.IsEmpty() && pending_key == key;
+        }
+        if (matches) {
+          uniform_draw_next_msaa_[pending_uniform_draw_signature_] = rt_keys[i].msaa_samples;
+          pending_uniform_draw_signature_ = 0;
+          break;
+        }
+      }
+    }
   }
 
   if (interlock_barrier_only) {

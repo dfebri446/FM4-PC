@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cstdint>
+#include <cstring>
 
 #include <rex/assert.h>
 #include <rex/cvar.h>
@@ -21,6 +22,7 @@
 #include <rex/graphics/registers.h>
 #include <rex/graphics/util/draw_extent_estimator.h>
 #include <rex/graphics/xenos.h>
+#include <rex/math.h>
 #include <rex/memory.h>
 #include <rex/ui/graphics_util.h>
 
@@ -67,11 +69,29 @@ namespace rex::graphics {
 void DrawExtentEstimator::PositionYExportSink::Export(ucode::ExportRegister export_register,
                                                       const float* value, uint32_t value_mask) {
   if (export_register == ucode::ExportRegister::kVSPosition) {
+    if (value_mask & 0b0001) {
+      position_x_ = value[0];
+    }
     if (value_mask & 0b0010) {
       position_y_ = value[1];
     }
+    if (value_mask & 0b0100) {
+      position_z_ = value[2];
+    }
     if (value_mask & 0b1000) {
       position_w_ = value[3];
+    }
+  } else if (uint32_t(export_register) <= uint32_t(ucode::ExportRegister::kVSInterpolator15)) {
+    // Partial writes are not tracked: an interpolator counts as written once
+    // all its components are.
+    uint32_t index = uint32_t(export_register);
+    for (uint32_t i = 0; i < 4; ++i) {
+      if (value_mask & (uint32_t(1) << i)) {
+        interpolators_[index][i] = value[i];
+      }
+    }
+    if ((value_mask & 0b1111) == 0b1111) {
+      interpolators_written_ |= uint32_t(1) << index;
     }
   } else if (export_register == ucode::ExportRegister::kVSPointSizeEdgeFlagKillVertex) {
     if (value_mask & 0b0001) {
@@ -253,6 +273,166 @@ uint32_t DrawExtentEstimator::EstimateVertexMaxY(const Shader& vertex_shader) {
   return (uint32_t(std::max(int32_t(0), max_y_24p8)) +
           ((rb_surface_info.msaa_samples == xenos::MsaaSamples::k1X) ? 127 : 255)) >>
          8;
+}
+
+bool DrawExtentEstimator::EstimateRectangleBounds(const Shader& vertex_shader,
+                                                  float bounds_out[4], bool* flat_z_out,
+                                                  uint32_t interpolator_mask,
+                                                  bool* flat_interpolators_out) {
+  const RegisterFile& regs = register_file_;
+  auto vgt_draw_initiator = regs.Get<reg::VGT_DRAW_INITIATOR>();
+  if (vgt_draw_initiator.prim_type != xenos::PrimitiveType::kRectangleList ||
+      vgt_draw_initiator.num_indices != 3 ||
+      (vgt_draw_initiator.source_select != xenos::SourceSelect::kDMA &&
+       vgt_draw_initiator.source_select != xenos::SourceSelect::kAutoIndex) ||
+      !ShaderInterpreter::CanInterpretShader(vertex_shader)) {
+    return false;
+  }
+  uint32_t vertex_indices[3];
+  if (vgt_draw_initiator.source_select == xenos::SourceSelect::kDMA) {
+    auto vgt_dma_size = regs.Get<reg::VGT_DMA_SIZE>();
+    if (vgt_dma_size.num_words < 3) {
+      return false;
+    }
+    xenos::Endian index_endian = vgt_dma_size.swap_mode;
+    uint32_t index_buffer_base = regs[XE_GPU_REG_VGT_DMA_BASE];
+    const void* index_buffer;
+    if (vgt_draw_initiator.index_size == xenos::IndexFormat::kInt16) {
+      if (index_endian == xenos::Endian::k8in32) {
+        index_endian = xenos::Endian::k8in16;
+      } else if (index_endian == xenos::Endian::k16in32) {
+        index_endian = xenos::Endian::kNone;
+      }
+      index_buffer = memory_.TranslatePhysical(index_buffer_base & ~uint32_t(1));
+    } else {
+      index_buffer = memory_.TranslatePhysical(index_buffer_base & ~uint32_t(3));
+    }
+    for (uint32_t i = 0; i < 3; ++i) {
+      uint32_t vertex_index = vgt_draw_initiator.index_size == xenos::IndexFormat::kInt16
+                                  ? static_cast<const uint16_t*>(index_buffer)[i]
+                                  : static_cast<const uint32_t*>(index_buffer)[i];
+      vertex_indices[i] = xenos::GpuSwap(vertex_index, index_endian) & 0xFFFFFF;
+    }
+  } else {
+    for (uint32_t i = 0; i < 3; ++i) {
+      vertex_indices[i] = i;
+    }
+  }
+  uint32_t index_offset = regs.Get<reg::VGT_INDX_OFFSET>().indx_offset;
+  uint32_t min_index = regs.Get<reg::VGT_MIN_VTX_INDX>().min_indx;
+  uint32_t max_index = regs.Get<reg::VGT_MAX_VTX_INDX>().max_indx;
+
+  // As in draw_util::GetHostViewportInfo with clipping disabled.
+  auto pa_cl_vte_cntl = regs.Get<reg::PA_CL_VTE_CNTL>();
+  float scale[] = {
+      pa_cl_vte_cntl.vport_x_scale_ena ? regs.Get<float>(XE_GPU_REG_PA_CL_VPORT_XSCALE) : 1.0f,
+      pa_cl_vte_cntl.vport_y_scale_ena ? regs.Get<float>(XE_GPU_REG_PA_CL_VPORT_YSCALE) : 1.0f,
+  };
+  float offset[] = {
+      pa_cl_vte_cntl.vport_x_offset_ena ? regs.Get<float>(XE_GPU_REG_PA_CL_VPORT_XOFFSET) : 0.0f,
+      pa_cl_vte_cntl.vport_y_offset_ena ? regs.Get<float>(XE_GPU_REG_PA_CL_VPORT_YOFFSET) : 0.0f,
+  };
+  if (regs.Get<reg::PA_SU_SC_MODE_CNTL>().vtx_window_offset_enable) {
+    auto pa_sc_window_offset = regs.Get<reg::PA_SC_WINDOW_OFFSET>();
+    offset[0] += float(pa_sc_window_offset.window_x_offset);
+    offset[1] += float(pa_sc_window_offset.window_y_offset);
+  }
+  if (REXCVAR_GET(half_pixel_offset) &&
+      regs.Get<reg::PA_SU_VTX_CNTL>().pix_center == xenos::PixelCenter::kD3DZero) {
+    offset[0] += 0.5f;
+    offset[1] += 0.5f;
+  }
+
+  bounds_out[0] = bounds_out[1] = FLT_MAX;
+  bounds_out[2] = bounds_out[3] = -FLT_MAX;
+  shader_interpreter_.SetShader(vertex_shader);
+  PositionYExportSink export_sink;
+  shader_interpreter_.SetExportSink(&export_sink);
+  bool valid = true;
+  bool flat_z = true;
+  bool flat_interpolators = true;
+  std::optional<float> first_z, first_w;
+  float first_interpolators[16][4];
+  float corner_positions[3][2] = {};
+  for (uint32_t i = 0; i < 3 && valid; ++i) {
+    uint32_t vertex_index =
+        std::min(max_index, std::max(min_index, (vertex_indices[i] + index_offset) & 0xFFFFFF));
+    export_sink.Reset();
+    shader_interpreter_.temp_registers()[0] = float(vertex_index);
+    shader_interpreter_.Execute();
+    if (export_sink.vertex_kill().has_value() &&
+        (export_sink.vertex_kill().value() & ~(UINT32_C(1) << 31))) {
+      valid = false;
+      break;
+    }
+    if (!export_sink.position_x().has_value() || !export_sink.position_y().has_value()) {
+      valid = false;
+      break;
+    }
+    float position[] = {export_sink.position_x().value(), export_sink.position_y().value()};
+    if ((export_sink.interpolators_written() & interpolator_mask) != interpolator_mask) {
+      flat_interpolators = false;
+    }
+    if (i == 0) {
+      first_z = export_sink.position_z();
+      first_w = export_sink.position_w();
+      for (uint32_t j = 0; j < 16; ++j) {
+        std::memcpy(first_interpolators[j], export_sink.interpolator(j), sizeof(float) * 4);
+      }
+    } else {
+      flat_z &= export_sink.position_z() == first_z && export_sink.position_w() == first_w;
+      uint32_t interpolators_remaining = interpolator_mask;
+      uint32_t j;
+      while (rex::bit_scan_forward(interpolators_remaining, &j)) {
+        interpolators_remaining &= ~(uint32_t(1) << j);
+        flat_interpolators &=
+            std::memcmp(first_interpolators[j], export_sink.interpolator(j), sizeof(float) * 4) == 0;
+      }
+    }
+    if (!pa_cl_vte_cntl.vtx_xy_fmt) {
+      if (!export_sink.position_w().has_value()) {
+        valid = false;
+        break;
+      }
+      position[0] /= export_sink.position_w().value();
+      position[1] /= export_sink.position_w().value();
+    }
+    for (uint32_t j = 0; j < 2; ++j) {
+      float pixel = position[j] * scale[j] + offset[j];
+      // NaN fails both comparisons.
+      if (!(pixel >= -16384.0f && pixel <= 16384.0f)) {
+        valid = false;
+        break;
+      }
+      corner_positions[i][j] = pixel;
+      bounds_out[j] = std::min(bounds_out[j], pixel);
+      bounds_out[2 + j] = std::max(bounds_out[2 + j], pixel);
+    }
+  }
+  shader_interpreter_.SetExportSink(nullptr);
+  // An axis-aligned rectangle has its 3 vertices at 3 different corners of their
+  // bounding box (a skewed one would cover less than the box).
+  if (valid) {
+    uint32_t corners = 0;
+    for (uint32_t i = 0; i < 3; ++i) {
+      bool right = corner_positions[i][0] == bounds_out[2];
+      bool bottom = corner_positions[i][1] == bounds_out[3];
+      if ((!right && corner_positions[i][0] != bounds_out[0]) ||
+          (!bottom && corner_positions[i][1] != bounds_out[1])) {
+        valid = false;
+        break;
+      }
+      corners |= uint32_t(1) << (uint32_t(right) | (uint32_t(bottom) << 1));
+    }
+    valid = valid && rex::bit_count(corners) == 3;
+  }
+  if (flat_z_out) {
+    *flat_z_out = valid && flat_z;
+  }
+  if (flat_interpolators_out) {
+    *flat_interpolators_out = valid && flat_interpolators;
+  }
+  return valid;
 }
 
 uint32_t DrawExtentEstimator::EstimateMaxY(bool try_to_estimate_vertex_max_y,

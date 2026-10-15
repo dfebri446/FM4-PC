@@ -343,6 +343,30 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   setengah pitch dan pass berikutnya di format asli (sekitar 0,5-0,8 ms di 1x).
   Kandidat berikutnya: menggambar clear itu langsung ke render target format
   asli (viewport x2), sehingga transfer masuk dan keluar hilang.
+- Sisa transfer clear (B2, 15 Oktober 2026, rtv_uniform_draws, default on):
+  clear FM4 berupa rectangle list 3 vertex, clipping mati, depth/stencil
+  ALWAYS + REPLACE tanpa blending; pixel shader-nya membaca warna dari
+  interpolator (sama di ketiga vertex), clear depth saja memakai mode EDRAM
+  kDepthOnly, dan satu target sering dibersihkan dengan beberapa rectangle
+  (240 + 16, 480 + 32 piksel). Dua bagian: (1) tile yang seluruhnya ditimpa
+  rectangle tidak ditransfer (cutout per slot: depth hanya bila depth dan
+  stencil ditulis penuh, warna hanya bila semua kanal ditulis); (2) clear 4x
+  MSAA setengah pitch yang menulis nilai sama ke semua sampel (pixel shader
+  tanpa tekstur/posisi, interpolator dan Z sama di semua vertex) digambar
+  langsung ke render target 2x atau 1x yang memakai EDRAM itu berikutnya
+  (dipelajari per tanda tangan clear), dengan RB_SURFACE_INFO untuk draw itu
+  saja diganti ke pitch x2 dan viewport/scissor diskalakan seperti resolution
+  scaling (X x2, Y x2 untuk 1x), sehingga setiap sampel guest jatuh ke satu
+  piksel/sampel host yang sama posisinya di EDRAM. Rectangle harus sejajar
+  sumbu (3 vertex di 3 sudut berbeda). Frame balapan (frame graph): 1x pass
+  bertransfer 1,57 -> 0,45 ms, GPU sekitar 7,7 -> 6,4-7,5 ms; 3x total 18,9 ->
+  15,2 ms, pass bertransfer 9,4 -> 2,0 ms. Pada beban draw sama (2.400-2.800
+  per frame) 57,2 vs 52,5 fps. Menu A/B identik (selisih hanya teks yang
+  bergulir); Quick Race 3 run 56,7-57,8 fps, siklus kamera 58,3 fps, skala 3x
+  tanpa frame warna clear, error sama dengan baseline. --rtv_uniform_draws=false
+  mematikannya untuk perbandingan. Sisa: pass 16_16 520/4x (depth tanpa
+  stencil ditulis, sekitar 1 ms di 3x) dan pass komposit akhir 1280/1x (draw
+  layar penuh bertekstur 6 rectangle / triangle strip, sekitar 0,5 ms di 3x).
 - Skala resolusi (15 Oktober 2026): draw_resolution_scale 2 dan 3 berjalan di
   RTV, tetapi semua isi yang lewat resolve full (scene 7e3 -> 2_10_10_10 dan
   rantai post-processing) tampil bergerigi seperti sisir, juga tanpa MSAA.

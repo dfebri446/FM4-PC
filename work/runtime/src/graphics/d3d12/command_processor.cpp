@@ -87,6 +87,13 @@ REXCVAR_DEFINE_STRING(rtv_occlusion_debug, "", "GPU/D3D12",
                       "queries), fake (host queries, but report N samples for awaited intervals; "
                       "N from query_occlusion_fake_sample_count)");
 
+REXCVAR_DEFINE_BOOL(rtv_uniform_draws, true, "GPU/D3D12",
+                    "RTV path: for screen-space rectangles writing the same values to every "
+                    "sample (clears), skip the ownership transfers of what they overwrite, and "
+                    "draw 4x MSAA clears at half the pitch into the render targets their EDRAM "
+                    "is next used with")
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
 REXCVAR_DEFINE_BOOL(d3d12_submit_thread, false, "GPU/D3D12",
                     "Replay and execute command lists on a separate thread, taking the "
                     "D3D12 recording cost off the command processor thread")
@@ -250,7 +257,13 @@ struct DrawListEntry {
 // primitive type, index count, pixel shader flags (1 writes depth, 2 kills
 // pixels, 4 position input, 8 texture fetches), normalized depth control and
 // color mask, the registers of kTransferDrawRegisters, then the transfers as
-// slot:start-end:source key.
+// [slot,start tiles,end tiles,source key], "u" with the uniform draw check
+// (0 not checked, 1-7 the rectangle overwrite check that failed: 1 primitive,
+// clipping or EDRAM mode, 2 polygon offset or sample mask, 3 alpha, 4 pixel
+// shader kill or memexport, 5 depth function, 6 stencil function, 7 blending;
+// 9 an overwriting rectangle with values that differ between samples, 10 a
+// uniform one, 11 its vertices could not be evaluated) and the uniform draw as
+// received by the render target cache (s<slots>:<bounds>>c<slots>:<cutout>).
 constexpr uint32_t kTransferDrawRegisters[] = {
     XE_GPU_REG_RB_MODECONTROL,         XE_GPU_REG_RB_DEPTHCONTROL,
     XE_GPU_REG_RB_STENCILREFMASK,      XE_GPU_REG_RB_STENCILREFMASK_BF,
@@ -266,6 +279,8 @@ constexpr uint32_t kTransferDrawRegisters[] = {
     XE_GPU_REG_PA_CL_VPORT_YOFFSET,    XE_GPU_REG_PA_CL_VPORT_ZSCALE,
     XE_GPU_REG_PA_CL_VPORT_ZOFFSET,
 };
+// Diagnostics: why the last draw was or wasn't a uniform draw.
+uint32_t uniform_draw_debug_reason = 0;
 struct TransferDrawTrace {
   std::ofstream output;
   uint32_t every = 60;
@@ -305,7 +320,98 @@ void TraceTransferDraw(const RegisterFile& regs, const RenderTargetCache& cache,
       << uint32_t(primitive_type) << ' ' << index_count << ' ' << ps_flags << ' '
       << depth_control.value << ' ' << color_mask;
   for (uint32_t index : kTransferDrawRegisters) out << ' ' << regs.values[index];
-  out << std::dec << ' ' << transfers << '\n';
+  out << std::dec << ' ' << transfers << " u" << uniform_draw_debug_reason << ' '
+      << cache.DescribeLastUpdateUniformDraw() << '\n';
+  uniform_draw_debug_reason = 0;
+}
+
+// Whether a draw is a screen-space rectangle (kRectangleList, 3 vertices,
+// clipping disabled) that replaces what it covers in its render targets, as FM4
+// clears do, often with 4x MSAA at half the pitch. overwritten_slots_out: the
+// render targets it overwrites entirely ([0] depth and stencil, [1...] every
+// channel of a color render target). values_may_be_uniform_out: the pixel
+// shader output can only depend on the interpolators (no textures, position
+// input or depth output), so the draw writes the same values to every sample if
+// its interpolators and Z are the same at all vertices.
+bool GetRectangleOverwrite(const RegisterFile& regs, xenos::PrimitiveType primitive_type,
+                           uint32_t index_count, const Shader* pixel_shader,
+                           uint32_t ps_param_gen_pos, reg::RB_DEPTHCONTROL depth_control,
+                           uint32_t color_mask, uint32_t& overwritten_slots_out,
+                           bool& values_may_be_uniform_out) {
+  overwritten_slots_out = 0;
+  values_may_be_uniform_out = false;
+  uniform_draw_debug_reason = 1;
+  xenos::EdramMode edram_mode = regs.Get<reg::RB_MODECONTROL>().edram_mode;
+  if (primitive_type != xenos::PrimitiveType::kRectangleList || index_count != 3 ||
+      !regs.Get<reg::PA_CL_CLIP_CNTL>().clip_disable ||
+      (edram_mode != xenos::EdramMode::kColorDepth && edram_mode != xenos::EdramMode::kDepthOnly)) {
+    return false;
+  }
+  uniform_draw_debug_reason = 2;
+  auto pa_su_sc_mode_cntl = regs.Get<reg::PA_SU_SC_MODE_CNTL>();
+  if (pa_su_sc_mode_cntl.poly_offset_front_enable || pa_su_sc_mode_cntl.poly_offset_back_enable ||
+      pa_su_sc_mode_cntl.poly_offset_para_enable || (regs[XE_GPU_REG_PA_SC_AA_MASK] & 0xF) != 0xF) {
+    return false;
+  }
+  uniform_draw_debug_reason = 3;
+  // Without a pixel shader (no color written), coverage doesn't depend on alpha
+  // (see draw_util::IsPixelShaderNeededWithRasterization).
+  auto rb_colorcontrol = regs.Get<reg::RB_COLORCONTROL>();
+  if (pixel_shader && (rb_colorcontrol.alpha_to_mask_enable ||
+                       (rb_colorcontrol.alpha_test_enable &&
+                        rb_colorcontrol.alpha_func != xenos::CompareFunction::kAlways))) {
+    return false;
+  }
+  uniform_draw_debug_reason = 4;
+  if (pixel_shader && (pixel_shader->kills_pixels() || pixel_shader->memexport_eM_written())) {
+    return false;
+  }
+  uniform_draw_debug_reason = 5;
+  if (depth_control.z_enable && depth_control.zfunc != xenos::CompareFunction::kAlways) {
+    return false;
+  }
+  uniform_draw_debug_reason = 6;
+  if (depth_control.stencil_enable &&
+      (depth_control.stencilfunc != xenos::CompareFunction::kAlways ||
+       (depth_control.backface_enable &&
+        depth_control.stencilfunc_bf != xenos::CompareFunction::kAlways))) {
+    return false;
+  }
+  for (uint32_t i = 0; i < xenos::kMaxColorRenderTargets; ++i) {
+    uint32_t rt_mask = (color_mask >> (4 * i)) & 0xF;
+    if (!rt_mask) {
+      continue;
+    }
+    // No blending (source ONE, destination ZERO, ADD for color and alpha).
+    if ((regs[reg::RB_BLENDCONTROL::rt_register_indices[i]] & 0x1FFF1FFF) != 0x00010001) {
+      uniform_draw_debug_reason = 7;
+      return false;
+    }
+    auto color_info = regs.Get<reg::RB_COLOR_INFO>(reg::RB_COLOR_INFO::rt_register_indices[i]);
+    uint32_t all_components =
+        (uint32_t(1) << xenos::GetColorRenderTargetFormatComponentCount(
+                            xenos::GetStorageColorFormat(color_info.color_format))) -
+        1;
+    if ((rt_mask & all_components) == all_components) {
+      overwritten_slots_out |= uint32_t(1) << (1 + i);
+    }
+  }
+  // Depth and stencil both written everywhere (stencil passes and Z always).
+  auto stencil_overwritten = [](xenos::StencilOp zpass, reg::RB_STENCILREFMASK ref_mask) {
+    return zpass == xenos::StencilOp::kReplace && ref_mask.stencilwritemask == 0xFF;
+  };
+  if (depth_control.z_enable && depth_control.z_write_enable && depth_control.stencil_enable &&
+      stencil_overwritten(depth_control.stencilzpass, regs.Get<reg::RB_STENCILREFMASK>()) &&
+      (!depth_control.backface_enable ||
+       stencil_overwritten(depth_control.stencilzpass_bf,
+                           regs.Get<reg::RB_STENCILREFMASK>(XE_GPU_REG_RB_STENCILREFMASK_BF)))) {
+    overwritten_slots_out |= 1;
+  }
+  values_may_be_uniform_out =
+      !pixel_shader || (ps_param_gen_pos == UINT32_MAX && !pixel_shader->writes_depth() &&
+                        pixel_shader->texture_bindings().empty());
+  uniform_draw_debug_reason = 8;
+  return true;
 }
 
 // Optional inventory of the guest GPU state per shader pair (REX_GPU_INVENTORY),
@@ -715,7 +821,8 @@ void DrawDump(const RegisterFile& regs, const memory::Memory& memory, const Shad
     out << ' ' << constants[i];
   out << std::dec << '\n';
   // The vertex shader on the CPU for the first 96 indices, from the same guest
-  // state: "P <vertices> <inside the clip volume> <x y z w of the first>".
+  // state: "P <vertices> <inside the clip volume> <x y z w of the first> <x y of
+  // the second and third> <surface info>".
   if (!ShaderInterpreter::CanInterpretShader(vertex_shader))
     return;
   struct PositionSink : ShaderInterpreter::ExportSink {
@@ -755,6 +862,7 @@ void DrawDump(const RegisterFile& regs, const memory::Memory& memory, const Shad
   const uint32_t max_index = regs.Get<reg::VGT_MAX_VTX_INDX>().max_indx;
   uint32_t vertices = 0, inside = 0;
   float first[4] = {};
+  float corners[3][4] = {};
   for (uint32_t i = 0; i < std::min(initiator.num_indices, 96u); ++i) {
     uint32_t index = i;
     if (dma) {
@@ -773,13 +881,18 @@ void DrawDump(const RegisterFile& regs, const memory::Memory& memory, const Shad
     if (!sink.written)
       continue;
     const float* p = sink.position;
+    if (vertices < 3)
+      std::memcpy(corners[vertices], p, sizeof(first));
     if (!vertices++)
       std::memcpy(first, p, sizeof(first));
     inside += std::abs(p[0]) <= p[3] && std::abs(p[1]) <= p[3] && p[2] >= 0.0f && p[2] <= p[3];
   }
   interpreter->SetExportSink(nullptr);
   out << "P " << vertices << ' ' << inside << ' ' << first[0] << ' ' << first[1] << ' ' << first[2]
-      << ' ' << first[3] << '\n';
+      << ' ' << first[3];
+  for (uint32_t i = 1; i < std::min(vertices, 3u); ++i)
+    out << ' ' << corners[i][0] << ' ' << corners[i][1];
+  out << ' ' << std::hex << regs[XE_GPU_REG_RB_SURFACE_INFO] << std::dec << '\n';
 }
 void DrawDumpSwap() {
   if (DrawDumpTrace* trace = GetDrawDumpTrace()) {
@@ -3338,6 +3451,80 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   uint32_t normalized_color_mask =
       pixel_shader ? draw_util::GetNormalizedColorMask(regs, pixel_shader->writes_color_targets())
                    : 0;
+
+  // Screen-space rectangles that write the same values to every sample, such as
+  // clears: skip the transfers of what they overwrite, and draw a 4x MSAA clear
+  // at half the pitch (the same EDRAM layout with a quarter of the pixels) into
+  // the render targets of the sample count its EDRAM is next used with, with
+  // guest pixels scaled like resolution scaling: 2 render target pixels along X
+  // (and Y for 1x), which maps every guest sample to one host pixel or sample.
+  // The surface info register is changed for this draw only.
+  uint32_t uniform_draw_scale_x = 1, uniform_draw_scale_y = 1;
+  struct RegisterRestore {
+    RegisterFile* register_file = nullptr;
+    uint32_t index = 0;
+    uint32_t value = 0;
+    ~RegisterRestore() {
+      if (register_file) {
+        register_file->values[index] = value;
+      }
+    }
+  } surface_info_restore;
+  uint32_t uniform_draw_overwritten_slots;
+  bool uniform_draw_values_may_be_uniform;
+  uniform_draw_debug_reason = 0;
+  if (render_target_cache_->GetPath() == RenderTargetCache::Path::kHostRenderTargets &&
+      REXCVAR_GET(rtv_uniform_draws) && is_rasterization_done && !memexport_used &&
+      GetRectangleOverwrite(regs, primitive_type, index_count, pixel_shader, ps_param_gen_pos,
+                            normalized_depth_control, normalized_color_mask,
+                            uniform_draw_overwritten_slots, uniform_draw_values_may_be_uniform)) {
+    RenderTargetCache::UniformDraw uniform_draw;
+    bool flat_z = false, flat_interpolators = false;
+    uniform_draw.bounds_valid = render_target_cache_->EstimateRectangleBounds(
+        *vertex_shader, uniform_draw.bounds, &flat_z, interpolator_mask, &flat_interpolators);
+    bool z_written = normalized_depth_control.z_enable && normalized_depth_control.z_write_enable;
+    bool uniform_values =
+        uniform_draw_values_may_be_uniform && flat_interpolators && (flat_z || !z_written);
+    uniform_draw_debug_reason = uniform_draw.bounds_valid ? (uniform_values ? 10 : 9) : 11;
+    if (uniform_draw.bounds_valid) {
+      uniform_draw.overwritten_slots = uniform_draw_overwritten_slots;
+      // FNV-1a over the state that identifies the clear.
+      const bool depth_used = normalized_depth_control.z_enable || normalized_depth_control.stencil_enable;
+      uint64_t signature = UINT64_C(0xCBF29CE484222325);
+      auto mix = [&signature](uint32_t value) {
+        signature = (signature ^ value) * UINT64_C(0x100000001B3);
+      };
+      mix(regs[XE_GPU_REG_RB_SURFACE_INFO]);
+      mix(depth_used ? regs[XE_GPU_REG_RB_DEPTH_INFO] : 0);
+      mix(normalized_color_mask);
+      for (uint32_t i = 0; i < xenos::kMaxColorRenderTargets; ++i) {
+        if ((normalized_color_mask >> (4 * i)) & 0xF) {
+          mix(regs[reg::RB_COLOR_INFO::rt_register_indices[i]]);
+        }
+      }
+      // Only uniform draws can be drawn with a different sample count.
+      uniform_draw.signature = uniform_values ? signature | 1 : 0;
+      auto rb_surface_info = regs.Get<reg::RB_SURFACE_INFO>();
+      xenos::MsaaSamples next_msaa =
+          render_target_cache_->GetUniformDrawNextMsaa(uniform_draw.signature);
+      if (uniform_values && rb_surface_info.msaa_samples == xenos::MsaaSamples::k4X &&
+          next_msaa < xenos::MsaaSamples::k4X &&
+          rb_surface_info.surface_pitch * 2 <= xenos::kTexture2DCubeMaxWidthHeight) {
+        uniform_draw_scale_x = 2;
+        uniform_draw_scale_y = next_msaa == xenos::MsaaSamples::k1X ? 2 : 1;
+        surface_info_restore.register_file = register_file_;
+        surface_info_restore.index = XE_GPU_REG_RB_SURFACE_INFO;
+        surface_info_restore.value = rb_surface_info.value;
+        rb_surface_info.surface_pitch *= 2;
+        rb_surface_info.msaa_samples = next_msaa;
+        register_file_->values[XE_GPU_REG_RB_SURFACE_INFO] = rb_surface_info.value;
+      }
+      uniform_draw.scale_x = uniform_draw_scale_x;
+      uniform_draw.scale_y = uniform_draw_scale_y;
+      render_target_cache_->SetUniformDraw(uniform_draw);
+    }
+  }
+
   if (const int32_t event =
           FrameGraphDraw(regs, *vertex_shader, pixel_shader, normalized_color_mask,
                          normalized_depth_control, edram_mode);
@@ -3486,13 +3673,15 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   std::memcpy(viewport_key.vport_regs, &regs[XE_GPU_REG_PA_CL_VPORT_XSCALE],
               sizeof(viewport_key.vport_regs));
   viewport_key.flags = (uint32_t(convert_z_to_float24) << 0) |
-                       (uint32_t(host_render_targets_used) << 1) | (uint32_t(ps_writes_depth) << 2);
+                       (uint32_t(host_render_targets_used) << 1) | (uint32_t(ps_writes_depth) << 2) |
+                       (uniform_draw_scale_x << 3) | (uniform_draw_scale_y << 5);
 
   draw_util::ViewportInfo viewport_info;
   if (viewport_cache_valid_ && viewport_key == previous_viewport_key_) {
     viewport_info = previous_viewport_info_;
   } else {
-    draw_util::GetHostViewportInfo(regs, draw_resolution_scale_x, draw_resolution_scale_y, true,
+    draw_util::GetHostViewportInfo(regs, draw_resolution_scale_x * uniform_draw_scale_x,
+                                   draw_resolution_scale_y * uniform_draw_scale_y, true,
                                    D3D12_VIEWPORT_BOUNDS_MAX, D3D12_VIEWPORT_BOUNDS_MAX, false,
                                    normalized_depth_control, convert_z_to_float24,
                                    host_render_targets_used, ps_writes_depth, viewport_info);
@@ -3503,10 +3692,10 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
 
   draw_util::Scissor scissor;
   draw_util::GetScissor(regs, scissor);
-  scissor.offset[0] *= draw_resolution_scale_x;
-  scissor.offset[1] *= draw_resolution_scale_y;
-  scissor.extent[0] *= draw_resolution_scale_x;
-  scissor.extent[1] *= draw_resolution_scale_y;
+  scissor.offset[0] *= draw_resolution_scale_x * uniform_draw_scale_x;
+  scissor.offset[1] *= draw_resolution_scale_y * uniform_draw_scale_y;
+  scissor.extent[0] *= draw_resolution_scale_x * uniform_draw_scale_x;
+  scissor.extent[1] *= draw_resolution_scale_y * uniform_draw_scale_y;
 
   // Update viewport, scissor, blend factor and stencil reference.
   UpdateFixedFunctionState(viewport_info, scissor, primitive_polygonal, normalized_depth_control);
