@@ -734,23 +734,35 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
   uint32_t overwrite_cutout_slots = 0;
   if (!interlock_barrier_only && uniform_draw.bounds_valid &&
       (uniform_draw.overwritten_slots & depth_and_color_rts_used_bits)) {
-    const float* bounds = uniform_draw.bounds;
     draw_util::Scissor scissor;
     draw_util::GetScissor(regs, scissor, false);
-    // Pixels with all samples inside: [ceil(x0), floor(x1)) in guest pixels.
-    int32_t x0 = std::max(int32_t(std::ceil(bounds[0])), int32_t(scissor.offset[0]));
-    int32_t y0 = std::max(int32_t(std::ceil(bounds[1])), int32_t(scissor.offset[1]));
-    int32_t x1 =
-        std::min(int32_t(std::floor(bounds[2])), int32_t(scissor.offset[0] + scissor.extent[0]));
-    int32_t y1 =
-        std::min(int32_t(std::floor(bounds[3])), int32_t(scissor.offset[1] + scissor.extent[1]));
-    x0 = std::max(x0, int32_t(0));
-    y0 = std::max(y0, int32_t(0));
-    if (x1 > x0 && y1 > y0) {
-      overwrite_cutout.x_pixels = uint32_t(x0) * uniform_draw.scale_x;
-      overwrite_cutout.y_pixels = uint32_t(y0) * uniform_draw.scale_y;
-      overwrite_cutout.width_pixels = uint32_t(x1 - x0) * uniform_draw.scale_x;
-      overwrite_cutout.height_pixels = uint32_t(y1 - y0) * uniform_draw.scale_y;
+    // In render target pixels: the rectangle and the scissor, scaled from guest
+    // pixels of the draw, and the pixels with all samples inside - with one
+    // sample, the pixel center by the top-left rule, [ceil(x0 - 0.5),
+    // ceil(x1 - 0.5)), otherwise the whole pixel, [ceil(x0), floor(x1)).
+    float scale[] = {float(uniform_draw.scale_x), float(uniform_draw.scale_y)};
+    int32_t covered[4];
+    for (uint32_t i = 0; i < 2; ++i) {
+      float low = uniform_draw.bounds[i] * scale[i];
+      float high = uniform_draw.bounds[2 + i] * scale[i];
+      if (msaa_samples == xenos::MsaaSamples::k1X) {
+        covered[i] = int32_t(std::ceil(low - 0.5f));
+        covered[2 + i] = int32_t(std::ceil(high - 0.5f));
+      } else {
+        covered[i] = int32_t(std::ceil(low));
+        covered[2 + i] = int32_t(std::floor(high));
+      }
+      int32_t scissor_scale = int32_t(i ? uniform_draw.scale_y : uniform_draw.scale_x);
+      covered[i] = std::max(std::max(covered[i], int32_t(scissor.offset[i]) * scissor_scale),
+                            int32_t(0));
+      covered[2 + i] = std::min(covered[2 + i],
+                                int32_t(scissor.offset[i] + scissor.extent[i]) * scissor_scale);
+    }
+    if (covered[2] > covered[0] && covered[3] > covered[1]) {
+      overwrite_cutout.x_pixels = uint32_t(covered[0]);
+      overwrite_cutout.y_pixels = uint32_t(covered[1]);
+      overwrite_cutout.width_pixels = uint32_t(covered[2] - covered[0]);
+      overwrite_cutout.height_pixels = uint32_t(covered[3] - covered[1]);
       overwrite_cutout_slots = uniform_draw.overwritten_slots;
     }
   }

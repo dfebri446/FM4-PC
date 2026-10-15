@@ -40,6 +40,10 @@ class ShaderInterpreter {
   ExportSink* GetExportSink() const { return export_sink_; }
   void SetExportSink(ExportSink* new_export_sink) { export_sink_ = new_export_sink; }
 
+  // Texture fetches are not interpreted: their results are this value in all
+  // components (0 by default), for checking whether outputs depend on them.
+  void SetTextureFetchResult(float value) { texture_fetch_result_ = value; }
+
   const float* temp_registers() const { return &temp_registers_[0][0]; }
   float* temp_registers() { return &temp_registers_[0][0]; }
 
@@ -122,6 +126,7 @@ class ShaderInterpreter {
   const memory::Memory& memory_;
 
   ExportSink* export_sink_ = nullptr;
+  float texture_fetch_result_ = 0.0f;
 
   xenos::ShaderType shader_type_ = xenos::ShaderType::kVertex;
   const uint32_t* ucode_ = nullptr;

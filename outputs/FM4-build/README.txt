@@ -76,8 +76,8 @@ Optional actions for performance work:
   30-240 accepted.
 - run -ResolutionScale 2 renders at 2560x1440 and -ResolutionScale 3 at
   3840x2160 instead of 1280x720 (draw_resolution_scale_x/y; CPU readbacks of
-  resolves are downscaled). Quick Race: about 59 fps with GPU about 10.6 ms
-  a race frame at 2, about 55 fps with GPU about 13.8 ms at 3, sharp HUD and
+  resolves are downscaled). Quick Race: 56-59 fps with GPU about 9.8 ms a
+  race frame at 2, 55-57 fps with GPU about 13 ms at 3, sharp HUD and
   scene. Tested in the menus and Quick Race only; photo mode, replays and
   career have not been checked at these scales.
 - run -Rov uses the earlier pixel shader interlock render target path

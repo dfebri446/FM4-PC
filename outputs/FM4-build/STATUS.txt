@@ -364,9 +364,31 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   per frame) 57,2 vs 52,5 fps. Menu A/B identik (selisih hanya teks yang
   bergulir); Quick Race 3 run 56,7-57,8 fps, siklus kamera 58,3 fps, skala 3x
   tanpa frame warna clear, error sama dengan baseline. --rtv_uniform_draws=false
-  mematikannya untuk perbandingan. Sisa: pass 16_16 520/4x (depth tanpa
-  stencil ditulis, sekitar 1 ms di 3x) dan pass komposit akhir 1280/1x (draw
-  layar penuh bertekstur 6 rectangle / triangle strip, sekitar 0,5 ms di 3x).
+  mematikannya untuk perbandingan.
+- Transfer pass 16_16 dan komposit (B2, 15 Oktober 2026): (1) clear yang
+  dipecah (strip 480..512 dulu, lalu 0..480; shadow, 16_16, env): transfer ke
+  slot yang ditimpa rectangle pertama ditunda dengan rectangle itu sebagai
+  cutout, rectangle bersebelahan berikutnya ke render target yang sama
+  memperluasnya, dan draw lain, resolve atau akhir submission menjalankannya
+  di luar cutout saja (D3D12RenderTargetCache::PendingTransfers). (2) Penimpaan
+  tidak hanya untuk clear: rectangle list sampai 8 rectangle yang menyusun satu
+  persegi panjang, atau satu quad dari dua segitiga (strip, fan, list, quad
+  list), juga dengan clipping (dipotong viewport, Z harus di dalam volume clip)
+  dan culling (primitif yang dibuang membuat draw ditolak); target 1x memakai
+  pusat piksel dengan aturan top-left. Vertex shader komposit FM4 membaca
+  tekstur (eksposur): posisi diterima bila sama dengan hasil fetch 0, 16384
+  dan -16384 (interpreter mengembalikan nilai itu untuk texture fetch). Pass
+  komposit 1280/1x (0,5 ms di 3x) dan clear shadow (0,28 -> 0,01 ms di 3x)
+  tidak lagi mentransfer; frame balapan 3x (frame graph) 15,2 -> 13,1 ms, pass
+  bertransfer 2,0 -> 1,0 ms; GPU balapan (perf) 2x 10,6 -> 9,8 ms, 3x 13,8 ->
+  13,0 ms. Yang tersisa terutama depth pass 16_16: clear-nya menulis Z tanpa
+  stencil (stencil harus dipertahankan; GPU ini tanpa SV_StencilRef, jadi
+  stencil ditransfer 8 pass), sekitar 0,5 ms di 3x; menunda transfer itu
+  sampai stencil dibaca tidak membantu karena pass 560/1x berikutnya tidak
+  menutup padding 512..560 dan membacanya. Validasi: menu A/B identik (selain
+  teks bergulir dan fade-in showroom yang tertangkap pada titik berbeda),
+  Quick Race 3 run 57,4-58,8 fps, siklus kamera 59,9 fps, 2x 57,4 fps, 3x 57,3
+  fps, tanpa crash dan tanpa frame warna clear.
 - Skala resolusi (15 Oktober 2026): draw_resolution_scale 2 dan 3 berjalan di
   RTV, tetapi semua isi yang lewat resolve full (scene 7e3 -> 2_10_10_10 dan
   rantai post-processing) tampil bergerigi seperti sisir, juga tanpa MSAA.

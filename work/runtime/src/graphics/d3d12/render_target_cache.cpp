@@ -962,6 +962,7 @@ bool D3D12RenderTargetCache::Initialize() {
 }
 
 void D3D12RenderTargetCache::Shutdown(bool from_destructor) {
+  pending_transfers_ = PendingTransfers();
   ui::d3d12::util::ReleaseAndNull(resolve_rov_clear_64bpp_pipeline_);
   ui::d3d12::util::ReleaseAndNull(resolve_rov_clear_32bpp_pipeline_);
   ui::d3d12::util::ReleaseAndNull(resolve_rov_clear_root_signature_);
@@ -1069,8 +1070,83 @@ bool D3D12RenderTargetCache::Update(bool is_rasterization_done,
     case Path::kHostRenderTargets: {
       RenderTarget* const* depth_and_color_render_targets =
           last_update_accumulated_render_targets();
-      PerformTransfersAndResolveClears(1 + xenos::kMaxColorRenderTargets,
-                                       depth_and_color_render_targets, last_update_transfers());
+      const std::vector<Transfer>* transfers = last_update_transfers();
+      const Transfer::Rectangle& cutout = last_update_overwrite_cutout();
+      uint32_t cutout_slots = last_update_overwrite_cutout_slots();
+      // An adjacent rectangle overwriting the same render targets, without
+      // transfers of its own into them, extends the pending cutout.
+      bool pending_extended = false;
+      if (pending_transfers_.slots) {
+        const Transfer::Rectangle& pending = pending_transfers_.cutout;
+        Transfer::Rectangle merged = {};
+        auto contains = [](const Transfer::Rectangle& outer, const Transfer::Rectangle& inner) {
+          return inner.x_pixels >= outer.x_pixels && inner.y_pixels >= outer.y_pixels &&
+                 inner.x_pixels + inner.width_pixels <= outer.x_pixels + outer.width_pixels &&
+                 inner.y_pixels + inner.height_pixels <= outer.y_pixels + outer.height_pixels;
+        };
+        bool mergeable = true;
+        if (contains(pending, cutout)) {
+          merged = pending;
+        } else if (contains(cutout, pending)) {
+          merged = cutout;
+        } else if (cutout.y_pixels == pending.y_pixels &&
+                   cutout.height_pixels == pending.height_pixels &&
+                   (cutout.x_pixels + cutout.width_pixels == pending.x_pixels ||
+                    pending.x_pixels + pending.width_pixels == cutout.x_pixels)) {
+          merged = pending;
+          merged.x_pixels = std::min(cutout.x_pixels, pending.x_pixels);
+          merged.width_pixels = cutout.width_pixels + pending.width_pixels;
+        } else if (cutout.x_pixels == pending.x_pixels &&
+                   cutout.width_pixels == pending.width_pixels &&
+                   (cutout.y_pixels + cutout.height_pixels == pending.y_pixels ||
+                    pending.y_pixels + pending.height_pixels == cutout.y_pixels)) {
+          merged = pending;
+          merged.y_pixels = std::min(cutout.y_pixels, pending.y_pixels);
+          merged.height_pixels = cutout.height_pixels + pending.height_pixels;
+        } else {
+          mergeable = false;
+        }
+        if (mergeable && (cutout_slots & pending_transfers_.slots) == pending_transfers_.slots) {
+          pending_extended = true;
+          for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
+            if (((pending_transfers_.slots >> i) & 1) &&
+                (depth_and_color_render_targets[i] != pending_transfers_.render_targets[i] ||
+                 !transfers[i].empty())) {
+              pending_extended = false;
+            }
+            // Other transfers of this draw must not read what is still pending.
+            for (const Transfer& transfer : transfers[i]) {
+              for (uint32_t j = 0; j < 1 + xenos::kMaxColorRenderTargets; ++j) {
+                if (((pending_transfers_.slots >> j) & 1) &&
+                    (transfer.source == pending_transfers_.render_targets[j] ||
+                     transfer.host_depth_source == pending_transfers_.render_targets[j])) {
+                  pending_extended = false;
+                }
+              }
+            }
+          }
+        }
+        if (pending_extended) {
+          pending_transfers_.cutout = merged;
+        } else {
+          PerformPendingTransfers();
+        }
+      }
+      // Keep the transfers into the slots this rectangle overwrites pending.
+      RenderTarget* render_targets_now[1 + xenos::kMaxColorRenderTargets];
+      for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
+        render_targets_now[i] = depth_and_color_render_targets[i];
+        if (!pending_extended && ((cutout_slots >> i) & 1) && render_targets_now[i] &&
+            !transfers[i].empty()) {
+          pending_transfers_.slots |= uint32_t(1) << i;
+          pending_transfers_.render_targets[i] = render_targets_now[i];
+          pending_transfers_.transfers[i] = transfers[i];
+          pending_transfers_.cutout = cutout;
+          render_targets_now[i] = nullptr;
+        }
+      }
+      PerformTransfersAndResolveClears(1 + xenos::kMaxColorRenderTargets, render_targets_now,
+                                       transfers);
       SetCommandListRenderTargets(depth_and_color_render_targets);
     } break;
     case Path::kPixelShaderInterlock: {
@@ -1176,11 +1252,49 @@ std::ofstream* RtvResolveTrace() {
 }
 }  // namespace
 
+void D3D12RenderTargetCache::PerformPendingTransfers() {
+  if (!pending_transfers_.slots) {
+    return;
+  }
+  // Only the parts outside the cutout, dropping transfers entirely within it.
+  RenderTarget* render_targets[1 + xenos::kMaxColorRenderTargets] = {};
+  for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
+    std::vector<Transfer>& transfers = pending_transfers_.transfers[i];
+    if (!((pending_transfers_.slots >> i) & 1)) {
+      transfers.clear();
+      continue;
+    }
+    RenderTarget* render_target = pending_transfers_.render_targets[i];
+    RenderTargetKey key = render_target->key();
+    transfers.erase(std::remove_if(transfers.begin(), transfers.end(),
+                                   [&](const Transfer& transfer) {
+                                     return !transfer.GetRectangles(
+                                         key.base_tiles, key.pitch_tiles_at_32bpp,
+                                         key.msaa_samples, key.Is64bpp(), nullptr,
+                                         &pending_transfers_.cutout);
+                                   }),
+                    transfers.end());
+    if (!transfers.empty()) {
+      render_targets[i] = render_target;
+    }
+  }
+  pending_transfers_.slots = 0;
+  PerformTransfersAndResolveClears(1 + xenos::kMaxColorRenderTargets, render_targets,
+                                   pending_transfers_.transfers, nullptr,
+                                   &pending_transfers_.cutout);
+  for (std::vector<Transfer>& transfers : pending_transfers_.transfers) {
+    transfers.clear();
+  }
+  // The render targets bound for drawing may have changed.
+  InvalidateCommandListRenderTargets();
+}
+
 bool D3D12RenderTargetCache::Resolve(const memory::Memory& memory, D3D12SharedMemory& shared_memory,
                                      D3D12TextureCache& texture_cache,
                                      uint32_t& written_address_out, uint32_t& written_length_out) {
   written_address_out = 0;
   written_length_out = 0;
+  PerformPendingTransfers();
 
   bool draw_resolution_scaled = IsDrawResolutionScaled();
 

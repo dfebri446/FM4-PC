@@ -97,9 +97,10 @@ void ShaderInterpreter::Execute() {
               ExecuteVertexFetchInstruction(fetch_instr.vertex_fetch());
             } else {
               // Not supporting texture fetching (very complex).
-              float zero_result[4] = {};
+              float fetch_result[4] = {texture_fetch_result_, texture_fetch_result_,
+                                       texture_fetch_result_, texture_fetch_result_};
               StoreFetchResult(fetch_instr.dest(), fetch_instr.is_dest_relative(),
-                               fetch_instr.dest_swizzle(), zero_result);
+                               fetch_instr.dest_swizzle(), fetch_result);
             }
           } else {
             const ucode::AluInstruction& alu_instr =

@@ -183,7 +183,7 @@ game and the vblank rate. race_clock.py reads the race timer of the captures
 - REX_DRAW_DUMP=<file> with REX_DRAW_DUMP_VS=<vertex shader hash, low 32 bits>
   (REX_DRAW_DUMP_EVERY, default 30): the vertex fetch constants, index and
   vertex data hashes and all vertex shader float constants of matching draws,
-  to compare the same draw between runs, and the positions of the first three
+  to compare the same draw between runs, and the positions of the first 24
   vertices computed on the CPU.
 
 Comparing runs

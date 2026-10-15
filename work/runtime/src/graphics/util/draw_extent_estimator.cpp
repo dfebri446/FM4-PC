@@ -275,23 +275,52 @@ uint32_t DrawExtentEstimator::EstimateVertexMaxY(const Shader& vertex_shader) {
          8;
 }
 
-bool DrawExtentEstimator::EstimateRectangleBounds(const Shader& vertex_shader,
-                                                  float bounds_out[4], bool* flat_z_out,
-                                                  uint32_t interpolator_mask,
-                                                  bool* flat_interpolators_out) {
+bool DrawExtentEstimator::EstimateCoveredRectangle(const Shader& vertex_shader,
+                                                   uint32_t interpolator_mask,
+                                                   CoveredRectangle& covered_out) {
+  constexpr uint32_t kMaxVertices = 24;
   const RegisterFile& regs = register_file_;
   auto vgt_draw_initiator = regs.Get<reg::VGT_DRAW_INITIATOR>();
-  if (vgt_draw_initiator.prim_type != xenos::PrimitiveType::kRectangleList ||
-      vgt_draw_initiator.num_indices != 3 ||
+  xenos::PrimitiveType primitive_type = vgt_draw_initiator.prim_type;
+  uint32_t vertex_count = vgt_draw_initiator.num_indices;
+  // Rectangles (3 vertices each), or one quad drawn as two triangles.
+  bool rectangles = primitive_type == xenos::PrimitiveType::kRectangleList && vertex_count &&
+                    vertex_count % 3 == 0 && vertex_count <= kMaxVertices;
+  // Vertex indices of the two triangles of a quad, in the winding the host uses.
+  static const uint8_t kStripTriangles[] = {0, 1, 2, 2, 1, 3};
+  static const uint8_t kFanTriangles[] = {0, 1, 2, 0, 2, 3};
+  static const uint8_t kListTriangles[] = {0, 1, 2, 3, 4, 5};
+  const uint8_t* quad_triangles = nullptr;
+  if (vertex_count == 4 && primitive_type == xenos::PrimitiveType::kTriangleStrip) {
+    quad_triangles = kStripTriangles;
+  } else if (vertex_count == 4 && (primitive_type == xenos::PrimitiveType::kTriangleFan ||
+                                   primitive_type == xenos::PrimitiveType::kQuadList)) {
+    quad_triangles = kFanTriangles;
+  } else if (vertex_count == 6 && primitive_type == xenos::PrimitiveType::kTriangleList) {
+    quad_triangles = kListTriangles;
+  }
+  if ((!rectangles && !quad_triangles) ||
       (vgt_draw_initiator.source_select != xenos::SourceSelect::kDMA &&
-       vgt_draw_initiator.source_select != xenos::SourceSelect::kAutoIndex) ||
-      !ShaderInterpreter::CanInterpretShader(vertex_shader)) {
+       vgt_draw_initiator.source_select != xenos::SourceSelect::kAutoIndex)) {
     return false;
   }
-  uint32_t vertex_indices[3];
+  // Texture fetches are not interpreted. Positions that are the same with
+  // different fetch results don't depend on them (full-screen passes of FM4
+  // fetch the exposure in the vertex shader); interpolators may.
+  bool uses_texture_fetch = vertex_shader.uses_texture_fetch_instruction_results();
+  static const float kTextureFetchResults[] = {0.0f, 16384.0f, -16384.0f};
+  uint32_t pass_count = uses_texture_fetch ? uint32_t(rex::countof(kTextureFetchResults)) : 1;
+  auto pa_cl_clip_cntl = regs.Get<reg::PA_CL_CLIP_CNTL>();
+  // User clip planes could cut the primitives.
+  if (pa_cl_clip_cntl.value & 0b111111) {
+    return false;
+  }
+  bool clipped = !pa_cl_clip_cntl.clip_disable;
+
+  uint32_t vertex_indices[kMaxVertices];
   if (vgt_draw_initiator.source_select == xenos::SourceSelect::kDMA) {
     auto vgt_dma_size = regs.Get<reg::VGT_DMA_SIZE>();
-    if (vgt_dma_size.num_words < 3) {
+    if (vgt_dma_size.num_words < vertex_count) {
       return false;
     }
     xenos::Endian index_endian = vgt_dma_size.swap_mode;
@@ -307,14 +336,22 @@ bool DrawExtentEstimator::EstimateRectangleBounds(const Shader& vertex_shader,
     } else {
       index_buffer = memory_.TranslatePhysical(index_buffer_base & ~uint32_t(3));
     }
-    for (uint32_t i = 0; i < 3; ++i) {
+    if (!index_buffer) {
+      return false;
+    }
+    auto pa_su_sc_mode_cntl = regs.Get<reg::PA_SU_SC_MODE_CNTL>();
+    uint32_t reset_index = regs.Get<reg::VGT_MULTI_PRIM_IB_RESET_INDX>().reset_indx;
+    for (uint32_t i = 0; i < vertex_count; ++i) {
       uint32_t vertex_index = vgt_draw_initiator.index_size == xenos::IndexFormat::kInt16
                                   ? static_cast<const uint16_t*>(index_buffer)[i]
                                   : static_cast<const uint32_t*>(index_buffer)[i];
       vertex_indices[i] = xenos::GpuSwap(vertex_index, index_endian) & 0xFFFFFF;
+      if (pa_su_sc_mode_cntl.multi_prim_ib_ena && vertex_indices[i] == reset_index) {
+        return false;
+      }
     }
   } else {
-    for (uint32_t i = 0; i < 3; ++i) {
+    for (uint32_t i = 0; i < vertex_count; ++i) {
       vertex_indices[i] = i;
     }
   }
@@ -322,7 +359,7 @@ bool DrawExtentEstimator::EstimateRectangleBounds(const Shader& vertex_shader,
   uint32_t min_index = regs.Get<reg::VGT_MIN_VTX_INDX>().min_indx;
   uint32_t max_index = regs.Get<reg::VGT_MAX_VTX_INDX>().max_indx;
 
-  // As in draw_util::GetHostViewportInfo with clipping disabled.
+  // As in draw_util::GetHostViewportInfo.
   auto pa_cl_vte_cntl = regs.Get<reg::PA_CL_VTE_CNTL>();
   float scale[] = {
       pa_cl_vte_cntl.vport_x_scale_ena ? regs.Get<float>(XE_GPU_REG_PA_CL_VPORT_XSCALE) : 1.0f,
@@ -332,7 +369,8 @@ bool DrawExtentEstimator::EstimateRectangleBounds(const Shader& vertex_shader,
       pa_cl_vte_cntl.vport_x_offset_ena ? regs.Get<float>(XE_GPU_REG_PA_CL_VPORT_XOFFSET) : 0.0f,
       pa_cl_vte_cntl.vport_y_offset_ena ? regs.Get<float>(XE_GPU_REG_PA_CL_VPORT_YOFFSET) : 0.0f,
   };
-  if (regs.Get<reg::PA_SU_SC_MODE_CNTL>().vtx_window_offset_enable) {
+  auto pa_su_sc_mode_cntl = regs.Get<reg::PA_SU_SC_MODE_CNTL>();
+  if (pa_su_sc_mode_cntl.vtx_window_offset_enable) {
     auto pa_sc_window_offset = regs.Get<reg::PA_SC_WINDOW_OFFSET>();
     offset[0] += float(pa_sc_window_offset.window_x_offset);
     offset[1] += float(pa_sc_window_offset.window_y_offset);
@@ -343,96 +381,205 @@ bool DrawExtentEstimator::EstimateRectangleBounds(const Shader& vertex_shader,
     offset[1] += 0.5f;
   }
 
-  bounds_out[0] = bounds_out[1] = FLT_MAX;
-  bounds_out[2] = bounds_out[3] = -FLT_MAX;
-  shader_interpreter_.SetShader(vertex_shader);
+  float pixels[kMaxVertices][2];
+  shader_interpreter_.SetShader(vertex_shader.type(), vertex_shader.ucode_dwords());
   PositionYExportSink export_sink;
   shader_interpreter_.SetExportSink(&export_sink);
   bool valid = true;
   bool flat_z = true;
-  bool flat_interpolators = true;
+  bool flat_interpolators = !uses_texture_fetch;
   std::optional<float> first_z, first_w;
   float first_interpolators[16][4];
-  float corner_positions[3][2] = {};
-  for (uint32_t i = 0; i < 3 && valid; ++i) {
-    uint32_t vertex_index =
-        std::min(max_index, std::max(min_index, (vertex_indices[i] + index_offset) & 0xFFFFFF));
-    export_sink.Reset();
-    shader_interpreter_.temp_registers()[0] = float(vertex_index);
-    shader_interpreter_.Execute();
-    if (export_sink.vertex_kill().has_value() &&
-        (export_sink.vertex_kill().value() & ~(UINT32_C(1) << 31))) {
-      valid = false;
-      break;
-    }
-    if (!export_sink.position_x().has_value() || !export_sink.position_y().has_value()) {
-      valid = false;
-      break;
-    }
-    float position[] = {export_sink.position_x().value(), export_sink.position_y().value()};
-    if ((export_sink.interpolators_written() & interpolator_mask) != interpolator_mask) {
-      flat_interpolators = false;
-    }
-    if (i == 0) {
-      first_z = export_sink.position_z();
-      first_w = export_sink.position_w();
-      for (uint32_t j = 0; j < 16; ++j) {
-        std::memcpy(first_interpolators[j], export_sink.interpolator(j), sizeof(float) * 4);
-      }
-    } else {
-      flat_z &= export_sink.position_z() == first_z && export_sink.position_w() == first_w;
-      uint32_t interpolators_remaining = interpolator_mask;
-      uint32_t j;
-      while (rex::bit_scan_forward(interpolators_remaining, &j)) {
-        interpolators_remaining &= ~(uint32_t(1) << j);
-        flat_interpolators &=
-            std::memcmp(first_interpolators[j], export_sink.interpolator(j), sizeof(float) * 4) == 0;
-      }
-    }
-    if (!pa_cl_vte_cntl.vtx_xy_fmt) {
-      if (!export_sink.position_w().has_value()) {
+  for (uint32_t pass = 0; pass < pass_count && valid; ++pass) {
+    shader_interpreter_.SetTextureFetchResult(kTextureFetchResults[pass]);
+    for (uint32_t i = 0; i < vertex_count && valid; ++i) {
+      uint32_t vertex_index =
+          std::min(max_index, std::max(min_index, (vertex_indices[i] + index_offset) & 0xFFFFFF));
+      export_sink.Reset();
+      shader_interpreter_.temp_registers()[0] = float(vertex_index);
+      shader_interpreter_.Execute();
+      if ((export_sink.vertex_kill().has_value() &&
+           (export_sink.vertex_kill().value() & ~(UINT32_C(1) << 31))) ||
+          !export_sink.position_x().has_value() || !export_sink.position_y().has_value()) {
         valid = false;
         break;
       }
-      position[0] /= export_sink.position_w().value();
-      position[1] /= export_sink.position_w().value();
-    }
-    for (uint32_t j = 0; j < 2; ++j) {
-      float pixel = position[j] * scale[j] + offset[j];
-      // NaN fails both comparisons.
-      if (!(pixel >= -16384.0f && pixel <= 16384.0f)) {
-        valid = false;
-        break;
+      if ((export_sink.interpolators_written() & interpolator_mask) != interpolator_mask) {
+        flat_interpolators = false;
       }
-      corner_positions[i][j] = pixel;
-      bounds_out[j] = std::min(bounds_out[j], pixel);
-      bounds_out[2 + j] = std::max(bounds_out[2 + j], pixel);
+      if (pass) {
+        // Only checking that the position is the same as in the first pass.
+      } else if (i == 0) {
+        first_z = export_sink.position_z();
+        first_w = export_sink.position_w();
+        for (uint32_t j = 0; j < 16; ++j) {
+          std::memcpy(first_interpolators[j], export_sink.interpolator(j), sizeof(float) * 4);
+        }
+      } else {
+        flat_z &= export_sink.position_z() == first_z && export_sink.position_w() == first_w;
+        uint32_t interpolators_remaining = interpolator_mask;
+        uint32_t j;
+        while (rex::bit_scan_forward(interpolators_remaining, &j)) {
+          interpolators_remaining &= ~(uint32_t(1) << j);
+          flat_interpolators &= std::memcmp(first_interpolators[j], export_sink.interpolator(j),
+                                            sizeof(float) * 4) == 0;
+        }
+      }
+      // Clip-space W (the vertex shader may export 1/W), see
+      // DxbcShaderTranslator::CompleteVertexOrDomainShader.
+      float w = 1.0f;
+      if (!pa_cl_vte_cntl.vtx_xy_fmt || clipped) {
+        if (!export_sink.position_w().has_value()) {
+          valid = false;
+          break;
+        }
+        w = pa_cl_vte_cntl.vtx_w0_fmt ? export_sink.position_w().value()
+                                      : 1.0f / export_sink.position_w().value();
+      }
+      if (clipped) {
+        // Entirely within the Z range of the clip volume, in front of the eye.
+        if (!export_sink.position_z().has_value()) {
+          valid = false;
+          break;
+        }
+        float z = export_sink.position_z().value();
+        if (pa_cl_vte_cntl.vtx_z_fmt) {
+          z *= w;
+        }
+        if (!(w > 0.0f) || !(z <= w) || !(z >= (pa_cl_clip_cntl.dx_clip_space_def ? 0.0f : -w))) {
+          valid = false;
+          break;
+        }
+      }
+      float position[] = {export_sink.position_x().value(), export_sink.position_y().value()};
+      if (!pa_cl_vte_cntl.vtx_xy_fmt) {
+        position[0] /= w;
+        position[1] /= w;
+      }
+      for (uint32_t j = 0; j < 2; ++j) {
+        float pixel = position[j] * scale[j] + offset[j];
+        // NaN fails both comparisons.
+        if (!(pixel >= -16384.0f && pixel <= 16384.0f) || (pass && pixels[i][j] != pixel)) {
+          valid = false;
+          break;
+        }
+        pixels[i][j] = pixel;
+      }
     }
   }
+  shader_interpreter_.SetTextureFetchResult(0.0f);
   shader_interpreter_.SetExportSink(nullptr);
-  // An axis-aligned rectangle has its 3 vertices at 3 different corners of their
-  // bounding box (a skewed one would cover less than the box).
-  if (valid) {
-    uint32_t corners = 0;
-    for (uint32_t i = 0; i < 3; ++i) {
-      bool right = corner_positions[i][0] == bounds_out[2];
-      bool bottom = corner_positions[i][1] == bounds_out[3];
-      if ((!right && corner_positions[i][0] != bounds_out[0]) ||
-          (!bottom && corner_positions[i][1] != bounds_out[1])) {
-        valid = false;
-        break;
-      }
-      corners |= uint32_t(1) << (uint32_t(right) | (uint32_t(bottom) << 1));
+  if (!valid) {
+    return false;
+  }
+
+  // Facing as the host rasterizer determines it (Y down in render target pixels).
+  bool cull_front = pa_su_sc_mode_cntl.cull_front != 0;
+  bool cull_back = pa_su_sc_mode_cntl.cull_back != 0;
+  bool front_counter_clockwise = pa_su_sc_mode_cntl.face == 0;
+  auto triangle_drawn = [&](uint32_t a, uint32_t b, uint32_t c) {
+    double cross = (double(pixels[b][0]) - pixels[a][0]) * (double(pixels[c][1]) - pixels[a][1]) -
+                   (double(pixels[b][1]) - pixels[a][1]) * (double(pixels[c][0]) - pixels[a][0]);
+    if (cross == 0.0) {
+      return false;
     }
-    valid = valid && rex::bit_count(corners) == 3;
+    bool front = (cross < 0.0) == front_counter_clockwise;
+    return !(cull_front && front) && !(cull_back && !front);
+  };
+  // Which corner of the box (bit 0 right, bit 1 bottom) a vertex is at, or -1.
+  auto corner = [&](uint32_t vertex, const float box[4]) -> int32_t {
+    bool right = pixels[vertex][0] == box[2];
+    bool bottom = pixels[vertex][1] == box[3];
+    if ((!right && pixels[vertex][0] != box[0]) || (!bottom && pixels[vertex][1] != box[1])) {
+      return -1;
+    }
+    return int32_t(right) | (int32_t(bottom) << 1);
+  };
+
+  float* bounds = covered_out.bounds;
+  bounds[0] = bounds[1] = FLT_MAX;
+  bounds[2] = bounds[3] = -FLT_MAX;
+  for (uint32_t i = 0; i < vertex_count; ++i) {
+    bounds[0] = std::min(bounds[0], pixels[i][0]);
+    bounds[1] = std::min(bounds[1], pixels[i][1]);
+    bounds[2] = std::max(bounds[2], pixels[i][0]);
+    bounds[3] = std::max(bounds[3], pixels[i][1]);
   }
-  if (flat_z_out) {
-    *flat_z_out = valid && flat_z;
+  if (rectangles) {
+    // Each rectangle is axis-aligned (its 3 vertices at 3 different corners of
+    // its box), drawn, and the rectangles tile the box of all without overlap.
+    uint32_t rectangle_count = vertex_count / 3;
+    float boxes[kMaxVertices / 3][4];
+    double area = 0.0;
+    for (uint32_t r = 0; r < rectangle_count; ++r) {
+      float* box = boxes[r];
+      box[0] = box[1] = FLT_MAX;
+      box[2] = box[3] = -FLT_MAX;
+      for (uint32_t v = r * 3; v < r * 3 + 3; ++v) {
+        box[0] = std::min(box[0], pixels[v][0]);
+        box[1] = std::min(box[1], pixels[v][1]);
+        box[2] = std::max(box[2], pixels[v][0]);
+        box[3] = std::max(box[3], pixels[v][1]);
+      }
+      uint32_t corners = 0;
+      for (uint32_t v = r * 3; v < r * 3 + 3; ++v) {
+        int32_t c = corner(v, box);
+        if (c < 0) {
+          return false;
+        }
+        corners |= uint32_t(1) << c;
+      }
+      if (rex::bit_count(corners) != 3 || !triangle_drawn(r * 3, r * 3 + 1, r * 3 + 2)) {
+        return false;
+      }
+      area += (double(box[2]) - box[0]) * (double(box[3]) - box[1]);
+      for (uint32_t other = 0; other < r; ++other) {
+        const float* other_box = boxes[other];
+        if (std::min(box[2], other_box[2]) > std::max(box[0], other_box[0]) &&
+            std::min(box[3], other_box[3]) > std::max(box[1], other_box[1])) {
+          return false;
+        }
+      }
+    }
+    if (area != (double(bounds[2]) - bounds[0]) * (double(bounds[3]) - bounds[1])) {
+      return false;
+    }
+  } else {
+    // Two triangles with all vertices at the corners of the box, each without
+    // one corner, the two missing corners opposite: they share the diagonal.
+    int32_t missing[2];
+    for (uint32_t t = 0; t < 2; ++t) {
+      const uint8_t* triangle = quad_triangles + t * 3;
+      uint32_t corners = 0;
+      for (uint32_t v = 0; v < 3; ++v) {
+        int32_t c = corner(triangle[v], bounds);
+        if (c < 0) {
+          return false;
+        }
+        corners |= uint32_t(1) << c;
+      }
+      if (rex::bit_count(corners) != 3 || !triangle_drawn(triangle[0], triangle[1], triangle[2])) {
+        return false;
+      }
+      uint32_t missing_corner;
+      rex::bit_scan_forward(~corners & 0b1111, &missing_corner);
+      missing[t] = int32_t(missing_corner);
+    }
+    if ((missing[0] ^ missing[1]) != 0b11) {
+      return false;
+    }
   }
-  if (flat_interpolators_out) {
-    *flat_interpolators_out = valid && flat_interpolators;
+  if (clipped) {
+    // Only the viewport is rasterized with clipping (draw_util::GetHostViewportInfo).
+    for (uint32_t j = 0; j < 2; ++j) {
+      float extent = std::abs(scale[j]);
+      bounds[j] = std::max(bounds[j], offset[j] - extent);
+      bounds[2 + j] = std::min(bounds[2 + j], offset[j] + extent);
+    }
   }
-  return valid;
+  covered_out.flat_z = flat_z;
+  covered_out.flat_interpolators = flat_interpolators;
+  return bounds[2] > bounds[0] && bounds[3] > bounds[1];
 }
 
 uint32_t DrawExtentEstimator::EstimateMaxY(bool try_to_estimate_vertex_max_y,

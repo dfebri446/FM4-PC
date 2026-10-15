@@ -325,26 +325,26 @@ void TraceTransferDraw(const RegisterFile& regs, const RenderTargetCache& cache,
   uniform_draw_debug_reason = 0;
 }
 
-// Whether a draw is a screen-space rectangle (kRectangleList, 3 vertices,
-// clipping disabled) that replaces what it covers in its render targets, as FM4
-// clears do, often with 4x MSAA at half the pitch. overwritten_slots_out: the
-// render targets it overwrites entirely ([0] depth and stencil, [1...] every
-// channel of a color render target). values_may_be_uniform_out: the pixel
-// shader output can only depend on the interpolators (no textures, position
-// input or depth output), so the draw writes the same values to every sample if
-// its interpolators and Z are the same at all vertices.
-bool GetRectangleOverwrite(const RegisterFile& regs, xenos::PrimitiveType primitive_type,
-                           uint32_t index_count, const Shader* pixel_shader,
-                           uint32_t ps_param_gen_pos, reg::RB_DEPTHCONTROL depth_control,
-                           uint32_t color_mask, uint32_t& overwritten_slots_out,
-                           bool& values_may_be_uniform_out) {
+// Whether a draw replaces what it covers in its render targets: rectangles or a
+// quad (the geometry is checked by DrawExtentEstimator::EstimateCoveredRectangle)
+// without blending, kills, alpha tests or depth and stencil tests that can
+// fail, as FM4 clears (often with 4x MSAA at half the pitch) and full-screen
+// passes do. overwritten_slots_out: the render targets it overwrites entirely
+// ([0] depth and stencil, [1...] every channel of a color render target).
+// values_may_be_uniform_out: a single screen-space rectangle (kRectangleList,
+// 3 vertices, clipping disabled) whose pixel shader output can only depend on
+// the interpolators (no textures, position input or depth output), so it
+// writes the same values to every sample if its interpolators and Z are the
+// same at all vertices.
+bool GetDrawOverwrite(const RegisterFile& regs, xenos::PrimitiveType primitive_type,
+                      uint32_t index_count, const Shader* pixel_shader, uint32_t ps_param_gen_pos,
+                      reg::RB_DEPTHCONTROL depth_control, uint32_t color_mask,
+                      uint32_t& overwritten_slots_out, bool& values_may_be_uniform_out) {
   overwritten_slots_out = 0;
   values_may_be_uniform_out = false;
   uniform_draw_debug_reason = 1;
   xenos::EdramMode edram_mode = regs.Get<reg::RB_MODECONTROL>().edram_mode;
-  if (primitive_type != xenos::PrimitiveType::kRectangleList || index_count != 3 ||
-      !regs.Get<reg::PA_CL_CLIP_CNTL>().clip_disable ||
-      (edram_mode != xenos::EdramMode::kColorDepth && edram_mode != xenos::EdramMode::kDepthOnly)) {
+  if (edram_mode != xenos::EdramMode::kColorDepth && edram_mode != xenos::EdramMode::kDepthOnly) {
     return false;
   }
   uniform_draw_debug_reason = 2;
@@ -408,8 +408,10 @@ bool GetRectangleOverwrite(const RegisterFile& regs, xenos::PrimitiveType primit
     overwritten_slots_out |= 1;
   }
   values_may_be_uniform_out =
-      !pixel_shader || (ps_param_gen_pos == UINT32_MAX && !pixel_shader->writes_depth() &&
-                        pixel_shader->texture_bindings().empty());
+      primitive_type == xenos::PrimitiveType::kRectangleList && index_count == 3 &&
+      regs.Get<reg::PA_CL_CLIP_CNTL>().clip_disable &&
+      (!pixel_shader || (ps_param_gen_pos == UINT32_MAX && !pixel_shader->writes_depth() &&
+                         pixel_shader->texture_bindings().empty()));
   uniform_draw_debug_reason = 8;
   return true;
 }
@@ -821,8 +823,8 @@ void DrawDump(const RegisterFile& regs, const memory::Memory& memory, const Shad
     out << ' ' << constants[i];
   out << std::dec << '\n';
   // The vertex shader on the CPU for the first 96 indices, from the same guest
-  // state: "P <vertices> <inside the clip volume> <x y z w of the first> <x y of
-  // the second and third> <surface info>".
+  // state: "P <vertices> <inside the clip volume> <x y z w of the first 24>
+  // <surface info>".
   if (!ShaderInterpreter::CanInterpretShader(vertex_shader))
     return;
   struct PositionSink : ShaderInterpreter::ExportSink {
@@ -862,7 +864,7 @@ void DrawDump(const RegisterFile& regs, const memory::Memory& memory, const Shad
   const uint32_t max_index = regs.Get<reg::VGT_MAX_VTX_INDX>().max_indx;
   uint32_t vertices = 0, inside = 0;
   float first[4] = {};
-  float corners[3][4] = {};
+  float corners[24][4] = {};
   for (uint32_t i = 0; i < std::min(initiator.num_indices, 96u); ++i) {
     uint32_t index = i;
     if (dma) {
@@ -881,7 +883,7 @@ void DrawDump(const RegisterFile& regs, const memory::Memory& memory, const Shad
     if (!sink.written)
       continue;
     const float* p = sink.position;
-    if (vertices < 3)
+    if (vertices < 24)
       std::memcpy(corners[vertices], p, sizeof(first));
     if (!vertices++)
       std::memcpy(first, p, sizeof(first));
@@ -890,8 +892,9 @@ void DrawDump(const RegisterFile& regs, const memory::Memory& memory, const Shad
   interpreter->SetExportSink(nullptr);
   out << "P " << vertices << ' ' << inside << ' ' << first[0] << ' ' << first[1] << ' ' << first[2]
       << ' ' << first[3];
-  for (uint32_t i = 1; i < std::min(vertices, 3u); ++i)
-    out << ' ' << corners[i][0] << ' ' << corners[i][1];
+  for (uint32_t i = 1; i < std::min(vertices, 24u); ++i)
+    out << ' ' << corners[i][0] << ' ' << corners[i][1] << ' ' << corners[i][2] << ' '
+        << corners[i][3];
   out << ' ' << std::hex << regs[XE_GPU_REG_RB_SURFACE_INFO] << std::dec << '\n';
 }
 void DrawDumpSwap() {
@@ -3475,16 +3478,17 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   uniform_draw_debug_reason = 0;
   if (render_target_cache_->GetPath() == RenderTargetCache::Path::kHostRenderTargets &&
       REXCVAR_GET(rtv_uniform_draws) && is_rasterization_done && !memexport_used &&
-      GetRectangleOverwrite(regs, primitive_type, index_count, pixel_shader, ps_param_gen_pos,
-                            normalized_depth_control, normalized_color_mask,
-                            uniform_draw_overwritten_slots, uniform_draw_values_may_be_uniform)) {
+      GetDrawOverwrite(regs, primitive_type, index_count, pixel_shader, ps_param_gen_pos,
+                       normalized_depth_control, normalized_color_mask,
+                       uniform_draw_overwritten_slots, uniform_draw_values_may_be_uniform)) {
     RenderTargetCache::UniformDraw uniform_draw;
-    bool flat_z = false, flat_interpolators = false;
-    uniform_draw.bounds_valid = render_target_cache_->EstimateRectangleBounds(
-        *vertex_shader, uniform_draw.bounds, &flat_z, interpolator_mask, &flat_interpolators);
+    DrawExtentEstimator::CoveredRectangle covered;
+    uniform_draw.bounds_valid =
+        render_target_cache_->EstimateCoveredRectangle(*vertex_shader, interpolator_mask, covered);
+    std::memcpy(uniform_draw.bounds, covered.bounds, sizeof(uniform_draw.bounds));
     bool z_written = normalized_depth_control.z_enable && normalized_depth_control.z_write_enable;
-    bool uniform_values =
-        uniform_draw_values_may_be_uniform && flat_interpolators && (flat_z || !z_written);
+    bool uniform_values = uniform_draw.bounds_valid && uniform_draw_values_may_be_uniform &&
+                          covered.flat_interpolators && (covered.flat_z || !z_written);
     uniform_draw_debug_reason = uniform_draw.bounds_valid ? (uniform_values ? 10 : 9) : 11;
     if (uniform_draw.bounds_valid) {
       uniform_draw.overwritten_slots = uniform_draw_overwritten_slots;
@@ -4767,6 +4771,9 @@ bool D3D12CommandProcessor::EndSubmission(bool is_swap) {
 
   if (submission_open_) {
     assert_false(scratch_buffer_used_);
+
+    // Not across submissions: the source render targets may be destroyed after.
+    render_target_cache_->PerformPendingTransfers();
 
     if (active_occlusion_query_.valid && occlusion_query_heap_) {
       deferred_command_list_.D3DEndQuery(occlusion_query_heap_.Get(), D3D12_QUERY_TYPE_OCCLUSION,

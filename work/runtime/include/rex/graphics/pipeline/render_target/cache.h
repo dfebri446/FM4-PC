@@ -175,17 +175,18 @@ class RenderTargetCache {
   virtual bool Update(bool is_rasterization_done, reg::RB_DEPTHCONTROL normalized_depth_control,
                       uint32_t normalized_color_mask, const Shader& vertex_shader);
 
-  // A screen-space rectangle (kRectangleList, 3 vertices, clipping disabled)
-  // that writes the same values to every sample of the pixels it covers, such
-  // as a clear. Set by the implementation for the next Update only (host render
-  // targets). Ownership transfers into the tiles that the rectangle covers
-  // entirely are skipped for the slots it fully overwrites ([0] depth and
-  // stencil, [1...] every channel of a color render target), and the MSAA
-  // sample count of the next draw using its render targets is remembered per
-  // signature, so a 4x MSAA clear at half the pitch can be drawn into the render
-  // targets of that sample count instead (scale_x and scale_y: render target
-  // pixels per guest pixel of the draw). bounds: the rectangle in guest pixels
-  // (EstimateRectangleBounds), needed for skipping transfers.
+  // A draw that replaces everything within a rectangle in some of its render
+  // targets (clears and full-screen passes), set by the implementation for the
+  // next Update only (host render targets). Ownership transfers into the tiles
+  // that the rectangle covers entirely are skipped for the slots it fully
+  // overwrites ([0] depth and stencil, [1...] every channel of a color render
+  // target). For a draw that writes the same values to every sample of the
+  // pixels it covers (signature not 0), the MSAA sample count of the next draw
+  // using its render targets is remembered per signature, so a 4x MSAA clear at
+  // half the pitch can be drawn into the render targets of that sample count
+  // instead (scale_x and scale_y: render target pixels per guest pixel of the
+  // draw). bounds: the covered rectangle in guest
+  // pixels (EstimateCoveredRectangle), needed for skipping transfers.
   struct UniformDraw {
     uint64_t signature = 0;
     uint32_t overwritten_slots = 0;
@@ -195,12 +196,11 @@ class RenderTargetCache {
     float bounds[4] = {};
   };
   void SetUniformDraw(const UniformDraw& uniform_draw) { uniform_draw_ = uniform_draw; }
-  // See DrawExtentEstimator::EstimateRectangleBounds.
-  bool EstimateRectangleBounds(const Shader& vertex_shader, float bounds_out[4],
-                               bool* flat_z_out, uint32_t interpolator_mask,
-                               bool* flat_interpolators_out) {
-    return draw_extent_estimator_.EstimateRectangleBounds(
-        vertex_shader, bounds_out, flat_z_out, interpolator_mask, flat_interpolators_out);
+  // See DrawExtentEstimator::EstimateCoveredRectangle.
+  bool EstimateCoveredRectangle(const Shader& vertex_shader, uint32_t interpolator_mask,
+                                DrawExtentEstimator::CoveredRectangle& covered_out) {
+    return draw_extent_estimator_.EstimateCoveredRectangle(vertex_shader, interpolator_mask,
+                                                           covered_out);
   }
   // The sample count that the render targets of the last uniform draw with this
   // signature were next used with, 4x if not known.
@@ -542,6 +542,14 @@ class RenderTargetCache {
   const std::vector<Transfer>* last_update_transfers() const {
     assert_true(GetPath() == Path::kHostRenderTargets);
     return last_update_transfers_;
+  }
+  // The render target pixels that the uniform draw of the last update covers
+  // entirely, in the slots of last_update_overwrite_cutout_slots.
+  const Transfer::Rectangle& last_update_overwrite_cutout() const {
+    return last_update_overwrite_cutout_;
+  }
+  uint32_t last_update_overwrite_cutout_slots() const {
+    return last_update_overwrite_cutout_slots_;
   }
 
   HostDepthStoreRenderTargetConstant GetHostDepthStoreRenderTargetConstant(

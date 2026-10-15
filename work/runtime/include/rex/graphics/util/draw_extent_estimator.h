@@ -30,14 +30,21 @@ class DrawExtentEstimator {
   // The shader must have its ucode analyzed.
   uint32_t EstimateVertexMaxY(const Shader& vertex_shader);
   uint32_t EstimateMaxY(bool try_to_estimate_vertex_max_y, const Shader& vertex_shader);
-  // For a single screen-space rectangle (kRectangleList, 3 vertices, clipping
-  // disabled): its corners in render target pixels after the viewport, window and
-  // half-pixel offsets (x0, y0, x1, y1), and whether all its vertices have the
-  // same Z and W, and the same values of the interpolators in interpolator_mask.
-  // False if the vertices can't be evaluated.
-  bool EstimateRectangleBounds(const Shader& vertex_shader, float bounds_out[4],
-                               bool* flat_z_out = nullptr, uint32_t interpolator_mask = 0,
-                               bool* flat_interpolators_out = nullptr);
+  // For a draw of rectangles (kRectangleList, up to 8) or of one quad (two
+  // triangles), without user clip planes: the axis-aligned rectangle that its
+  // primitives cover entirely, in render target pixels after the viewport,
+  // window and half-pixel offsets, and with clipping within the viewport
+  // (x0, y0, x1, y1). False if the primitives don't tile one rectangle, may be
+  // culled or clipped in Z, or the vertices can't be evaluated. Also whether all
+  // vertices have the same Z and W and the same values of the interpolators in
+  // interpolator_mask.
+  struct CoveredRectangle {
+    float bounds[4];
+    bool flat_z;
+    bool flat_interpolators;
+  };
+  bool EstimateCoveredRectangle(const Shader& vertex_shader, uint32_t interpolator_mask,
+                                CoveredRectangle& covered_out);
 
  private:
   class PositionYExportSink : public ShaderInterpreter::ExportSink {

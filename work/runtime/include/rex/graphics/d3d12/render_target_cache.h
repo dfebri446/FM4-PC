@@ -65,6 +65,11 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
 
   bool msaa_2x_supported() const { return msaa_2x_supported_; }
 
+  // Performs the transfers kept for a clear split into several rectangles (see
+  // PendingTransfers), if any. Called before anything else uses the render
+  // targets, and at the end of a submission.
+  void PerformPendingTransfers();
+
   void WriteEdramRawSRVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle);
   void WriteEdramRawUAVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle);
   void WriteEdramUintPow2SRVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle,
@@ -638,6 +643,19 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
       const std::vector<Transfer>* render_target_transfers,
       const uint64_t* render_target_resolve_clear_values = nullptr,
       const Transfer::Rectangle* resolve_clear_rectangle = nullptr);
+
+  // FM4 often clears a render target with several adjacent rectangles, a narrow
+  // one first, which alone doesn't cover the tiles it claims. The transfers into
+  // the slots such a rectangle overwrites are kept pending, with the rectangle
+  // as the cutout; a following adjacent rectangle into the same render targets
+  // extends the cutout, anything else performs them outside the cutout first.
+  struct PendingTransfers {
+    uint32_t slots = 0;
+    RenderTarget* render_targets[1 + xenos::kMaxColorRenderTargets] = {};
+    std::vector<Transfer> transfers[1 + xenos::kMaxColorRenderTargets];
+    Transfer::Rectangle cutout = {};
+  };
+  PendingTransfers pending_transfers_;
 
   // Accepts an array of (1 + xenos::kMaxColorRenderTargets) render targets,
   // first depth, then color.
