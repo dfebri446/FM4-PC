@@ -257,7 +257,7 @@ def build_game(root,fxc,jobs,flavor=()):
     (root/f'build-result{suffix}.json').write_text(json.dumps(report,indent=2))
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
-def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None):
+def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -274,16 +274,17 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None):
         cvars['swap_post_effect']='fxaa'
     if fixed_vblank:
         cvars['vblank_vrr']='false'
+    if rov:
+        # The earlier pixel shader interlock path: GPU about 17.5 ms a race frame
+        # instead of 10, for comparisons when the host render target path misbehaves.
+        cvars.pop('edram_single_rt_no_wrap')
+        cvars.update({'render_target_path_d3d12':'rov','rov_occlusion_async':'all'})
     if frame_rate:
         # The display refresh the title sees (and the guest vblank rate), and the
         # FrameRate of its render scenarios (races 60, replays and photo mode 30).
-        # The title scales its time step, so the race clock stays real time. Above
-        # 60 fps the ROV path is too slow (GPU about 17 ms a frame), so use RTV.
+        # The title scales its time step, so the race clock stays real time.
         cvars['video_mode_refresh_rate']=str(frame_rate)
         env['FM4_FRAME_RATE']=str(frame_rate)
-        if frame_rate>60:
-            cvars.update({'render_target_path_d3d12':'rtv','edram_single_rt_no_wrap':'true',
-                          'rov_occlusion_async':'previous'})
     if disc2:
         env['FM4_DISC2_ROOT']=str(disc2)
     args=[root/'game-build/fm4_rex.exe']+[f'--{k}={v}' for k,v in cvars.items()]
@@ -301,9 +302,9 @@ def launch_cvars(root,disc1,log_file):
     """Launcher cvars, shared with e2e/e2e.py. New performance defaults go here once they pass e2e."""
     return {'game_data_root':disc1,'user_data_root':root/'user-data','cache_root':root/'cache',
             'allow_game_relative_writes':'false','headless':'false','fullscreen':'false',
-            'render_target_path_d3d12':'rov','readback_resolve':'fast',
+            'render_target_path_d3d12':'rtv','edram_single_rt_no_wrap':'true','readback_resolve':'fast',
             'gpu_allow_invalid_fetch_constants':'true','async_shader_compilation':'false',
-            'rov_occlusion_awaited_report_divisor':'2','rov_occlusion_async':'all','vblank_vrr':'true',
+            'rov_occlusion_awaited_report_divisor':'2','rov_occlusion_async':'previous','vblank_vrr':'true',
             'input_backend':'sdl','mnk_mode':'true','mnk_mouse':'false',
             'keybind_right_trigger':'W','keybind_left_trigger':'S',
             'keybind_lstick_left':'A','keybind_lstick_right':'D',
@@ -325,6 +326,8 @@ def main():
                         help='run: hold every swap to the fixed 60 Hz vblank grid (vblank_vrr=false)')
     parser.add_argument('--frame-rate',type=int,choices=range(30,241),metavar='30-240',
                         help='run: unlock the 30/60 fps limits (for example 120)')
+    parser.add_argument('--rov',action='store_true',
+                        help='run: the slower pixel shader interlock render target path instead of RTV')
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
     args=parser.parse_args()
     root=args.build_root.resolve()
@@ -346,7 +349,7 @@ def main():
     if args.action in ('setup','all'): setup(root,fxc,args.jobs)
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
     if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
-    if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate)
+    if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov)
     if args.action=='warmcache': warm_cache(root)
 
 if __name__=='__main__':

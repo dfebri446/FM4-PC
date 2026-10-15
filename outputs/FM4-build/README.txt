@@ -69,10 +69,14 @@ Optional actions for performance work:
   their own settings.
 - run -FrameRate 120 lifts the title's 30/60 fps limits: the refresh rate it
   sees and its render scenario FrameRate become 120, and the title scales its
-  time step (race clock against wall time 1.001). Above 60 it uses the RTV
-  render target path. Quick Race: frame time median 8.4 ms (about 119 fps),
-  p95 11.6 ms, p99 16.1 ms, every frame fully rendered; GPU about 5 ms and the
-  command processor set the ceiling. 30-240 accepted.
+  time step (race clock against wall time 1.001). Quick Race: frame time
+  median 8.4 ms (about 119 fps), p95 11.6 ms, p99 16.1 ms, every frame fully
+  rendered; GPU about 5 ms and the command processor set the ceiling. 30-240
+  accepted.
+- run -Rov uses the earlier pixel shader interlock render target path
+  (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
+  Quick Race 54.3 fps, frame p99 35 ms, GPU 17.5 ms a frame, too slow for
+  -FrameRate above 60.
 - warmcache drives the e2e Quick Race timeline once (no network) so the shader
   and pipeline cache under BuildRoot\cache is filled before playing.
 - build -Flavor thinlto,v3,pgo-gen,pgo-use builds a compiler experiment into
@@ -105,16 +109,19 @@ What happens
 4. run verifies the build artifacts and game revision, mounts Disc 1, imports
    Disc 2 packages if provided and starts the interactive game. Shader compilation
    is synchronous; the existing shadow workaround is enabled. Rendering uses the
-   pixel shader interlock path (render_target_path_d3d12=rov). A frame that
-   misses a guest vblank gets it as soon as it is ready (vblank_vrr=true). The sun visibility
-   query is scaled by 2 (rov_occlusion_awaited_report_divisor). Occlusion reports
-   and resolve readbacks do not wait for the GPU (rov_occlusion_async=all,
-   readback_resolve=fast); pass --rov_occlusion_async=off and
-   --readback_resolve=full to the executable for the older, slower synchronous
-   behaviour if a feature misbehaves. The host render target path reaches a
-   stable 60 fps in Quick Race but in some runs does not draw a road section;
-   it is opt-in: --render_target_path_d3d12=rtv --edram_single_rt_no_wrap=true
-   --rov_occlusion_async=previous (see STATUS.txt). Controller input uses SDL. Keyboard defaults include W/S for pedals and A/D for steering.
+   host render target path (render_target_path_d3d12=rtv with
+   edram_single_rt_no_wrap=true): GPU about 10 ms a race frame instead of 17.5
+   on the pixel shader interlock path, a stable 60 fps in Quick Race. Occlusion
+   reports are published at once from the previous frame's samples
+   (rov_occlusion_async=previous) and resolve readbacks do not wait for the GPU
+   (readback_resolve=fast). A frame that misses a guest vblank gets it as soon
+   as it is ready (vblank_vrr=true). The road sections this path used to leave
+   undrawn came from the title's track streaming and are fixed for every path
+   (STATUS.txt). Sun glare has not been calibrated on this path, and career,
+   photo mode and interactive Autovista have not been tested on it; if
+   rendering misbehaves, compare with run -Rov (render_target_path_d3d12=rov,
+   rov_occlusion_async=all, sun query scaled by
+   rov_occlusion_awaited_report_divisor=2). Controller input uses SDL. Keyboard defaults include W/S for pedals and A/D for steering.
 
 All private output is under BuildRoot: project/generated, loaded-image.bin,
 game-build, local.json, user-data, cache and logs. Input discs are read in place;

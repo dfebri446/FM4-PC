@@ -9,6 +9,7 @@ param(
     [string]$Flavor,
     [switch]$SingleTile,
     [switch]$FixedVblank,
+    [switch]$Rov,
     [ValidateRange(30,240)][int]$FrameRate
 )
 $ErrorActionPreference = 'Stop'
@@ -27,6 +28,7 @@ if ($BuildRoot) { $arguments += @('--build-root', $BuildRoot) }
 if ($Flavor) { $arguments += @('--flavor', $Flavor) }
 if ($SingleTile) { $arguments += @('--single-tile') }
 if ($FixedVblank) { $arguments += @('--fixed-vblank') }
+if ($Rov) { $arguments += @('--rov') }
 if ($FrameRate) { $arguments += @('--frame-rate', "$FrameRate") }
 & $Python @arguments
 if ($LASTEXITCODE -ne 0) { throw "FM4 workflow failed (exit $LASTEXITCODE). See the build-root logs." }

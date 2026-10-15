@@ -125,8 +125,8 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   Satu sinkronisasi saja yang dihapus hanya memindahkan tunggu ke sinkronisasi
   lainnya; keduanya harus hilang. Capture kokpit quickrace terlihat setara
   baseline. Atas keputusan pemilik proyek, kombinasi ini menjadi default
-  launcher sebelum gate lengkap (sempat digantikan RTV pada 14 Oktober 2026,
-  lalu dikembalikan; lihat di bawah).
+  launcher sebelum gate lengkap (digantikan RTV pada 14 Oktober 2026, lalu
+  dikembalikan, dan sejak 15 Oktober 2026 RTV lagi; lihat di bawah).
 - Timestamp GPU: dengan kombinasi di atas GPU sibuk sekitar 15,6 ms per frame
   (RTX 5070 Ti Laptop), resolve sekitar 0,2 ms. Thread command processor sibuk
   hampir penuh, jadi 60 fps stabil butuh pengurangan kerja GPU dan CPU (Tahap 2).
@@ -212,9 +212,17 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   adegan deterministik dengan matahari di pandangan (mis. skenario kamera).
 - 14 Oktober 2026: launcher sempat memakai RTV (c6420dc), lalu atas keputusan
   pemilik proyek dikembalikan ke ROV (rov_occlusion_async=all) karena masalah
-  jalan hilang di atas. RTV tetap tersedia sebagai opsi:
-  --render_target_path_d3d12=rtv --edram_single_rt_no_wrap=true
-  --rov_occlusion_async=previous.
+  jalan hilang di atas. Sejak 15 Oktober 2026, setelah perbaikan streaming dan
+  atas keputusan pemilik proyek, launcher dan harness e2e memakai RTV lagi
+  (render_target_path_d3d12=rtv, edram_single_rt_no_wrap=true,
+  rov_occlusion_async=previous, readback_resolve=fast); Build.ps1 -Action run
+  -Rov mengembalikan ROV (rov_occlusion_async=all). -FrameRate tidak lagi
+  memaksa RTV sendiri. Quick Race timeline dengan default baru, 3 run:
+  fps_mean 58,1 / 58,3 / 59,8, p95 19-20 ms, p99 20-21 ms, tanpa hitch >50 ms,
+  GPU 8,4-9,4 ms per frame, 0 frame warna clear, tanpa crash, error sama dengan
+  baseline; satu run memakai cadangan fGPU (section 0x1C15A4 byte, berhasil)
+  dan start straight tergambar. Silau matahari, karier, photo mode dan
+  Autovista interaktif belum diuji di RTV.
 - 2.1 predicated tiling (14 Oktober 2026): FM4 memilih tiling per skenario
   render (media/RenderScenarios, TilingScenario). Balapan 8-16 mobil memakai
   1 (2 tile, MSAA 2x, 4 bin select per frame); pre-race, replay dan balapan
