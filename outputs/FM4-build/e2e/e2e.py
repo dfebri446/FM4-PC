@@ -398,7 +398,8 @@ def run_once(options, out):
         args[key] = value
     command = [str(root / options.game_build / 'fm4_rex.exe')] + [f'--{k}={v}' for k, v in args.items()]
     env = {k: v for k, v in os.environ.items() if not k.startswith(('FM4_', 'REX_'))}
-    env.update(FM4_SHADOW_WORKAROUND='1', FM4_CAPTURE_DIR=str(capture),
+    env.update(pipeline.launch_env())
+    env.update(FM4_CAPTURE_DIR=str(capture),
                FM4_TEST_INPUT_FILE=str(input_file), REX_PERF_TRACE_FILE=str(out / 'perf.jsonl'))
     # Diagnostic variables, e.g. REX_RESOLVE_PUBLICATION_TRACE=<path>.
     env.update(item.split('=', 1) for item in options.env)

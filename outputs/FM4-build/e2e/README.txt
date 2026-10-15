@@ -169,6 +169,11 @@ renderer work; all write files outside the repository):
 Without network access (Jev unreachable), --scenario quickrace drives the same
 route on a fixed timeline; it reaches the race reliably with the copied profile.
 
+The harness uses the launcher environment (pipeline.launch_env): the shadow
+workaround and FM4_HALF_RATE_MIRROR=1 (the rear-view mirror every other frame in
+every race); --env FM4_HALF_RATE_MIRROR=0 renders it every frame, also in the 12
+car Quick Race.
+
 Frame rate experiments: FM4_FRAME_RATE=<n> replaces the FrameRate value of the
 render scenarios (races 60, countdown/replays/photo mode 30), and
 --arg=--video_mode_refresh_rate=<hz> changes the refresh rate reported to the

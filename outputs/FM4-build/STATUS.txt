@@ -389,6 +389,16 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   teks bergulir dan fade-in showroom yang tertangkap pada titik berbeda),
   Quick Race 3 run 57,4-58,8 fps, siklus kamera 59,9 fps, 2x 57,4 fps, 3x 57,3
   fps, tanpa crash dan tanpa frame warna clear.
+- Spion setengah rate (B2, 15 Oktober 2026): FM4 sendiri menggambar spion
+  setiap frame kedua di balapan 12 dan 16 mobil (HalfRateMirror di skenario
+  render; frame graph: sekitar 220 draw spion di frame ganjil, 0 di frame
+  genap), tetapi setiap frame di balapan 1 dan 8 mobil. Override
+  FM4_HALF_RATE_MIRROR=0|1 mengatur nilainya di semua skenario balapan;
+  launcher dan harness e2e memakai 1 (Build.ps1 -FullRateMirror: 0). Quick
+  Race 12 mobil, spion setiap frame vs setengah rate: 55,6 vs 59,7 fps, GPU
+  9,5 vs 8,1 ms, command processor 717 vs 667 ms/s; pada 120 Hz 75,4 vs 83,6
+  fps. Itu yang kini dihemat balapan 1 dan 8 mobil (belum diukur langsung:
+  timeline e2e hanya Quick Race 12 mobil). Spion tampil normal.
 - Skala resolusi (15 Oktober 2026): draw_resolution_scale 2 dan 3 berjalan di
   RTV, tetapi semua isi yang lewat resolve full (scene 7e3 -> 2_10_10_10 dan
   rantai post-processing) tampil bergerigi seperti sisir, juga tanpa MSAA.

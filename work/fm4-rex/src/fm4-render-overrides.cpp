@@ -22,6 +22,9 @@
 // FM4_FRAME_RATE=<frames per second> replaces every FrameRate value of the
 // scenarios (races use 60; countdown, post-race, replays and photo mode 30),
 // for frame rate experiments.
+// FM4_HALF_RATE_MIRROR=0 or 1 sets HalfRateMirror in the race scenarios: the
+// title renders the rear-view mirror every other frame with 1, which it uses
+// for 12 and 16 car races only (1 and 8 car races render it every frame).
 void FM4MountRenderOverrides(rex::Runtime* runtime) {
   const char* enabled = std::getenv("FM4_SHADOW_WORKAROUND");
   const bool shadow_workaround = enabled && std::string(enabled) == "1";
@@ -31,7 +34,11 @@ void FM4MountRenderOverrides(rex::Runtime* runtime) {
   const bool frame_rate_override =
       frame_rate && *frame_rate &&
       std::string(frame_rate).find_first_not_of("0123456789") == std::string::npos;
-  if (!shadow_workaround && !tiling_override && !frame_rate_override) return;
+  const char* half_rate_mirror = std::getenv("FM4_HALF_RATE_MIRROR");
+  const bool mirror_override = half_rate_mirror &&
+                               (half_rate_mirror[0] == '0' || half_rate_mirror[0] == '1') &&
+                               !half_rate_mirror[1];
+  if (!shadow_workaround && !tiling_override && !frame_rate_override && !mirror_override) return;
   const auto source = runtime->game_data_root() / "media" / "RenderScenarios";
   const auto destination = runtime->cache_root() / "fm4-render-overrides";
   std::filesystem::create_directories(destination);
@@ -65,6 +72,21 @@ void FM4MountRenderOverrides(rex::Runtime* runtime) {
         ++changed;
       }
     }
+    if (race && mirror_override) {
+      constexpr char kMirror[] = "<HalfRateMirror value=\"";
+      const auto at = xml.find(kMirror);
+      if (at != std::string::npos) {
+        const size_t value = at + sizeof(kMirror) - 1;
+        const size_t end = xml.find('"', value);
+        if (end == std::string::npos) throw std::runtime_error("Unexpected render scenario format");
+        xml.replace(value, end - value, half_rate_mirror);
+      } else {
+        const auto end = xml.find("</DynamicRenderSettings>");
+        if (end == std::string::npos) throw std::runtime_error("Unexpected render scenario format");
+        xml.insert(end, std::string("  <HalfRateMirror value=\"") + half_rate_mirror + "\"/>\r\n");
+      }
+      ++changed;
+    }
     if (shadow_workaround && race && xml.find("SkipShadowMapUnlessCockpit") == std::string::npos) {
       const auto end = xml.find("</DynamicRenderSettings>");
       if (end == std::string::npos) throw std::runtime_error("Unexpected render scenario format");
@@ -95,8 +117,9 @@ void FM4MountRenderOverrides(rex::Runtime* runtime) {
       file->device()->mount_path() != target)
     throw std::runtime_error("Render scenario override path validation failed");
   std::fprintf(stderr,
-               "FM4 render scenario overrides (shadow workaround %d, tiling %s, frame rate %s): "
-               "%u changes; UI/global unchanged; source=%s\n",
+               "FM4 render scenario overrides (shadow workaround %d, tiling %s, frame rate %s, "
+               "half rate mirror %s): %u changes; UI/global unchanged; source=%s\n",
                int(shadow_workaround), tiling_override ? tiling : "-",
-               frame_rate_override ? frame_rate : "-", changed, source_device_path.c_str());
+               frame_rate_override ? frame_rate : "-", mirror_override ? half_rate_mirror : "-",
+               changed, source_device_path.c_str());
 }

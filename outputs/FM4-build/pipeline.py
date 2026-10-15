@@ -257,7 +257,8 @@ def build_game(root,fxc,jobs,flavor=()):
     (root/f'build-result{suffix}.json').write_text(json.dumps(report,indent=2))
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
-def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,resolution_scale=1):
+def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,resolution_scale=1,
+           full_rate_mirror=False):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -265,7 +266,9 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
         if digest(root/'game-build'/name)!=expected:
             raise RuntimeError(f'Build artifact changed: {name}. Rebuild first.')
     env = {k:v for k,v in os.environ.items() if not k.startswith('FM4_')}
-    env['FM4_SHADOW_WORKAROUND']='1'
+    env.update(launch_env())
+    if full_rate_mirror:
+        env['FM4_HALF_RATE_MIRROR']='0'
     cvars=launch_cvars(root,disc1,root/'logs/runtime.log')
     if single_tile:
         # Races render 720p in one tile without MSAA (the title's UI tiling
@@ -302,6 +305,11 @@ def warm_cache(root):
          '--tail','30'],log=root/'logs/warmcache.log')
     print(f'Shader cache warmed; run details in {out}.')
 
+def launch_env():
+    """Launcher environment, shared with e2e/e2e.py: the shadow workaround, and the rear-view
+    mirror rendered every other frame in every race (the title does that for 12 and 16 cars)."""
+    return {'FM4_SHADOW_WORKAROUND':'1','FM4_HALF_RATE_MIRROR':'1'}
+
 def launch_cvars(root,disc1,log_file):
     """Launcher cvars, shared with e2e/e2e.py. New performance defaults go here once they pass e2e."""
     return {'game_data_root':disc1,'user_data_root':root/'user-data','cache_root':root/'cache',
@@ -332,6 +340,8 @@ def main():
                         help='run: unlock the 30/60 fps limits (for example 120)')
     parser.add_argument('--resolution-scale',type=int,choices=range(1,4),default=1,metavar='1-3',
                         help='run: render at 2x (2560x1440) or 3x (3840x2160) of 1280x720')
+    parser.add_argument('--full-rate-mirror',action='store_true',
+                        help='run: render the rear-view mirror every frame in every race')
     parser.add_argument('--rov',action='store_true',
                         help='run: the slower pixel shader interlock render target path instead of RTV')
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
@@ -355,7 +365,8 @@ def main():
     if args.action in ('setup','all'): setup(root,fxc,args.jobs)
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
     if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
-    if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,args.resolution_scale)
+    if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,
+                                     args.resolution_scale,args.full_rate_mirror)
     if args.action=='warmcache': warm_cache(root)
 
 if __name__=='__main__':

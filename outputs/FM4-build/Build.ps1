@@ -10,6 +10,7 @@ param(
     [switch]$SingleTile,
     [switch]$FixedVblank,
     [switch]$Rov,
+    [switch]$FullRateMirror,
     [ValidateRange(1,3)][int]$ResolutionScale = 1,
     [ValidateRange(30,240)][int]$FrameRate
 )
@@ -30,6 +31,7 @@ if ($Flavor) { $arguments += @('--flavor', $Flavor) }
 if ($SingleTile) { $arguments += @('--single-tile') }
 if ($FixedVblank) { $arguments += @('--fixed-vblank') }
 if ($Rov) { $arguments += @('--rov') }
+if ($FullRateMirror) { $arguments += @('--full-rate-mirror') }
 if ($ResolutionScale -gt 1) { $arguments += @('--resolution-scale', "$ResolutionScale") }
 if ($FrameRate) { $arguments += @('--frame-rate', "$FrameRate") }
 & $Python @arguments

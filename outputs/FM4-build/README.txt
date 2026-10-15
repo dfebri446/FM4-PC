@@ -80,6 +80,12 @@ Optional actions for performance work:
   race frame at 2, 55-57 fps with GPU about 13 ms at 3, sharp HUD and
   scene. Tested in the menus and Quick Race only; photo mode, replays and
   career have not been checked at these scales.
+- run -FullRateMirror renders the rear-view mirror every frame. By default
+  every race renders it every other frame, as the title itself does for 12 and
+  16 car races (HalfRateMirror in the race render scenarios; 1 and 8 car races
+  render it every frame). Quick Race (12 cars) with the mirror every frame:
+  55.6 fps instead of 59.7, GPU 9.5 ms instead of 8.1 a frame; at -FrameRate
+  120 75 fps instead of 84.
 - run -Rov uses the earlier pixel shader interlock render target path
   (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
   Quick Race 58.1 fps, frame p99 27 ms, GPU 16.6 ms a frame, too slow for
@@ -115,8 +121,9 @@ What happens
    and GPU DLLs, runs arithmetic instruction tests and writes build-result.json.
 4. run verifies the build artifacts and game revision, mounts Disc 1, imports
    Disc 2 packages if provided and starts the interactive game. Shader compilation
-   is synchronous; the existing shadow workaround is enabled. Rendering uses the
-   host render target path (render_target_path_d3d12=rtv with
+   is synchronous; the existing shadow workaround is enabled, and every race
+   renders the rear-view mirror every other frame (see -FullRateMirror).
+   Rendering uses the host render target path (render_target_path_d3d12=rtv with
    edram_single_rt_no_wrap=true): GPU about 7-8 ms a race frame instead of
    16.6 on the pixel shader interlock path, a stable 60 fps in Quick Race. Occlusion
    reports are published at once from the previous frame's samples
