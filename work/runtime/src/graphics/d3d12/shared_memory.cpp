@@ -21,6 +21,8 @@
 #include <rex/math.h>
 #include <rex/ui/d3d12/d3d12_util.h>
 
+#include "../util/perf_trace.h"
+
 REXCVAR_DEFINE_BOOL(d3d12_tiled_shared_memory, true, "GPU/D3D12",
                     "Use tiled shared memory on D3D12")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
@@ -323,10 +325,15 @@ bool D3D12SharedMemory::UploadRanges(
         REXGPU_ERROR("Shared memory: Failed to get an upload buffer");
         return false;
       }
+      uint64_t perf_start = perf_trace::ZoneStart();
       MakeRangeValid(upload_range_start << page_size_log2(), uint32_t(upload_buffer_size), false);
+      perf_trace::ZoneEnd(perf_trace::Zone::kSharedMemoryProtect, perf_start);
+      perf_start = perf_trace::ZoneStart();
       std::memcpy(upload_buffer_mapping,
                   memory().TranslatePhysical(upload_range_start << page_size_log2()),
                   upload_buffer_size);
+      perf_trace::ZoneEnd(perf_trace::Zone::kSharedMemoryCopy, perf_start);
+      perf_trace::CountUpload(upload_buffer_size);
       // The source, not the write-combined upload buffer, which is slow to read.
       NoteUploadedPages(upload_range_start, uint32_t(upload_buffer_size >> page_size_log2()),
                         memory().TranslatePhysical(upload_range_start << page_size_log2()));

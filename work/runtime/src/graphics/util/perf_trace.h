@@ -4,6 +4,7 @@
 // the variable is unset every helper returns immediately.
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -37,6 +38,7 @@ enum class Count : uint32_t {
   kPipelineDrawsWaited,   // Async shaders: draw waited for its pipeline, then drawn.
   kPipelineDrawsDropped,  // Async shaders: draw dropped, pipeline not ready.
   kSubmissions,           // Command lists submitted to the GPU queue.
+  kUploadRanges,          // Shared memory uploads (consecutive invalidated pages each).
   kCount
 };
 
@@ -57,6 +59,8 @@ enum class Zone : uint32_t {
   kSharedMemoryUpload,  // Uploading invalidated guest memory to the GPU buffer.
   kSubmitRecord,        // Replaying the deferred command list into the D3D12 one.
   kSubmitExecute,       // Close + ExecuteCommandLists + Signal.
+  kSharedMemoryProtect, // Upload: marking pages valid and watching them again.
+  kSharedMemoryCopy,    // Upload: copying guest memory into the upload buffer.
   kCount
 };
 
@@ -64,7 +68,7 @@ struct State {
   std::ofstream output;
   Wait cause = Wait::kOther;
   uint64_t frequency = 0, origin = 0, window_start = 0, last_swap = 0;
-  uint64_t max_frame = 0, readback_bytes = 0;
+  uint64_t max_frame = 0, readback_bytes = 0, upload_bytes = 0;
   uint32_t swaps = 0, draws = 0, copies = 0, readbacks = 0;
   uint64_t wait_ticks[size_t(Wait::kCount)]{};
   uint32_t waits[size_t(Wait::kCount)]{};
@@ -146,6 +150,24 @@ inline void CountDraw() {
 inline void CountCopy() {
   if (State* state = Get()) ++state->copies;
 }
+// Shared memory invalidations by guest CPU writes (any thread): count and bytes
+// invalidated, including the pages around the written one.
+inline std::atomic<uint32_t> invalidations{0};
+inline std::atomic<uint64_t> invalidated_bytes{0};
+inline void CountInvalidation(uint64_t bytes) {
+  if (Get()) {
+    invalidations.fetch_add(1, std::memory_order_relaxed);
+    invalidated_bytes.fetch_add(bytes, std::memory_order_relaxed);
+  }
+}
+
+inline void CountUpload(uint64_t bytes) {
+  if (State* state = Get()) {
+    ++state->counts[size_t(Count::kUploadRanges)];
+    state->upload_bytes += bytes;
+  }
+}
+
 inline void CountReadback(uint32_t bytes) {
   if (State* state = Get()) {
     ++state->readbacks;
@@ -250,7 +272,12 @@ inline void OnSwap() {
                 << ",\"fps\":" << double(state->swaps) * 1000.0 / ms(elapsed)
                 << ",\"frame_max_ms\":" << ms(state->max_frame) << ",\"draws\":" << state->draws
                 << ",\"copies\":" << state->copies << ",\"readbacks\":" << state->readbacks
-                << ",\"readback_kb\":" << (state->readback_bytes >> 10) << ",\"wait_ms\":{";
+                << ",\"readback_kb\":" << (state->readback_bytes >> 10)
+                << ",\"upload_kb\":" << (state->upload_bytes >> 10)
+                << ",\"invalidations\":" << invalidations.exchange(0, std::memory_order_relaxed)
+                << ",\"invalidated_kb\":"
+                << (invalidated_bytes.exchange(0, std::memory_order_relaxed) >> 10)
+                << ",\"wait_ms\":{";
   for (size_t i = 0; i < size_t(Wait::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kNames[i] << "\":" << ms(state->wait_ticks[i]);
   }
@@ -262,7 +289,8 @@ inline void OnSwap() {
                                             "viz_queries",       "viz_draws",
                                             "bin_selects",       "predicated_run",
                                             "predicated_skipped", "pipeline_draws_waited",
-                                            "pipeline_draws_dropped", "submissions"};
+                                            "pipeline_draws_dropped", "submissions",
+                                            "upload_ranges"};
   state->output << "},\"counts\":{";
   for (size_t i = 0; i < size_t(Count::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kCountNames[i] << "\":" << state->counts[i];
@@ -273,7 +301,8 @@ inline void OnSwap() {
                                            "draw_vertex_buffers", "copy",
                                            "submit",        "swap",
                                            "shared_memory_lock", "shared_memory_upload",
-                                           "submit_record", "submit_execute"};
+                                           "submit_record", "submit_execute",
+                                           "shared_memory_protect", "shared_memory_copy"};
   state->output << "},\"cpu_ms\":{";
   for (size_t i = 0; i < size_t(Zone::kCount); ++i) {
     state->output << (i ? "," : "") << '"' << kZoneNames[i] << "\":" << ms(state->zone_ticks[i]);

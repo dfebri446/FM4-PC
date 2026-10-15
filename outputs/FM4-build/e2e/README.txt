@@ -63,8 +63,15 @@ wait_reg_mem (PM4_WAIT_REG_MEM sleeping until its condition holds; in FM4
 mostly the swap waiting for vblank) and other. counts holds events per window: occlusion_awaited/unawaited (ROV
 occlusion snapshots whose report the guest spins on, or not), viz_queries,
 viz_draws (draws conditional on a viz query), bin_selects (SET_BIN_SELECT and
-_LO; tiling), predicated_run/predicated_skipped (bin-predicated packets).
-Compare stall times as well as FPS: FPS varies with what happens in a race.
+_LO; tiling), predicated_run/predicated_skipped (bin-predicated packets),
+upload_ranges (shared memory uploads). upload_kb is the guest memory uploaded
+to the GPU, invalidations and invalidated_kb the shared memory invalidations
+by guest CPU writes (any thread; with the pages around the written one).
+cpu_ms holds command-processor time per zone (draw and its parts, copy,
+submit, swap, shared_memory_upload split into shared_memory_copy and
+shared_memory_protect). Compare stall times as well as FPS: FPS varies with
+what happens in a race. Group seconds by draws per frame to compare runs at the
+same load (a car facing a wall draws a third as much).
 
 summary.json adds frame_ms_p50/p95/p99, hitch_50ms_per_min and
 hitch_100ms_per_min, cp_busy_ms_per_s_median (window minus all waits: wall time

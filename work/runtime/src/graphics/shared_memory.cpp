@@ -17,12 +17,18 @@
 
 #include <rex/assert.h>
 #include <rex/bit.h>
+#include <rex/cvar.h>
 #include <rex/dbg.h>
 #include <rex/hash.h>
 #include <rex/graphics/shared_memory.h>
 #include <rex/math.h>
 #include <rex/memory.h>
 #include "util/perf_trace.h"
+
+REXCVAR_DEFINE_BOOL(shared_memory_exact_invalidation, false, "GPU",
+                    "Invalidate only the pages a guest CPU write touches, not up to 256 KB around "
+                    "them (fewer re-uploads, more write faults)")
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
 namespace rex::graphics {
 
@@ -671,6 +677,9 @@ std::pair<uint32_t, uint32_t> SharedMemory::MemoryInvalidationCallback(
 
   auto global_lock = global_critical_region_.Acquire();
 
+  if (REXCVAR_GET(shared_memory_exact_invalidation)) {
+    exact_range = true;
+  }
   if (!exact_range) {
     // Check if a somewhat wider range (up to 256 KB with 4 KB pages) can be
     // invalidated - if no GPU-written data nearby that was not intended to be
@@ -705,6 +714,7 @@ std::pair<uint32_t, uint32_t> SharedMemory::MemoryInvalidationCallback(
     system_page_flags_valid_and_gpu_written_[i] &= ~invalidate_bits;
   }
   invalidation_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  perf_trace::CountInvalidation(uint64_t(page_last - page_first + 1) << page_size_log2_);
 
   FireWatches(page_first, page_last, false);
 

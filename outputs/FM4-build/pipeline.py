@@ -324,6 +324,10 @@ def launch_cvars(root,disc1,log_file):
             'render_target_path_d3d12':'rtv','edram_single_rt_no_wrap':'true','readback_resolve':'fast',
             'gpu_allow_invalid_fetch_constants':'true','async_shader_compilation':'false',
             'rov_occlusion_awaited_report_divisor':'2','rov_occlusion_async':'previous','vblank_vrr':'true',
+            # FM4 writes guest memory only through watched pages (REX_STALE_PAGE_TRACE finds no
+            # stale data), so CPU-uploaded pages need not be re-uploaded every frame; command lists
+            # are recorded and executed off the command processor thread.
+            'clear_memory_page_state':'false','d3d12_submit_thread':'true',
             'input_backend':'sdl','mnk_mode':'true','mnk_mouse':'false',
             'keybind_right_trigger':'W','keybind_left_trigger':'S',
             'keybind_lstick_left':'A','keybind_lstick_right':'D',

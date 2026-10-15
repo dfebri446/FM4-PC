@@ -69,27 +69,27 @@ Optional actions for performance work:
   their own settings.
 - run -FrameRate 120 lifts the title's 30/60 fps limits: the refresh rate it
   sees and its render scenario FrameRate become 120, and the title scales its
-  time step (race clock against wall time 1.001). Quick Race: 70-80 fps on
-  the open track (about 2,400 draws a frame) and up to 120 where fewer draws
+  time step (race clock against wall time 1.001). Quick Race: 88-98 fps on
+  the open track (2,000-3,200 draws a frame) and up to 120 where fewer draws
   are visible; every frame is fully rendered. The command processor thread
-  (about 880 ms busy a second) sets the ceiling, not the GPU (8-9 ms a frame).
-  30-240 accepted.
+  (about 780 ms busy a second) sets the ceiling, not the GPU (about 2.3 ms a
+  frame). 30-240 accepted.
 - run -ResolutionScale 2 renders at 2560x1440 and -ResolutionScale 3 at
   3840x2160 instead of 1280x720 (draw_resolution_scale_x/y; CPU readbacks of
-  resolves are downscaled). Quick Race: 56-59 fps with GPU about 9.8 ms a
-  race frame at 2, 55-57 fps with GPU about 13 ms at 3, sharp HUD and
-  scene. Tested in the menus and Quick Race only; photo mode, replays and
+  resolves are downscaled). Quick Race: 59.7 fps with GPU about 3.7 ms a
+  frame at 2, 59.9 fps with GPU about 6.8 ms at 3, sharp HUD and scene.
+  Tested in the menus and Quick Race only; photo mode, replays and
   career have not been checked at these scales.
 - run -FullRateMirror renders the rear-view mirror every frame. By default
   every race renders it every other frame, as the title itself does for 12 and
   16 car races (HalfRateMirror in the race render scenarios; 1 and 8 car races
-  render it every frame). Quick Race (12 cars) with the mirror every frame:
-  55.6 fps instead of 59.7, GPU 9.5 ms instead of 8.1 a frame; at -FrameRate
-  120 75 fps instead of 84.
+  render it every frame). Quick Race (12 cars) with the mirror every frame,
+  measured before the upload fix below: 55.6 fps instead of 59.7, GPU 9.5 ms
+  instead of 8.1 a frame; at -FrameRate 120 75 fps instead of 84.
 - run -Rov uses the earlier pixel shader interlock render target path
   (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
-  Quick Race 58.1 fps, frame p99 27 ms, GPU 16.6 ms a frame, too slow for
-  -FrameRate above 60 or -ResolutionScale.
+  Quick Race 59.9 fps, frame p99 20 ms, GPU 9.5 ms a frame (2.5 on the
+  default path).
 - warmcache drives the e2e Quick Race timeline once (no network) so the shader
   and pipeline cache under BuildRoot\cache is filled before playing.
 - build -Flavor thinlto,v3,pgo-gen,pgo-use builds a compiler experiment into
@@ -124,8 +124,11 @@ What happens
    is synchronous; the existing shadow workaround is enabled, and every race
    renders the rear-view mirror every other frame (see -FullRateMirror).
    Rendering uses the host render target path (render_target_path_d3d12=rtv with
-   edram_single_rt_no_wrap=true): GPU about 7-8 ms a race frame instead of
-   16.6 on the pixel shader interlock path, a stable 60 fps in Quick Race. Occlusion
+   edram_single_rt_no_wrap=true): GPU about 2.5 ms a race frame instead of
+   9.5 on the pixel shader interlock path, a stable 60 fps in Quick Race. Guest
+   memory the CPU wrote is uploaded to the GPU once, not again every frame
+   (clear_memory_page_state=false), and command lists are recorded and
+   executed on a thread of their own (d3d12_submit_thread=true). Occlusion
    reports are published at once from the previous frame's samples
    (rov_occlusion_async=previous) and resolve readbacks do not wait for the GPU
    (readback_resolve=fast). A frame that misses a guest vblank gets it as soon

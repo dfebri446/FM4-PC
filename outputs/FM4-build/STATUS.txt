@@ -412,6 +412,34 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   pra-balapan dan balapan normal, tanpa frame warna clear. Launcher:
   Build.ps1 -Action run -ResolutionScale 2|3. Belum diuji: photo mode, replay,
   karier dan Autovista.
+- B3 command processor (15 Oktober 2026): pada 120 Hz thread command
+  processor (CP) sibuk sekitar 870 ms/s pada sekitar 70 fps lintasan; pos
+  terbesar adalah upload memori guest: 29-30 MB per frame (2,1 GB/s, sekitar
+  940 rentang x 32 KB, hampir semuanya memcpy 175 ms/s; proteksi halaman 18
+  ms/s), dipicu permintaan vertex buffer. Penulisan CPU yang diawasi hanya
+  sekitar 3 invalidasi per frame (0,7 MB), dan invalidasi tepat
+  (shared_memory_exact_invalidation, eksperimen, default off) tidak mengubah
+  upload. Penyebab: clear_memory_page_state (default true di ReXGlue, hack
+  game tertentu di Xenia) mencabut bit valid semua halaman yang di-upload CPU
+  di akhir setiap frame (SetSystemPageBlocksValidWithGpuDataWritten), jadi
+  semua data vertex/tekstur yang dipakai di-upload ulang tiap frame.
+  REX_STALE_PAGE_TRACE dengan clear_memory_page_state=false: 0 baris S (tidak
+  ada byte basi di halaman valid yang diminta draw) di 2.280 frame yang
+  diperiksa; FM4 menulis memori hanya lewat halaman yang diawasi. Launcher kini
+  memakai clear_memory_page_state=false dan d3d12_submit_thread=true (replay
+  dan eksekusi command list di thread lain; sendiri +10% fps pada 120 Hz).
+  Hasil: upload 30 -> 0,1 MB per frame; GPU frame balapan (frame graph) 7,7
+  -> 2,5 ms (pass scene 4-5 -> 0,8 ms: sebelumnya GPU menunggu ratusan copy
+  kecil dari memori sistem dengan barrier di tengah pass). Quick Race 60 fps,
+  3 run: 59,3-59,8 fps, p99 20-21 ms, CP 466-506 ms/s (dari sekitar 600);
+  siklus kamera 59,7; 120 Hz 104,2 / 95,0 fps rata-rata, lintasan 88-98 fps
+  (dari 70-75), CP sekitar 780 ms/s; skala 2x 59,7 fps GPU 3,7 ms; 3x 59,9 fps
+  GPU 6,75 ms (dari 13); ROV 59,9 fps GPU 9,5 ms (dari 16,6). Tanpa crash,
+  tanpa frame warna clear, error sama, menu A/B identik. Perf trace kini juga
+  mencatat upload_kb, upload_ranges, invalidations, invalidated_kb dan zona
+  shared_memory_copy/protect. Untuk 120 fps di lintasan masih perlu
+  mengurangi kerja CP per draw (draw sekitar 420 ms/s, resolve 105 ms/s pada
+  120 Hz) dan menyelidiki tunggu WAIT_REG_MEM (sekitar 230 ms/s pada 120 Hz).
 - Readback CPU pada skala resolusi (15 Oktober 2026): readback resolve
   (readback_resolve=fast) mengecilkan data diskalakan ke 1x untuk memori guest
   dengan resolve_downscale.cs.hlsl, yang mengasumsikan scale_x * scale_y piksel
