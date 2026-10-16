@@ -621,14 +621,32 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   forceEnableDebugMenus, camoverride, runperfpredautomation. Build retail tidak
   pernah mengisinya: pemuat GAME:\cmdline.txt dikompilasi keluar (tidak ada
   pembacaan file) dan ExLoadedCommandLine tidak diimpor, jadi cvar cl tidak
-  sampai. Opsi dapat disuntikkan lewat hook konstruktor sub_823E2338
-  (terverifikasi: nilai masuk ke objek), tetapi kode yang membaca track, car,
+  sampai. Opsi dapat disuntikkan lewat hook konstruktor sub_823E2338 dan
+  default sub_823E7A10 (default menimpa nilai dari konstruktor), tetapi kode
+  yang membaca track, car,
   numaicars, engageaionstart, showframerate, forceEnableDebugMenus, camoverride
   dan unlockframerate tidak ada; launch, launchcarexperience, disablesplashintro,
   noattractvideo, nohud dan skiptutorials hanya dibaca sebagai penjaga yang
   melewati layar tertentu. Uji launch, launchcarexperience, disablesplashintro
   dan noattractvideo: boot, video dan layar judul tidak berubah. Peluncuran
   langsung atau balapan otomatis tidak tersedia dari opsi ini.
+- Opsi developer dibangun ulang (16 Oktober 2026): FM4_GAME_CMDLINE mengisi
+  objek parameter lewat parser game (fm4-command-line.cpp), dan
+  fm4-dev-features.cpp membaca opsi yang kodenya hilang:
+  - engageaionstart: pembuat driver sub_82A93880 (slot, setup) membuat
+    CHumanDriver bila slot+104 = 0 (mobil pemain; lawan 2) dan driver AI
+    (CMetaAIDriver atau CAIDrivatar, sub_82A935B8) untuk slot lain; hook
+    menandai slot pemain sebagai AI. Quick Race 60 Hz: mobil pemain berpindah
+    dari posisi 6 ke 5 dalam 40 detik dan mengikuti lintasan, sekitar 2.500
+    draw per frame. Smoke 240 Hz dengan opsi ini 3/3: pause, photo mode,
+    simpan foto, QUIT RACE, replay dan CONTINUE tetap berjalan; race photo
+    232,6 fps p99 5,2 ms, race career 226,5 fps. matrix.py memakainya secara
+    bawaan (--human untuk gas harness).
+  - Jalur pemuatan balapan (FM4_TRACE_RACE_SETUP): loop utama sub_826CFA68
+    -> sub_82430C08 -> state sub_82403C60 (subsistem mode baru; data balapan
+    dari objek game global 0x82DC36FC) -> sub_826DA8E0 (inisialisasi balapan)
+    -> sub_823D1BB0 (mobil) -> ... -> sub_82A93880. Dasar untuk launch
+    (balapan langsung), yang belum dibangun.
 - Belum dicakup: menyelesaikan balapan karier sampai hadiah (harness hanya
   menahan gas; butuh pengemudi otomatis), overwrite foto, foto dengan cache
   shader kosong, Autovista, mobil Disc 2.

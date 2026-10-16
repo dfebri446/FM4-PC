@@ -193,6 +193,10 @@
       "provenance": "Development build glue or diagnostic tooling"
     },
     {
+      "path": "work/fm4-rex/src/fm4-command-line.cpp",
+      "provenance": "Original integration source; guest function addresses and structure offsets only, no game function bodies"
+    },
+    {
       "path": "work/fm4-rex/src/fm4-content-installer.cpp",
       "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
     },
@@ -203,6 +207,10 @@
     {
       "path": "work/fm4-rex/src/fm4-d3d-trace.cpp",
       "provenance": "Original diagnostic integration source; guest function addresses and PM4 packet names only, no game function bodies"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-dev-features.cpp",
+      "provenance": "Original integration source; guest function addresses and structure offsets only, no game function bodies"
     },
     {
       "path": "work/fm4-rex/src/fm4-diagnostic-state.h",

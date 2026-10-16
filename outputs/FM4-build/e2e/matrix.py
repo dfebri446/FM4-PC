@@ -8,6 +8,8 @@ Tiers (README.txt, "Gates"):
   smoke  one run per scenario at 240 Hz: does it still work (about 10 minutes)
   perf   three runs of photo at 240 Hz: its race phase (12 cars, 30 s) and photo mode
   full   three runs of every scenario at 60 and 240 Hz: before committing a stage (about 1 hour)
+An AI driver drives the player's car in every race (FM4_GAME_CMDLINE=engageaionstart; --human
+for the harness throttle).
 
   python outputs\\FM4-build\\e2e\\matrix.py --build-root D:\\FM4-build --name vb --tier smoke --baseline reg
 """
@@ -89,6 +91,8 @@ def main():
     parser.add_argument('--baseline', help='compare each cell with <BuildRoot>/e2e/<baseline>-<hz>-<scenario>')
     parser.add_argument('--game-build', default='game-build', help='build directory to snapshot')
     parser.add_argument('--no-snapshot', action='store_true', help='run the build directory itself')
+    parser.add_argument('--human', action='store_true',
+                        help='drive with the harness input instead of the AI driver (engageaionstart)')
     parser.add_argument('--env', action='append', default=[], help='extra NAME=value for every cell')
     parser.add_argument('--arg', action='append', default=[], help='extra --cvar=value for every cell')
     options = parser.parse_args()
@@ -101,7 +105,11 @@ def main():
         parser.error('photo_view loads the photo of the photo cell; run photo too')
     scenarios = sorted(scenarios, key=lambda s: s != 'photo')
     build = Path(options.game_build) if options.no_snapshot else snapshot(root, options.game_build, options.name)
-    extra = [f'--env={e}' for e in options.env] + [f'--arg={a}' for a in options.arg]
+    # An AI driver drives the player's car, so every race follows the track and the load per
+    # frame no longer depends on where a car held at full throttle ends up.
+    env = options.env if options.human or any(e.startswith('FM4_GAME_CMDLINE=') for e in options.env) \
+        else options.env + ['FM4_GAME_CMDLINE=engageaionstart']
+    extra = [f'--env={e}' for e in env] + [f'--arg={a}' for a in options.arg]
     log = root / 'e2e' / f'{options.name}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     started, results = time.time(), []

@@ -316,7 +316,22 @@ compared (compare.py) with the cell of the same Hz and scenario of that gate,
 and <BuildRoot>\e2e\<name>.log keeps one line per cell. --scenarios, --hz and
 --repeat override the tier, --env and --arg pass to every cell. The photo race
 phase replaces the quickrace scenario in the gates; quickrace stays for
-comparisons with older results.
+comparisons with older results. In the gates an AI driver drives the player's
+car (engageaionstart below; --human for the harness throttle), so each race
+follows the track instead of ending at a wall.
+
+Developer options
+-----------------
+FM4 keeps its developer command line parameters, but the retail build never
+fills them (STATUS.txt). --env FM4_GAME_CMDLINE="<option> <option>=<value>"
+feeds them through the title's own parser after its defaults
+(fm4-command-line.cpp; a bare name means name=1). Options whose code the retail
+build no longer has are rebuilt in fm4-dev-features.cpp:
+  engageaionstart  an AI driver drives the player's car from the start; pause,
+                   photo mode, QUIT RACE, replays and CONTINUE work as usual
+--env FM4_TRACE_RACE_SETUP=1 prints the guest return addresses of each race's
+player driver creation: the main loop state that loads a race, for finding the
+code behind a game mode.
 
 Runtime development loop
 ------------------------

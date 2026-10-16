@@ -61,7 +61,9 @@
 !/work/fm4-rex/CMakeLists.txt
 !/work/fm4-rex/observe-frame.py
 !/work/fm4-rex/send-input.py
+!/work/fm4-rex/src/fm4-command-line.cpp
 !/work/fm4-rex/src/fm4-content-installer.cpp
+!/work/fm4-rex/src/fm4-dev-features.cpp
 !/work/fm4-rex/src/fm4-crash-diagnostics.cpp
 !/work/fm4-rex/src/fm4-diagnostic-state.h
 !/work/fm4-rex/src/fm4-fiber-hooks.cpp

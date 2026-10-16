@@ -16,6 +16,7 @@ void FM4InstallDisc2(rex::Runtime*);
 void FM4MountCache(rex::Runtime*);
 void FM4MountRenderOverrides(rex::Runtime*);
 void FM4InstallVblankRate(rex::Runtime*);
+void FM4InstallCommandLine();
 
 class Fm4RexApp : public rex::ReXApp {
  public:
@@ -55,6 +56,7 @@ class Fm4RexApp : public rex::ReXApp {
     FM4MountCache(runtime());
     FM4MountRenderOverrides(runtime());
     FM4InstallVblankRate(runtime());
+    FM4InstallCommandLine();
     FM4InstallDisc2(runtime());
     const char* input_file = std::getenv("FM4_TEST_INPUT_FILE");
     if (input_file && *input_file && runtime()->input_system()) {
