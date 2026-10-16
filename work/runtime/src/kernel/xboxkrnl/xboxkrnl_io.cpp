@@ -140,6 +140,8 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
 
   // Enforce that the path is ASCII.
   if (!IsValidPath(target_path, false)) {
+    REXKRNL_IMPORT_FAIL("NtCreateFile", "invalid path '{}' -> {:#x}", target_path,
+                        X_STATUS_OBJECT_NAME_INVALID);
     return X_STATUS_OBJECT_NAME_INVALID;
   }
 

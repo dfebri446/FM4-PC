@@ -433,18 +433,22 @@ u32 XamShowKeyboardUI_entry(u32 user_index, u32 flags, mapped_wstring default_te
 
   auto buffer_size = static_cast<size_t>(buffer_length) * 2;
 
+  // Without a dialog the prompt answers with default_text. value() is the raw big-endian guest
+  // string; load it in host order so copy_and_swap writes it back unchanged.
+  auto headless_run = [default_text, buffer, buffer_length, buffer_size]() -> X_RESULT {
+    if (!default_text) {
+      std::memset(buffer, 0, buffer_size);
+    } else {
+      rex::string::copy_and_swap_truncating(
+          buffer, rex::memory::load_and_swap<std::u16string>(default_text.host_address()),
+          buffer_length);
+    }
+    return X_ERROR_SUCCESS;
+  };
+
   X_RESULT result;
   if (REXCVAR_GET(headless)) {
-    auto run = [default_text, buffer, buffer_length, buffer_size]() -> X_RESULT {
-      // Redirect default_text back into the buffer.
-      if (!default_text) {
-        std::memset(buffer, 0, buffer_size);
-      } else {
-        rex::string::copy_and_swap_truncating(buffer, default_text.value(), buffer_length);
-      }
-      return X_ERROR_SUCCESS;
-    };
-    result = xeXamDispatchHeadless(run, overlapped.guest_address());
+    result = xeXamDispatchHeadless(headless_run, overlapped.guest_address());
   } else {
     auto close = [buffer, buffer_length](KeyboardInputDialog* dialog, uint32_t& extended_error,
                                          uint32_t& length) -> X_RESULT {
@@ -486,15 +490,7 @@ u32 XamShowKeyboardUI_entry(u32 user_index, u32 flags, mapped_wstring default_te
           close, overlapped.guest_address());
     } else {
       // Fallback to headless
-      auto run = [default_text, buffer, buffer_length, buffer_size]() -> X_RESULT {
-        if (!default_text) {
-          std::memset(buffer, 0, buffer_size);
-        } else {
-          rex::string::copy_and_swap_truncating(buffer, default_text.value(), buffer_length);
-        }
-        return X_ERROR_SUCCESS;
-      };
-      result = xeXamDispatchHeadless(run, overlapped.guest_address());
+      result = xeXamDispatchHeadless(headless_run, overlapped.guest_address());
     }
   }
   return result;
