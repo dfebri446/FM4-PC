@@ -709,6 +709,7 @@ def run_once(options, out):
         args['user_data_root'] = str(prepare_profile(source, root, out))
     look = pipeline.DEFAULT_LOOK if options.look is None else options.look
     args.update({k: str(v) for k, v in pipeline.look_cvars(root, look).items()})
+    args.update(pipeline.ao_cvars(options.ao))
     for item in options.arg:
         key, value = item.lstrip('-').split('=', 1)
         args[key] = value
@@ -930,6 +931,8 @@ def main():
                                        'e.g. "original" or "pc,sharpen=0.6"')
     parser.add_argument('--quality', help='race render quality like Build.ps1 -Quality '
                                           '(default: the launcher\'s), e.g. xbox')
+    parser.add_argument('--ao', action='store_true',
+                        help="the runtime's ambient occlusion pass (post_ao) like pipeline.py --ao")
     parser.add_argument('--tail', type=float, default=10, help='seconds to keep running after the last step')
     parser.add_argument('--keep-ppm', action='store_true', help='keep full-resolution captures')
     parser.add_argument('--measure', type=int, default=0, help='summarize only the last N perf seconds')

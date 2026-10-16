@@ -260,12 +260,30 @@ M0  Selesai di cabang gtao-m0 (17 Oktober 2026), tanpa menjalankan game:
       uji CPU dari build CMake tests lolos.
     Belum: pipeline.py menjalankan uji baru (hanya fm4_instruction_tests),
     dan launcher (post_ao_camera, -Look ao) menunggu M1/M4.
-M1  Satu run balapan siklus kamera (camrun.py) dengan post_ao=true,
-    post_ao_camera seperti di bagian 4 dan post_ao_log_every=60: grup depth,
-    ukuran host, W(d=0) dan W(d=1), FOV, dan kamera mana yang tidak punya VS
-    cocok. Linearisasi dibandingkan dengan c1 FinalCombine DOF di frame yang
-    memakainya. Frame dipetakan ke langkah e2e (steps.jsonl) untuk
-    memastikan adegan mana saja yang me-resolve depth.
+M1  Selesai 17 Oktober 2026: satu Quick Race siklus kamera (e2e --ao,
+    post_ao_log_every=30, post_ao_log_constants untuk c1 kedua FinalCombine
+    DOF dan c69 motion blur), di build game terpisah dari cabang ini
+    (render 1x). Hasil:
+    - Depth scene: 0x1C0C1000-0x1C459000, 1280x720, EDRAM 1024, host
+      1280x720. Pass jalan di setiap frame dari mulai intro pra-balapan
+      (frame 4798) sampai akhir run (9868), tanpa satu frame pun terlewat.
+    - Kamera tertangkap di semua kamera: intro sinematik (near 0,3, FOV 80,
+      70 dan 38; tele near 3, FOV 7-8), bumper, chase dekat dan jauh (near
+      0,3, far 7,5 km, FOV 93-98), kokpit (near 0,1, far 1 km, FOV 94), kap
+      (near 0,1, far 7,5 km, FOV 100-104, melebar dengan kecepatan).
+    - Linearisasi cocok dengan konstanta game sendiri: combineQVals DOF
+      (1,00004; -0,300012) dan (1,0004; -3,0012), QAndNegNearQAndScale
+      motion blur (1,00004; -0,300012) sama dengan Q dan Q*near dari P.
+      Saat near bergerak (frame 5960-5998, 0,52-0,61) keduanya bergerak
+      bersama. W(d=0) = far W, jadi Z memang dibalik lewat viewport.
+      Satuannya meter (near kokpit 0,1 m).
+    - Garasi dan showroom (DOF 30B67D8B86C37587) punya depth scene tetapi
+      tidak menggambar kedua VS kamera: tanpa AO (sekali peringatan). Untuk
+      itu perlu VS kamera tambahan.
+    - Run pertama menemukan bug di pustaka override: xe_post_ao memanggil
+      GetDimensions dengan 4 argumen, sehingga semua mod gagal dikompilasi
+      dan jatuh ke DXBC. Sudah diperbaiki; override_fxc.py dengan
+      XE_POST_AO_VIEW 418/418 (pustaka lama 0/1).
 M2  post_ao_debug=1 dilihat lewat kenop debug FinalCombine (mod menampilkan
     xe_post_ao langsung). Tepi W harus berimpit dengan tepi scene di
     -ResolutionScale 1 dan 2. Bila format atau endian depth salah, beralih

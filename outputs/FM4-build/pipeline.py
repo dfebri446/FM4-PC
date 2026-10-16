@@ -266,10 +266,25 @@ def build_game(root,fxc,jobs,flavor=()):
     for dll in (install/'bin').glob('*.dll'):
         shutil.copyfile(dll,build/dll.name)
     run([build/'fm4_instruction_tests.exe'],cwd=build,log=root/f'logs/instruction-tests{suffix}.log')
+    post_ao_tests(root,jobs)
     artifacts = ['fm4_rex.exe','fm4_rex_XMediaFacade_default.dll','fm4_rex_SpeechFacade_default.dll','rexruntime.dll','rexgpu-xenos.dll']
     report = {'artifacts':{name:digest(build/name) for name in artifacts},'gameplay_verified':False}
     (root/f'build-result{suffix}.json').write_text(json.dumps(report,indent=2))
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
+
+def post_ao_tests(root,jobs):
+    """CPU tests of the runtime's post_ao pass (GTAO-DESIGN.txt): its camera math, and its
+    compute shaders on WARP (Direct3D 12 on the CPU, no GPU). work/fm4-rex/tests, built against
+    the installed runtime headers."""
+    source,build=root/'project/tests',root/'tests-build'
+    run(['cmake','-S',source,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
+         '-DCMAKE_CXX_COMPILER=clang++',f'-DREX_HEADER_ROOT={root/"runtime-install/include"}'],
+        log=root/'logs/tests-configure.log')
+    run(['cmake','--build',build,'--parallel',jobs,'--target','fm4_post_ao_camera_tests',
+         'fm4_post_ao_shader_tests'],log=root/'logs/tests-build.log')
+    run([build/'fm4_post_ao_camera_tests.exe'],cwd=build,log=root/'logs/post-ao-camera-tests.log')
+    run([build/'fm4_post_ao_shader_tests.exe',root/'runtime-source/src/graphics/d3d12/post_ao.hlsl'],
+        cwd=build,log=root/'logs/post-ao-shader-tests.log')
 
 def build_profiling(root,fxc,jobs):
     """game-build-prof: game-build with a runtime that has line tables and PDBs, for the
@@ -463,13 +478,26 @@ def info_overlay(cvars,env,look,quality,display=None):
     mirror='half rate' if env.get('FM4_HALF_RATE_MIRROR')=='1' else 'every frame'
     path=cvars.get('render_target_path_d3d12','rtv').upper()
     lines.append(f'Races: {rate} fps, {pacing}; mirror {mirror}; {path} render targets')
+    if cvars.get('post_ao')=='true':
+        lines.append(f"Ambient occlusion: GTAO pass, quality {cvars.get('post_ao_quality','2')}, "
+                     f"radius {cvars.get('post_ao_radius','1')} m")
     if cvars.get('shader_override_ab_ms','0') not in ('','0'):
         lines.append(f'Shader A/B: game shaders every other {cvars["shader_override_ab_ms"]} ms')
     return '|'.join(lines)
 
+# Screen-space ambient occlusion of the scene depth (the runtime's post_ao pass,
+# outputs/FM4-analysis/GTAO-DESIGN.txt): the vertex shaders that carry the scene camera, the car
+# body paint (WVP and WV rows from c0 and c4) and the road (WVP from c128, world c140, view
+# inverse c243). Until a look mod reads it (xe_post_ao), the pass only runs and logs.
+POST_AO_CAMERA='8D05A46C3584CA9E:rows:0:4;C81F8D92FF6529EB:world:128:140:243'
+
+def ao_cvars(enabled):
+    return {'post_ao':'true','post_ao_camera':POST_AO_CAMERA} if enabled else {}
+
 def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,
            resolution_scale=None,full_rate_mirror=False,look=None,shadow_workaround=False,
-           quality=None,display=DEFAULT_DISPLAY,fullscreen=False,supersample=False,info=False):
+           quality=None,display=DEFAULT_DISPLAY,fullscreen=False,supersample=False,info=False,
+           ao=False):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -515,6 +543,7 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,
     # contrast, saturation, vignette, motion blur): the pc look unless -Look says otherwise.
     look=DEFAULT_LOOK if look is None else look
     cvars.update(look_cvars(root,look))
+    cvars.update(ao_cvars(ao))
     if disc2:
         env['FM4_DISC2_ROOT']=str(disc2)
     # The settings overlay: F2 in game, shown at start with -Info.
@@ -604,6 +633,8 @@ def main():
                              '; default '+DEFAULT_LOOK+') and/or knobs, for example '
                              '"pc,sharpen=0.6" (knobs: '+', '.join(LOOK_KNOBS)+
                              '; work/fm4-rex/look/fm4-look.hlsli)')
+    parser.add_argument('--ao',action='store_true',
+                        help="run: the runtime's screen-space ambient occlusion pass (post_ao, GTAO)")
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
     args=parser.parse_args()
     root=args.build_root.resolve()
@@ -628,7 +659,7 @@ def main():
     if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,
                                      args.resolution_scale,args.full_rate_mirror,args.look,
                                      args.shadow_workaround,args.quality,args.display,
-                                     args.fullscreen,args.supersample,args.info)
+                                     args.fullscreen,args.supersample,args.info,args.ao)
     if args.action=='warmcache': warm_cache(root)
     if args.action=='profbuild': build_profiling(root,fxc,args.jobs)
 

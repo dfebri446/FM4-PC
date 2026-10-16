@@ -596,7 +596,7 @@ float2 xe_texture_size_2d(uint fetch) {
 float xe_post_ao(float2 uv) {
 #ifdef XE_POST_AO_VIEW
   uint3 size;
-  xe_textures_2d[XE_POST_AO_VIEW].GetDimensions(0u, size.x, size.y, size.z);
+  xe_textures_2d[XE_POST_AO_VIEW].GetDimensions(size.x, size.y, size.z);
   int2 texel = clamp(int2(uv * float2(size.xy)), int2(0, 0), int2(size.xy) - 1);
   return xe_textures_2d[XE_POST_AO_VIEW].Load(int4(texel, 0, 0)).x;
 #else
