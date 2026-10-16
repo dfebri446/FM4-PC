@@ -635,29 +635,43 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   fm4-dev-features.cpp membaca opsi yang kodenya hilang:
   - engageaionstart: pembuat driver sub_82A93880 (slot, setup) membuat
     CHumanDriver bila slot+104 = 0 (mobil pemain; lawan 2) dan driver AI
-    (CMetaAIDriver atau CAIDrivatar, sub_82A935B8) untuk slot lain; hook
-    menandai slot pemain sebagai AI. Quick Race 60 Hz: mobil pemain berpindah
-    dari posisi 6 ke 5 dalam 40 detik dan mengikuti lintasan, sekitar 2.500
-    draw per frame. Smoke 240 Hz dengan opsi ini 3/3: pause, photo mode,
-    simpan foto, QUIT RACE, replay dan CONTINUE tetap berjalan; race photo
-    232,6 fps p99 5,2 ms, race career 226,5 fps. matrix.py memakainya secara
-    bawaan (--human untuk gas harness).
+    (CMetaAIDriver dengan CAIDrivatar, sub_82A935B8) untuk slot lain. Setup
+    pemain (+0 jenis 3, +360 terisi; lawan 2 dan 0) membuat sub_82A935B8
+    menyetel Drivatar sebagai milik pemain (sub_82A96900, sub_82A992E8 dengan
+    104), yang tidak menyetir dan tidak menginjak gas: tanpa gas harness mobil
+    berhenti di pagar pertama, dengan gas harness keluar lintasan (lap 1:25,5,
+    posisi 8/8). Hook kini menandai slot pemain seperti lawan (+104 = 2) dan
+    selama pembuatan driver saja membuat setup pemain tampak seperti lawan,
+    lalu mengembalikannya. Balapan karier Tsukuba Short Circuit (Ford Ka, 8
+    mobil, 3 lap) tanpa input: lap 1:02,1 dan 0:56,5, finis posisi 1 unggul
+    22,6 detik, menu YOU PLACED muncul. Pause, photo mode, simpan foto, QUIT
+    RACE, replay dan CONTINUE tetap berjalan (smoke 240 Hz 3/3 dengan versi
+    pertama). matrix.py memakainya secara bawaan (--human untuk gas harness).
+    Gas harness yang ditahan tidak mengubah hasil (tetap posisi 1), tetapi
+    e2e.py kini tidak mengirim input mengemudi bila opsi ini aktif.
+  - Balapan karier sampai hadiah (tier career, 240 Hz): career_finish menang
+    di Tsukuba (race 219 fps p99 6,9 ms), YOU PLACED Total +5.170 CR, driver
+    dan afinitas Ford level 2 (hadiah mobil 1994 Mazda MX-5 Miata, bonus
+    2.000 CR), EVENT COMPLETE; career_progress pada proses baru melihat event
+    berikutnya (TopGear Bowling Challenge) dengan Ford Ka LVL2 dan 15.740 CR
+    (sebelumnya LVL 1, 8.610 CR).
+  - nohud (masih dibaca retail, sub_8251DEB8): HUD hilang seluruhnya di Quick
+    Race; jangan dipakai pada skenario yang membaca HUD lewat OCR (career
+    menunggu LAPS). camoverride dan kode kamera tetapnya tidak ada di retail.
   - Jalur pemuatan balapan (FM4_TRACE_RACE_SETUP): loop utama sub_826CFA68
     -> sub_82430C08 -> state sub_82403C60 (subsistem mode baru; data balapan
     dari objek game global 0x82DC36FC) -> sub_826DA8E0 (inisialisasi balapan)
     -> sub_823D1BB0 (mobil) -> ... -> sub_82A93880. Dasar untuk launch
     (balapan langsung), yang belum dibangun.
-- Belum dicakup: menyelesaikan balapan karier sampai hadiah (harness hanya
-  menahan gas; butuh pengemudi otomatis), overwrite foto, foto dengan cache
-  shader kosong, Autovista, mobil Disc 2.
+- Belum dicakup: overwrite foto, foto dengan cache shader kosong, Autovista,
+  mobil Disc 2. (Balapan karier sampai hadiah: tier career, di bawah.)
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------
 1. Clone dan jalankan seluruh workflow pada komputer Windows kedua.
-2. Pada binary portable baru, selesaikan balapan karier sampai hadiah/Continue,
-   restart, lalu periksa progres; ulangi juga balapan mobil Disc 2. (Menu
-   karier, balapan World Tour, QUIT RACE, replay dan CONTINUE sudah dicakup
-   e2e career; menyelesaikan balapan belum.)
+2. Ulangi balapan mobil Disc 2 pada binary portable baru. (Balapan karier
+   sampai hadiah, restart dan pemeriksaan progres kini dicakup tier career:
+   career_finish dan career_progress dengan pengemudi AI.)
 3. Ulangi overwrite foto dan simpan/muat foto dengan cache shader kosong.
    (Simpan foto baru lalu muat setelah restart sudah dicakup e2e photo dan
    photo_view, di 60 dan 120 Hz.)

@@ -37,15 +37,25 @@ Gameplay scenarios (fixed timelines with screen checks, no network access):
   career      Career > GO RACE > WORLD TOUR, the profile's next event (Tsukuba
               Short Circuit with the Ford Ka for the BuildRoot profile), 40 s of
               driving, QUIT RACE, 30 s of the replay, CONTINUE to the event.
+  career_finish  the same event to the end, driven by the title's AI
+              (engageaionstart, needed): it wins the 3 laps in about 3 minutes;
+              CONTINUE, then A every 6 s through YOU PLACED (Total), the
+              driver and Ford affinity level 2 rewards (a gift car: the
+              default) up to EVENT COMPLETE, after the save.
+  career_progress  a new process on that profile: WORLD TOUR shows the next
+              event (the TopGear challenge) with the driver at level 2 and
+              credits other than the 8,610 CR before the race.
 They write saves, so run them on a copy of the profile:
   e2e.py ... --out <BuildRoot>\e2e\photo --scenario photo --profile copy
   e2e.py ... --out <BuildRoot>\e2e\view --scenario photo_view --profile <BuildRoot>\e2e\photo\user-data
   e2e.py ... --out <BuildRoot>\e2e\career --scenario career --profile copy
+  e2e.py ... --out <BuildRoot>\e2e\finish --scenario career_finish --profile copy --env FM4_GAME_CMDLINE=engageaionstart
+  e2e.py ... --out <BuildRoot>\e2e\progress --scenario career_progress --profile <BuildRoot>\e2e\finish\user-data
 --profile copies a user-data root ("copy": <BuildRoot>\user-data) to
 <out>\user-data and runs on it; the installed content packages
 (user-data\0000000000000000) are linked, not copied. With --repeat each run gets
-its own copy. The career race only holds the throttle (the Ford Ka ends up at a
-wall); finishing a race for its rewards needs a driver the harness does not have.
+its own copy. Without the AI driver the career race only holds the throttle (the
+Ford Ka ends up at a wall); career_finish needs engageaionstart.
 quickrace, photo, photo_view and career boot with one A per splash video read on
 screen (Microsoft Studios, Dolby), which skips it: the main menu shows after
 about 30 s instead of 47. A at a fixed rate is not used, because it also skips
@@ -308,6 +318,8 @@ run one at a time. Pick the tier by what a change can break:
          mode; for performance work, against a baseline gate of the same tier
   full   photo, photo_view, career at 60 and 240 Hz, three runs each (about
          1 hour): before committing a stage; --hz 60,120,240 adds 120 Hz
+  career career_finish and career_progress at 240 Hz, one run (about 8 min):
+         a career race to its rewards and the progress after a restart
 
   python outputs\FM4-build\e2e\matrix.py --build-root <BuildRoot> --name <name> --tier smoke --baseline <older name>
 
@@ -328,10 +340,15 @@ feeds them through the title's own parser after its defaults
 (fm4-command-line.cpp; a bare name means name=1). Options whose code the retail
 build no longer has are rebuilt in fm4-dev-features.cpp:
   engageaionstart  an AI driver drives the player's car from the start; pause,
-                   photo mode, QUIT RACE, replays and CONTINUE work as usual
+                   photo mode, QUIT RACE, replays and CONTINUE work as usual.
+                   e2e.py then sends no driving input: throttle, brake and
+                   steering steps ('rt=255', 'rt=255+back') become waits or
+                   the remaining button
 --env FM4_TRACE_RACE_SETUP=1 prints the guest return addresses of each race's
-player driver creation: the main loop state that loads a race, for finding the
-code behind a game mode.
+player driver creation (the main loop state that loads a race, for finding the
+code behind a game mode), every car's driver setup and the pending session
+type; FM4_TRACE_RACE_SETUP=<file> also appends 4 KB of the race settings
+(sub_822DEC50) to that file when a session starts.
 
 Runtime development loop
 ------------------------

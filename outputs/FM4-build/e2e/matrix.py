@@ -8,6 +8,8 @@ Tiers (README.txt, "Gates"):
   smoke  one run per scenario at 240 Hz: does it still work (about 10 minutes)
   perf   three runs of photo at 240 Hz: its race phase (12 cars, 30 s) and photo mode
   full   three runs of every scenario at 60 and 240 Hz: before committing a stage (about 1 hour)
+  career career_finish (the AI wins a career race, rewards, EVENT COMPLETE) and career_progress
+         (a new process sees level 2 and the new credits) at 240 Hz, one run (about 8 minutes)
 An AI driver drives the player's car in every race (FM4_GAME_CMDLINE=engageaionstart; --human
 for the harness throttle).
 
@@ -24,7 +26,10 @@ TIERS = {
     'smoke': (('photo', 'photo_view', 'career'), (240,), 1),
     'perf': (('photo',), (240,), 3),
     'full': (('photo', 'photo_view', 'career'), (60, 240), 3),
+    'career': (('career_finish', 'career_progress'), (240,), 1),
 }
+# Cells that run on the profile a previous cell of the gate saved.
+PROFILE_FROM = {'photo_view': 'photo', 'career_progress': 'career_finish'}
 
 
 def snapshot(root, source, name):
@@ -51,11 +56,12 @@ def cell_args(root, name, hz, scenario, repeat, build, extra):
         args += [f'--arg=--video_mode_refresh_rate={hz}', '--env', f'FM4_FRAME_RATE={hz}']
     if scenario == 'quickrace':
         args += ['--tail', '40', '--measure', '30']
-    if scenario in ('photo', 'career'):
+    if scenario in ('photo', 'career', 'career_finish'):
         args += ['--profile', 'copy']
-    if scenario == 'photo_view':
-        # The photo saved by the photo cell of the same gate.
-        args += ['--profile', root / 'e2e' / f'{name}-{hz}-photo' / ('run1' if repeat > 1 else '') / 'user-data']
+    if scenario in PROFILE_FROM:
+        # The profile saved by the earlier cell of the same gate (its photo, its race result).
+        source = f'{name}-{hz}-{PROFILE_FROM[scenario]}'
+        args += ['--profile', root / 'e2e' / source / ('run1' if repeat > 1 else '') / 'user-data']
     return args + extra
 
 
@@ -101,9 +107,10 @@ def main():
     scenarios = options.scenarios.split(',') if options.scenarios else scenarios
     rates = [int(r) for r in options.hz.split(',')] if options.hz else rates
     repeat = options.repeat or repeat
-    if 'photo_view' in scenarios and 'photo' not in scenarios:
-        parser.error('photo_view loads the photo of the photo cell; run photo too')
-    scenarios = sorted(scenarios, key=lambda s: s != 'photo')
+    for later, earlier in PROFILE_FROM.items():
+        if later in scenarios and earlier not in scenarios:
+            parser.error(f'{later} runs on the profile of the {earlier} cell; run {earlier} too')
+    scenarios = sorted(scenarios, key=lambda s: s not in PROFILE_FROM.values())
     build = Path(options.game_build) if options.no_snapshot else snapshot(root, options.game_build, options.name)
     # An AI driver drives the player's car, so every race follows the track and the load per
     # frame no longer depends on where a car held at full throttle ends up.

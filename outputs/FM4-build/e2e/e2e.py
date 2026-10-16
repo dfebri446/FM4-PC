@@ -110,6 +110,24 @@ SCENARIOS.update({
         [60, 'wait', 0, 'START RACE'],
     ],
 })
+SCENARIOS.update({
+    # The career race to its rewards; needs the AI driver (--env FM4_GAME_CMDLINE=engageaionstart,
+    # the matrix.py default): the Ford Ka wins the 3 laps of Tsukuba Short Circuit in about 3
+    # minutes. CONTINUE on the post-race menu at once (it starts the replay when left idle), then
+    # A every 6 s through YOU PLACED (Total), the driver and affinity level rewards (a gift car:
+    # A keeps the default) up to EVENT COMPLETE, which follows the save. Use --profile copy.
+    'career_finish': SCENARIOS['career'][:SCENARIOS['career'].index([1, 'rt=255', 0]) + 1] + [
+        [1, 'phase:race', 0], [40, 'wait', 0], [1, 'phase:end', 0],
+        [300, 'wait', 0, 'YOU PLACED|RACE RESULTS'], [0.5, 'a', 0.12],
+        [20, 'wait', 0, 'Total'], [180, 'a', 0.12, 'EVENT COMPLETE', 6], [10, 'wait', 0],
+    ],
+    # A new process on the profile of career_finish (--profile <run>\user-data): WORLD TOUR shows
+    # the next event (the TopGear challenge) with the driver at level 2 and the new credits.
+    'career_progress': _TO_CAREER + [
+        [30, 'up,a', 0.12, 'WORLD TOUR|EVENT LIST', 10], [90, 'up,a', 0.12, 'LVL2|LVL 2|LVL 1', 15],
+        [10, 'wait', 0, 'LVL2|LVL 2'], [5, 'wait', 0, '!8,610 CR'],
+    ],
+})
 RETRY_S = 5
 
 # Steps after a goal (--steps <name>): hold the throttle and press Back every 6 s, cycling
@@ -650,6 +668,23 @@ def summarize(perf, measure):
     return result
 
 
+DRIVING_INPUT = ('rt=', 'lt=', 'lx=', 'ly=')
+
+
+def without_driving_input(steps):
+    """Steps without throttle, brake and steering: 'rt=255' becomes 'wait', 'rt=255+back'
+    becomes 'back'. Menu presses and checks stay."""
+    result = []
+    for step in steps:
+        action = step[1]
+        parts = action.split('+')
+        kept = [p for p in parts if not p.startswith(DRIVING_INPUT)]
+        if ',' not in action and len(kept) != len(parts):
+            step = [step[0], '+'.join(kept) or 'wait', *step[2:]]
+        result.append(step)
+    return result
+
+
 def run_once(options, out):
     root = Path(options.build_root)
     out.mkdir(parents=True, exist_ok=True)
@@ -687,6 +722,11 @@ def run_once(options, out):
         steps = STEP_PRESETS[options.steps]
     else:
         steps = json.loads(options.steps) if options.steps else ([] if options.goal else SCENARIOS[options.scenario])
+    # With the title's AI driving the player's car (engageaionstart) the harness sends no
+    # driving input, so a race does not depend on whether pad input reaches that car.
+    ai_driving = 'engageaionstart' in env.get('FM4_GAME_CMDLINE', '')
+    if ai_driving:
+        steps = without_driving_input(steps)
 
     stderr = open(out / 'stderr.log', 'w', encoding='utf-8', errors='replace')
     started = time.time()
@@ -701,7 +741,7 @@ def run_once(options, out):
         if options.goal:
             goal_reached = navigate(options.goal, process, input_file, capture, out,
                                     started + options.goal_timeout, started)
-            if goal_reached:
+            if goal_reached and not ai_driving:
                 set_input(input_file, rt=255)
         for index, (wait, action, hold, *text) in enumerate(steps):
             if text:
@@ -867,7 +907,7 @@ def main():
                         help='build directory under BuildRoot, e.g. game-build-thinlto (pipeline.py --flavor)')
     parser.add_argument('--out', required=True, help='result directory, outside the repository')
     parser.add_argument('--scenario', default='boot', choices=sorted(SCENARIOS),
-                        help='fixed timeline: boot, quickrace, photo, photo_view, career')
+                        help='fixed timeline (README.txt, "Gameplay scenarios")')
     parser.add_argument('--profile', help="copy this user-data root to <out>/user-data for the run "
                                           "('copy': the BuildRoot one); the BuildRoot profile stays as it is")
     parser.add_argument('--goal', choices=sorted(GOALS), help='navigate with Jev instead of a timeline')
