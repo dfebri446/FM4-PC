@@ -542,12 +542,32 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   menghadap dinding atau lintasan); biaya per draw sama. Fase race photo
   dimulai saat start, jadi p99-nya mencakup hitch awal balapan. Tanpa crash,
   tanpa frame warna clear, kunci error sama dengan baseline.
-- Perilaku di 120 Hz yang terlihat dari skenario: timer idle UI FM4 menghitung
-  frame, jadi menu karier dan GO RACE bersembunyi, dan menu pasca-balapan
-  memutar replay sendiri, dua kali lebih cepat. Photo mode berjalan sekitar
-  55 fps (FrameRate 120) dan replay sekitar 60 fps (30 di 60 Hz); selama render
-  foto di 120 Hz tidak ada capture baru lebih dari 15 detik (di 60 Hz layar
-  LOADING... PLEASE WAIT masih tertangkap).
+- Efek samping mode 120 Hz (opt-in; default 60 Hz sama dengan Xbox 360):
+  - Menu dirender satu frame per vblank: skenario UI (UI_Car, UI_Homespace,
+    UI_NoCar, UI_Showroom) tidak punya FrameRate di media\RenderScenarios,
+    hanya balapan (60) dan countdown, pasca-balapan, replay, photo mode (30).
+    Terukur pada photo_view: menu 60 fps di 60 Hz, 120 fps di 120 Hz.
+  - Di 120 Hz menu karier dan GO RACE lebih cepat bersembunyi saat diam, dan
+    menu pasca-balapan lebih cepat memutar replay sendiri. Dugaan: timer idle
+    UI menghitung frame atau vblank. Belum diukur berapa kali lebih cepat.
+  - FM4_FRAME_RATE mengganti semua nilai FrameRate, jadi photo mode (sekitar
+    55 fps), replay (sekitar 60 fps) dan pasca-balapan tidak lagi 30 fps
+    seperti aslinya. Selama render foto di 120 Hz tidak ada capture baru
+    lebih dari 15 detik (di 60 Hz layar LOADING... PLEASE WAIT tertangkap).
+  - Bukan bug runtime atau emulasi: game mengasumsikan layar 60 Hz. Dampaknya
+    kenyamanan saja (tanpa crash atau kerusakan data).
+  - Rencana perbaikan (belum dikerjakan): laju vblank dinamis. Runtime memberi
+    vblank 60 Hz di luar balapan dan 120 Hz hanya saat skenario balapan
+    aktif; FM4_FRAME_RATE hanya untuk skenario *_Race, skenario 30 fps tetap
+    30. Langkah awal: ukur waktu sembunyi menu di 60 vs 120 Hz untuk memastikan
+    penyebab, lalu cari sinyal "sedang balapan" (apakah game membuka file
+    RenderScenarios setiap ganti skenario; kalau tidak, cari fungsi pemilih
+    skenario). Risiko: game membaca refresh rate dari kernel, jadi bila UI
+    menghitung waktu dari refresh yang dilaporkan, menu bisa menjadi lambat.
+    Titik kode: thread vsync di work/runtime/src/graphics/graphics_system.cpp
+    (vsync_interval_ticks dari VdQueryVideoMode), override skenario di
+    work/fm4-rex/src/fm4-render-overrides.cpp. Alternatif: patch timer UI di
+    kode game (lebih banyak kerja), atau tetap opt-in seperti sekarang.
 - Belum dicakup: menyelesaikan balapan karier sampai hadiah (harness hanya
   menahan gas; butuh pengemudi otomatis), overwrite foto, foto dengan cache
   shader kosong, Autovista, mobil Disc 2.

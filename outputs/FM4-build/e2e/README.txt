@@ -59,8 +59,9 @@ lines above and below it (ocr-server.ps1 red_above/red_below) and a dark band
 readings in a row agree, since menus slide and sway (the pause menu at 120 Hz
 most of all). Menus that act on their own when idle are not selected but driven
 with fixed presses as soon as they show: the career and GO RACE menus hide (Up
-shows them again), the post-race menu starts the race replay. Their idle timers
-count frames, so at 120 Hz this happens twice as fast. 'wait' waits without
+shows them again), the post-race menu starts the race replay. Menus render one
+frame per vblank, and at 120 Hz this happens sooner (probably timers counting
+frames; not measured, see STATUS.txt). 'wait' waits without
 touching the controller and
 'phase:<name>' ... 'phase:end' marks a measured phase. summary.json "phases" has
 the perf statistics per phase (photo: race, photo; career: race, replay), and

@@ -65,9 +65,9 @@ SCENARIOS.update({
     # MY PROFILE > MEDIA > MY PHOTOS > LOAD shows it full screen. OCR reads its watermark only
     # sometimes, so the check is that no menu, loading text or error follows (and final.png).
     'photo_view': _TO_CAREER + [
-        # The career menu hides again within one capture or two at 120 Hz (its idle timer counts
-        # frames), too fast for a select: Up shows it (or does nothing on GO RACE, where it
-        # opens), then four Downs reach MY PROFILE.
+        # The career menu hides again within one capture or two at 120 Hz (sooner than at 60 Hz),
+        # too fast for a select: Up shows it (or does nothing on GO RACE, where it opens), then
+        # four Downs reach MY PROFILE.
         [20, 'up,down,down,down,down,a', 0.12, 'EDIT PLAYERCARD', 20],
         [30, 'select:MEDIA', 0], [15, 'a', 0.12, 'MY PHOTOS'], [30, 'a', 0.12, 'VIEW PHOTOS', 10],
         [15, 'a', 0.12, 'FILE OPTIONS'], [20, 'a', 0.12, '!FILE OPTIONS', 8], [5, 'wait', 0],
