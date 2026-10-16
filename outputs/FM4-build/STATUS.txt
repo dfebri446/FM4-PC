@@ -542,6 +542,25 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   menghadap dinding atau lintasan); biaya per draw sama. Fase race photo
   dimulai saat start, jadi p99-nya mencakup hitch awal balapan. Tanpa crash,
   tanpa frame warna clear, kunci error sama dengan baseline.
+- Matriks 240 Hz, binary dan default launcher yang sama, 3 run per sel
+  (--arg=--video_mode_refresh_rate=240 --env FM4_FRAME_RATE=240; quickrace
+  dengan --tail 40 --measure 30 seperti baseline 60/120). Layar panel internal
+  240 Hz lewat iGPU (mode hybrid), render di RTX 5070 Ti Laptop:
+  quickrace   3/3, 223,6 fps (run 217-230), p99 5,7-6,2 ms, 0 hitch,
+              CP sibuk 657-888 ms/s, GPU 2,0-2,2 ms
+  photo       3/3; race 221-223 fps p99 6,8-8,3; photo mode 90-112 fps
+  photo_view  3/3, foto tampil berwarna; menu 229 fps
+  career      2/3; race 230 fps p99 5,5; replay 111-113 fps. Run 3 gagal di
+              GO RACE > WORLD TOUR: menu bersembunyi di antara capture 2 detik,
+              OCR tidak pernah membaca WORLD TOUR, padahal game sudah sampai
+              menu pra-balapan (START RACE). Bukan crash; harness belum diubah
+              karena vblank dinamis akan mengembalikan menu ke 60 Hz.
+  Tanpa crash, tanpa frame warna clear, kunci error sama dengan 120 Hz.
+  Balapan belum terkunci di 240 (batas 4,17 ms per frame). Per frame Quick
+  Race: draw tetap sekitar 2,51 ms seperti di 120 Hz, tetapi submit + swap
+  naik dari sekitar 0,23 ke 0,39 ms (submit 0,10 -> 0,18, swap 0,13 -> 0,21),
+  dan CP masih menunggu wait_reg_mem 128 ms/s. Validasi B3 mencatat 213 fps
+  dari satu run Quick Race 240 Hz.
 - Efek samping mode 120 Hz (opt-in; default 60 Hz sama dengan Xbox 360):
   - Menu dirender satu frame per vblank: skenario UI (UI_Car, UI_Homespace,
     UI_NoCar, UI_Showroom) tidak punya FrameRate di media\RenderScenarios,
