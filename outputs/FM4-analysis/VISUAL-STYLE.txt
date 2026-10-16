@@ -1,0 +1,108 @@
+GAYA VISUAL FM4: DARI KODE ATAU ASET - 15 Oktober 2026
+=====================================================
+Catatan riset: bagaimana warna dan "vibe" Forza Motorsport 4 dibentuk, dan
+bagian mana yang berasal dari kode game, aset game, atau runtime proyek ini.
+Sumber: data Disc 1 Japan/Asia (Media\...) dan image XEX yang sudah
+didekompresi (BuildRoot\loaded-image.bin). Aset dan shader game tidak
+disertakan di repo; nilai di bawah hanya ringkasan hasil pengamatan.
+
+RINGKASAN
+---------
+- Rumus efek (tone mapping, bloom, vignette, desaturasi, gamma keluaran) ada
+  di kode shader milik game, tertanam di default.xex.
+- Angka yang memberi rasa tiap lintasan (warna, exposure, kabut, warna
+  bayangan, bloom) ada di aset: Media\tracks\<Lintasan>\TrackSettings.xml.
+- Shader material (cat, krom, karbon, interior, partikel) berupa aset
+  .fxobj di Media\Shaders (mikrokode Xenos terkompilasi, 172 berkas).
+- Runtime proyek (work/runtime, work/fm4-rex) tidak merancang tampilan; ia
+  meniru hardware Xbox 360. Beberapa workaround tetap menyentuh visual
+  (lihat bagian RUNTIME).
+
+KODE: POST-PROCESSING DI default.xex
+------------------------------------
+Nama teknik dan konstanta shader yang ditemukan di image XEX:
+- FinalCombine_BloomTonemap dengan varian _Vignette, _DOF, _Watermark: pass
+  akhir yang menggabungkan scene HDR, bloom, tonemap dan vignette.
+- BlitOneTexDegammaToTonemapLinear, BlitOneTexDegammaTosRGB,
+  BlitOneTexDegammaToTV, gamma709, GaussianBlur7TapDegamma: konversi gamma
+  ke TV/sRGB dan blur bloom.
+- Konstanta: filmicParams1, filmicParams2, filmicParamsE,
+  tonemapAdaptiveExposure, vignetteColor, vignetteScaleOffsetPower,
+  saturatorSaturation.
+Cocok dengan frame graph balapan di PLAN.txt (B1): scene 7e3 HDR, rantai
+bloom/downsample 2_10_10_10 sampai 32x32, luminance 32_FLOAT 32x32 untuk
+auto-exposure, composite, lalu HUD. Sekitar 15 pass post-processing.
+
+ASET: TrackSettings.xml PER LINTASAN
+------------------------------------
+Nama tag di bawah juga muncul di XEX (dibaca kode di atas).
+  filmicTone (shoulderStrength, linearStrength, linearAngle, toeStrength,
+    toeNumerator, toeDenominator, white, exposure)
+    Kurva tonemap filmic; nama parameter sama dengan kurva gaya
+    Hable/Uncharted 2.
+  ToneMapAdaptiveExposure, ToneMapCockpitExposure, CameraExposureRange,
+  ToneMapeDelay
+    Auto-exposure; kokpit punya setelan sendiri.
+  bloomCutoff, bloomScale, bloomWeights, bloomPersist
+    Bloom.
+  DesaturateAmount, DesatLuminosity (koefisien Rec.709), DesatPostMod,
+  cubeSkySaturation
+    Saturasi.
+  ShadowColor, LightAmbient, SHLighting (atas/bawah/arah matahari),
+  DarkColor, LightColor
+    Pencahayaan.
+  Fog\Settings0..7 (warna, sudut, near/far, densitas)
+    Kabut berwarna per arah.
+  SunSize, SunAdjust, sunGainScale
+    Silau matahari.
+  imageBasedLighting, GlobalSpecularLevel, RoadSpecular, GlobalFresnel
+    Pantulan dan kilap.
+
+POLA DI 32 LINTASAN DAN RUANGAN
+-------------------------------
+- Lintasan balap: DesaturateAmount 0.85 di semua lintasan; kurva filmic
+  hampir seragam (shoulder sekitar 0.8, toe sekitar 0.18, exposure sekitar
+  0.31); bloomScale sekitar 4 (Infin 1.4, Nurburgring 1.5, RoadAmerica 2.0,
+  Motegi/Tsukuba/TopGear sekitar 5). Kesan: sedikit pudar, sinematik,
+  highlight bersinar.
+- HomeSpace/UI (garasi, showroom, thumbnail): DesaturateAmount 0.92-1.0,
+  shoulder 0.151, IBL aktif, bloom lebih lemah. Kesan: bersih, "studio".
+- Bayangan dan kabut cenderung biru dingin. Contoh Alps: ShadowColor
+  (0.22, 0.28, 0.34), kabut (0.46, 0.60, 0.85). Pengecualian hangat: kabut
+  Silverstone (0.70, 0.63, 0.50), cahaya matahari Autopark (0.80, 0.79,
+  0.70).
+- Antarlintasan yang berbeda terutama tint (kabut, bayangan, matahari,
+  bloom), bukan kurva dasar: gaya global konsisten, tiap lintasan diberi
+  warna sendiri.
+- Belum dibuktikan dari kode shader: arti pasti DesaturateAmount. Dugaan:
+  0.85 berarti 85% saturasi dipertahankan (thumbnail UI memakai 1.0).
+
+ASET LAIN YANG IKUT MEMBENTUK TAMPILAN
+--------------------------------------
+- Tekstur dan lightmap lintasan di bin.zip tiap folder lintasan;
+  staticcarcubemap.xpr untuk pantulan mobil; skybox (SkyboxIndex).
+- Media\RenderScenarios\*.xml: DOF, LOD mobil, kerumunan, tiling/MSAA,
+  frame rate per mode (balapan, replay, foto, UI).
+- Media\Effects: partikel (asap, debu, kaca, rumput) dan teksturnya.
+
+RUNTIME: BAGIAN PORT YANG MENYENTUH VISUAL
+------------------------------------------
+Bukan sumber gaya FM4, tetapi bisa membuat tampilan menyimpang dari Xbox asli:
+- Gamma ramp hardware ditiru saat present (apply_gamma_pwl / apply_gamma_table
+  di work/runtime/src/graphics); nilai ramp diberikan game.
+- work/fm4-rex/src/fm4-render-overrides.cpp menyalin RenderScenarios dan
+  menambahkan SkipShadowMapUnlessCockpit (workaround bayangan,
+  FM4_SHADOW_WORKAROUND); opsi lain mengganti TilingScenario, FrameRate dan
+  HalfRateMirror.
+- rov_occlusion_awaited_report_divisor=2 (empiris) memengaruhi kuat silau
+  matahari.
+- FXAA swap hanya pada mode single-tile; konversi format 7e3 di host; skala
+  resolusi (pipeline.py).
+
+ARAH PENGUBAHAN
+---------------
+- Tanpa mengubah kode: override TrackSettings.xml (DesaturateAmount,
+  filmicTone, bloomScale, warna kabut/bayangan) dengan mekanisme yang sama
+  seperti fm4-render-overrides.cpp. Belum diimplementasikan.
+- Mengubah rumus efek (tonemap, AA, efek baru) butuh shader yang dapat
+  dimodifikasi: tahap B4 di PLAN.txt.

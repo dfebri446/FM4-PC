@@ -45,6 +45,10 @@
       "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
     },
     {
+      "path": "outputs/FM4-analysis/VISUAL-STYLE.txt",
+      "provenance": "Project documentation; research notes on FM4 visual style (summarized observations, no game content)"
+    },
+    {
       "path": "outputs/FM4-build/Build.ps1",
       "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
     },

@@ -24,6 +24,7 @@
 !/outputs/FM4-analysis/input-packet-merge.patch
 !/outputs/FM4-analysis/runtime-delete-on-close.patch
 !/outputs/FM4-analysis/runtime-module-lifecycle.patch
+!/outputs/FM4-analysis/VISUAL-STYLE.txt
 !/outputs/FM4-build/Build.ps1
 !/outputs/FM4-build/README.txt
 !/outputs/FM4-build/STATUS.txt
