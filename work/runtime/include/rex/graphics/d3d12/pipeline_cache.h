@@ -28,6 +28,7 @@
 #include <rex/assert.h>
 #include <rex/graphics/d3d12/render_target_cache.h>
 #include <rex/graphics/d3d12/shader.h>
+#include <rex/graphics/d3d12/shader_override.h>
 #include <rex/graphics/flags.h>
 #include <rex/graphics/pipeline/shader/dxbc_translator.h>
 #include <rex/graphics/primitive_processor.h>
@@ -304,6 +305,8 @@ class PipelineCache {
   // Reusable shader translator for the processor thread.
   std::unique_ptr<DxbcShaderTranslator> shader_translator_;
   std::mutex translation_request_lock_;
+  // HLSL replacing translations (shader_override_path), or nullptr.
+  std::unique_ptr<ShaderOverrides> shader_overrides_;
 
   // Command processor thread DXIL conversion/disassembly interfaces, if DXIL
   // disassembly is enabled.

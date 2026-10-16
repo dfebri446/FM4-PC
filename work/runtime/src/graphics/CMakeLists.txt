@@ -69,6 +69,7 @@ if(REXGLUE_USE_D3D12)
         pipeline/shader/dxbc_translator_fetch.cpp
         pipeline/shader/dxbc_translator_memexport.cpp
         pipeline/shader/dxbc_translator_om.cpp
+        pipeline/shader/hlsl_translator.cpp
     )
 
     # D3D12 GPU backend
@@ -82,7 +83,20 @@ if(REXGLUE_USE_D3D12)
         d3d12/texture_cache.cpp
         d3d12/deferred_command_list.cpp
         d3d12/pipeline_cache.cpp
+        d3d12/shader_override.cpp
     )
+
+    # The HLSL library of shader overrides, embedded as kShaderOverrideHlsli.
+    set(REXGPU_SHADER_OVERRIDE_HLSLI ${CMAKE_CURRENT_SOURCE_DIR}/d3d12/shader_override.hlsli)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${REXGPU_SHADER_OVERRIDE_HLSLI})
+    file(READ ${REXGPU_SHADER_OVERRIDE_HLSLI} REXGPU_SHADER_OVERRIDE_HEX HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," REXGPU_SHADER_OVERRIDE_BYTES
+        "${REXGPU_SHADER_OVERRIDE_HEX}")
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/generated/shader_override_hlsli.h.new
+        "// Generated from d3d12/shader_override.hlsli.\n"
+        "static const unsigned char kShaderOverrideHlsli[] = {${REXGPU_SHADER_OVERRIDE_BYTES}};\n")
+    configure_file(${CMAKE_CURRENT_BINARY_DIR}/generated/shader_override_hlsli.h.new
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/shader_override_hlsli.h COPYONLY)
 endif()
 
 if(REXGLUE_USE_VULKAN)
@@ -108,6 +122,7 @@ set_target_properties(rexgpu-xenos PROPERTIES
 target_include_directories(rexgpu-xenos PRIVATE
     ${REXGLUE_ROOT}/thirdparty/renderdoc
     ${REXGLUE_ROOT}  # For thirdparty/dxbc/DXBCChecksum.h include
+    ${CMAKE_CURRENT_BINARY_DIR}/generated  # shader_override_hlsli.h
 )
 
 target_compile_options(rexgpu-xenos PRIVATE -Wno-unused-variable)

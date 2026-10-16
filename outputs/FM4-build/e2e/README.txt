@@ -350,6 +350,52 @@ code behind a game mode), every car's driver setup and the pending session
 type; FM4_TRACE_RACE_SETUP=<file> also appends 4 KB of the race settings
 (sub_822DEC50) to that file when a session starts.
 
+Shader overrides (B4)
+---------------------
+--arg shader_override_path=<dir> replaces the DXBC translation of a guest pixel
+shader with <dir>\shader_<ucode hash>[_<modification>].ps.hlsl (the hash and
+modification as in dump_shaders file names). The file defines
+  void xe_pixel_shader(inout XePixel p)
+reading p.r[] (r# with the interpolators loaded) and writing p.color[i] (oC#)
+and p.depth; the runtime compiles it with FXC ps_5_1 after the contract of the
+translation it replaces (XE_C(n) for c<n>, XE_TFETCH2D/3D/CUBE(fetch, coord) for
+the default tfetch, XE_TEXTURE*/XE_SAMPLER* slots) and the library
+work/runtime/src/graphics/d3d12/shader_override.hlsli, which mirrors the DXBC
+translator: tfetch, Shader Model 3 multiplication (xe_mul, xe_mad, xe_dp4,
+xe_mad_identical where the ucode multiplies identical operands), PWL gamma, and
+the epilogue (alpha test, alpha to coverage, exponent bias). runtime.log says
+"Shader override ... compiled" or why it kept the DXBC translation (FXC errors,
+a signature that differs from the translation's, float24 depth or memexport).
+With --arg dump_shaders=<dir>, the contract of every translated pixel shader,
+with its ucode, is written there (shader_<hash>_<modification>.ps.contract.hlsli).
+Overrides of game shaders are derived from game code: keep them in the
+BuildRoot, never in the repository.
+
+Starting points come from the generator (HlslShaderTranslator,
+work/runtime/src/graphics/pipeline/shader/hlsl_translator.cpp): for every pixel
+shader without an override file, --arg shader_override_generate_path=<dir> writes
+HLSL doing the operations of its DXBC translation, each block after the guest
+instruction in a comment; copy one to the override directory and edit it.
+--arg shader_override_generated=true uses the generated HLSL for all of them, to
+test the generator against the DXBC translations with the A/B below.
+override_fxc.py compiles overrides like the runtime without starting the game,
+against the contracts of a dump_shaders run (about 8 s for 418 shaders):
+
+  python outputs\FM4-build\e2e\override_fxc.py <override file or dir> <dump_shaders dir>
+
+
+--arg shader_override_ab_ms=<N> draws with the DXBC translations instead of the
+overrides in every other period of N ms of the steady clock, so one static scene
+shows both. override_ab.py lists consecutive captures of a --keep-ppm run with
+their phase: in a static scene same-phase pairs are identical, and on/off pairs
+are identical if the override renders exactly like the translation.
+
+  python outputs\FM4-build\e2e\e2e.py --build-root <BuildRoot> --out <dir> --scenario photo --profile copy --keep-ppm --env FM4_GAME_CMDLINE=engageaionstart --arg shader_override_path=<overrides> --arg shader_override_ab_ms=5000
+  python outputs\FM4-build\e2e\override_ab.py <dir> --period-ms 5000 --diff <dir>\ab-diff.png
+
+With 5000 ms and captures every 2 s, each phase has same-phase pairs; photo mode
+after the photo is taken (the SAVE/EXIT screen) is static for about 30 s.
+
 Runtime development loop
 ------------------------
 The runtime (ReXGlue SDK fork) is work/runtime in this repository:

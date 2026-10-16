@@ -199,7 +199,7 @@ Prioritas validasi berikutnya adalah komputer kedua, balapan karier sampai hadia
 
 Repo menyimpan kode integrasi, tooling, tes sintetis, metadata lokasi/batas fungsi, resep switch, dan runtime (fork SDK ReXGlue di `work/runtime`). Instruksi asli game, isi tabel switch, aset, shader game, hasil recompilation, binary, save, serta capture tidak disertakan. Instruksi dan isi tabel dibaca dari data milik pengguna saat generate.
 
-Catatan riset tentang asal gaya visual FM4 (shader di kode game vs parameter di aset lintasan) ada di [VISUAL-STYLE.txt](outputs/FM4-analysis/VISUAL-STYLE.txt).
+Catatan riset tentang asal gaya visual FM4 (shader di kode game vs parameter di aset lintasan) ada di [VISUAL-STYLE.txt](outputs/FM4-analysis/VISUAL-STYLE.txt). Riset jalur shader yang bisa diedit (B4: HLSL lewat FXC, override per hash) ada di [B4-SHADER-RESEARCH.txt](outputs/FM4-analysis/B4-SHADER-RESEARCH.txt).
 
 SDK dan shader resolve yang disertakan mempertahankan atribusi serta lisensi upstream:
 

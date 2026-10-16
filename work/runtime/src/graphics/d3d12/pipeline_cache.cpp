@@ -104,6 +104,12 @@ PipelineCache::PipelineCache(D3D12CommandProcessor& command_processor,
   if (edram_rov_used) {
     depth_only_pixel_shader_ = std::move(shader_translator_->CreateDepthOnlyPixelShader());
   }
+
+  shader_overrides_ = ShaderOverrides::Create(
+      {bindless_resources_used_, edram_rov_used,
+       !render_target_cache_.gamma_render_target_as_unorm16(),
+       render_target_cache_.msaa_2x_supported(), render_target_cache_.draw_resolution_scale_x(),
+       render_target_cache_.draw_resolution_scale_y()});
 }
 
 PipelineCache::~PipelineCache() {
@@ -892,6 +898,11 @@ DxbcShaderTranslator::Modification PipelineCache::GetCurrentPixelShaderModificat
     }
   }
 
+  if (shader_overrides_ && shader_overrides_->HasPixelShader(shader.ucode_data_hash()) &&
+      ShaderOverrides::IsAbOffPhase()) {
+    modification.pixel.hlsl_override_disabled = 1;
+  }
+
   return modification;
 }
 
@@ -1036,7 +1047,11 @@ bool PipelineCache::ConfigurePipeline(
     new_pipeline->state.store(CreateD3D12Pipeline(runtime_description), std::memory_order_release);
   }
 
-  if (pipeline_storage_file_) {
+  // Pipelines of the shader override A/B (DXBC instead of the override) are
+  // for this process only.
+  if (pipeline_storage_file_ &&
+      !DxbcShaderTranslator::Modification(description.pixel_shader_modification)
+           .pixel.hlsl_override_disabled) {
     assert_not_null(storage_write_thread_);
     pipeline_storage_file_flush_needed_ = true;
     {
@@ -1066,6 +1081,9 @@ bool PipelineCache::TranslateAnalyzedShader(DxbcShaderTranslator& translator,
   if (!translator.TranslateAnalyzedShader(translation)) {
     REXGPU_ERROR("Shader {:016X} translation failed; marking as ignored", shader.ucode_data_hash());
     return false;
+  }
+  if (shader_overrides_) {
+    shader_overrides_->Apply(translation);
   }
 
   const char* host_shader_type;

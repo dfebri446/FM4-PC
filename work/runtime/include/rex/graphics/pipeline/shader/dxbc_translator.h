@@ -176,6 +176,9 @@ class DxbcShaderTranslator : public ShaderTranslator {
       uint32_t dynamic_addressable_register_count : 8;
       // Non-ROV - depth / stencil output mode.
       DepthStencilMode depth_stencil_mode : 2;
+      // Not used by the translator: keeps the DXBC translation where an HLSL
+      // shader override would replace it (shader_override_ab_ms).
+      uint32_t hlsl_override_disabled : 1;
     } pixel;
 
     explicit Modification(uint64_t modification_value = 0) : value(modification_value) {

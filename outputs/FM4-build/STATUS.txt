@@ -663,6 +663,32 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
     dari objek game global 0x82DC36FC) -> sub_826DA8E0 (inisialisasi balapan)
     -> sub_823D1BB0 (mobil) -> ... -> sub_82A93880. Dasar untuk launch
     (balapan langsung), yang belum dibangun.
+- B4 langkah 1, override HLSL per hash (16 Oktober 2026; riset dan desain di
+  outputs/FM4-analysis/B4-SHADER-RESEARCH.txt, pemakaian di e2e/README.txt):
+  shader_override_path mengganti terjemahan DXBC pixel shader dengan HLSL yang
+  dikompilasi FXC ps_5_1 terhadap kontrak terjemahan itu dan pustaka
+  shader_override.hlsli; signature dibandingkan, bila gagal DXBC tetap. Tanpa
+  cvar ini jalurnya tidak berubah. FinalCombine_BloomTonemap PS
+  (E97AA211B556A9B3) ditulis ulang setia di BuildRoot: FXC 120 ms di dalam
+  game, PSO diterima. A/B dalam satu proses (shader_override_ab_ms=5000,
+  override_ab.py, skenario photo): di setiap bagian statis photo mode setelah
+  foto diambil, pasangan capture override/DXBC identik bit per bit (4 dari 4,
+  diapit pasangan sefase yang identik); pasangan yang berbeda jatuh di
+  transisi layar (dialog SAVE PHOTO, layar simpan). Varian eksposur +1 stop:
+  setiap pasangan override/DXBC di bagian statis yang sama berbeda dengan
+  angka yang sama (2,75 juta byte, rata-rata 29,2) dan terlihat lebih terang,
+  jadi shader ini memang aktif di sana. Satu run setia gagal di langkah OCR
+  SAVE PHOTO walau dialognya ada di capture (bukan render).
+- B4 langkah 2, backend HLSL (16 Oktober 2026): HlslShaderTranslator
+  menghasilkan override HLSL dari ucode pixel shader, operasi demi operasi
+  seperti terjemahan DXBC. Skenario photo: 418 dari 418 pixel shader
+  dihasilkan dan dikompilasi FXC tanpa kegagalan (median 136 ms per shader di
+  dalam game). Dengan shader_override_generated (semua pixel shader memakai
+  HLSL hasil generator) dan A/B 5 detik, capture override dan DXBC di bagian
+  statis photo mode dan layar boot identik bit per bit; pasangan yang berbeda
+  hanya di transisi layar (LOADING foto, boot), dengan angka yang sama seperti
+  run override tulisan tangan. Run e2e lolos. Bagian balapan bergerak tidak
+  bisa dibandingkan dengan A/B.
 - Belum dicakup: overwrite foto, foto dengan cache shader kosong, Autovista,
   mobil Disc 2. (Balapan karier sampai hadiah: tier career, di bawah.)
 

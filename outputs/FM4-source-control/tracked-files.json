@@ -49,6 +49,10 @@
       "provenance": "Project documentation; research notes on FM4 visual style (summarized observations, no game content)"
     },
     {
+      "path": "outputs/FM4-analysis/B4-SHADER-RESEARCH.txt",
+      "provenance": "Project documentation; research notes on the B4 shader path (summarized observations, no game content)"
+    },
+    {
       "path": "outputs/FM4-build/Build.ps1",
       "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
     },
@@ -94,6 +98,14 @@
     },
     {
       "path": "outputs/FM4-build/e2e/matrix.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/e2e/override_ab.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/e2e/override_fxc.py",
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
@@ -653,6 +665,10 @@
       "provenance": "runtime-fork"
     },
     {
+      "path": "work/runtime/include/rex/graphics/d3d12/shader_override.h",
+      "provenance": "runtime-fork"
+    },
+    {
       "path": "work/runtime/include/rex/graphics/d3d12/shared_memory.h",
       "provenance": "runtime-fork"
     },
@@ -690,6 +706,10 @@
     },
     {
       "path": "work/runtime/include/rex/graphics/pipeline/shader/dxbc_translator.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/pipeline/shader/hlsl_translator.h",
       "provenance": "runtime-fork"
     },
     {
@@ -2166,6 +2186,14 @@
       "provenance": "runtime-fork"
     },
     {
+      "path": "work/runtime/src/graphics/d3d12/shader_override.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/shader_override.hlsli",
+      "provenance": "runtime-fork"
+    },
+    {
       "path": "work/runtime/src/graphics/d3d12/shared_memory.cpp",
       "provenance": "runtime-fork"
     },
@@ -2215,6 +2243,10 @@
     },
     {
       "path": "work/runtime/src/graphics/pipeline/shader/dxbc_translator_om.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/pipeline/shader/hlsl_translator.cpp",
       "provenance": "runtime-fork"
     },
     {

@@ -25,6 +25,7 @@
 !/outputs/FM4-analysis/runtime-delete-on-close.patch
 !/outputs/FM4-analysis/runtime-module-lifecycle.patch
 !/outputs/FM4-analysis/VISUAL-STYLE.txt
+!/outputs/FM4-analysis/B4-SHADER-RESEARCH.txt
 !/outputs/FM4-build/Build.ps1
 !/outputs/FM4-build/README.txt
 !/outputs/FM4-build/STATUS.txt
@@ -34,6 +35,8 @@
 !/outputs/FM4-build/e2e/cp_profile.py
 !/outputs/FM4-build/e2e/inventory.py
 !/outputs/FM4-build/e2e/matrix.py
+!/outputs/FM4-build/e2e/override_ab.py
+!/outputs/FM4-build/e2e/override_fxc.py
 !/outputs/FM4-build/e2e/frame_graph.py
 !/outputs/FM4-build/e2e/race_clock.py
 !/outputs/FM4-build/e2e/pm4_writers.py

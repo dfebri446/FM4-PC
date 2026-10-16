@@ -778,6 +778,11 @@ class Shader {
 
     // Translated shader binary (or text).
     const std::vector<uint8_t>& translated_binary() const { return translated_binary_; }
+    // For host-side replacements of a successful translation with the same
+    // interface (HLSL shader overrides).
+    void ReplaceTranslatedBinary(std::vector<uint8_t> binary) {
+      translated_binary_ = std::move(binary);
+    }
 
     // Gets the translated shader binary as a string.
     // This is only valid if it is actually text.
