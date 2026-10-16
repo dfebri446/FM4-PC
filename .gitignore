@@ -27,6 +27,7 @@
 !/outputs/FM4-analysis/runtime-module-lifecycle.patch
 !/outputs/FM4-analysis/VISUAL-STYLE.txt
 !/outputs/FM4-analysis/B4-SHADER-RESEARCH.txt
+!/outputs/FM4-analysis/GTAO-DESIGN.txt
 !/outputs/FM4-analysis/MATERIAL-ATLAS.txt
 !/outputs/FM4-build/Build.ps1
 !/outputs/FM4-build/README.txt
@@ -100,5 +101,7 @@
 !/work/fm4-rex/src/vector-instruction-tests.h
 !/work/fm4-rex/tests/CMakeLists.txt
 !/work/fm4-rex/tests/make-vector-vectors.py
+!/work/fm4-rex/tests/post-ao-camera-tests.cpp
+!/work/fm4-rex/tests/post-ao-shader-tests.cpp
 !/work/fm4-rex/tests/texture-integer.cpp
 !/work/fm4-rex/tests/vector-vectors.h

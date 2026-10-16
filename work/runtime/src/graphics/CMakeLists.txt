@@ -84,19 +84,27 @@ if(REXGLUE_USE_D3D12)
         d3d12/deferred_command_list.cpp
         d3d12/pipeline_cache.cpp
         d3d12/shader_override.cpp
+        d3d12/post_ao.cpp
     )
 
-    # The HLSL library of shader overrides, embedded as kShaderOverrideHlsli.
-    set(REXGPU_SHADER_OVERRIDE_HLSLI ${CMAKE_CURRENT_SOURCE_DIR}/d3d12/shader_override.hlsli)
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${REXGPU_SHADER_OVERRIDE_HLSLI})
-    file(READ ${REXGPU_SHADER_OVERRIDE_HLSLI} REXGPU_SHADER_OVERRIDE_HEX HEX)
-    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," REXGPU_SHADER_OVERRIDE_BYTES
-        "${REXGPU_SHADER_OVERRIDE_HEX}")
-    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/generated/shader_override_hlsli.h.new
-        "// Generated from d3d12/shader_override.hlsli.\n"
-        "static const unsigned char kShaderOverrideHlsli[] = {${REXGPU_SHADER_OVERRIDE_BYTES}};\n")
-    configure_file(${CMAKE_CURRENT_BINARY_DIR}/generated/shader_override_hlsli.h.new
-        ${CMAKE_CURRENT_BINARY_DIR}/generated/shader_override_hlsli.h COPYONLY)
+    # The HLSL library of shader overrides, embedded as kShaderOverrideHlsli, and
+    # the post_ao compute shaders (compiled at startup), as kPostAoHlsl.
+    foreach(REXGPU_EMBEDDED IN ITEMS "shader_override.hlsli;kShaderOverrideHlsli"
+                                     "post_ao.hlsl;kPostAoHlsl")
+        list(GET REXGPU_EMBEDDED 0 REXGPU_EMBEDDED_FILE)
+        list(GET REXGPU_EMBEDDED 1 REXGPU_EMBEDDED_NAME)
+        set(REXGPU_EMBEDDED_PATH ${CMAKE_CURRENT_SOURCE_DIR}/d3d12/${REXGPU_EMBEDDED_FILE})
+        string(REPLACE "." "_" REXGPU_EMBEDDED_HEADER ${REXGPU_EMBEDDED_FILE})
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${REXGPU_EMBEDDED_PATH})
+        file(READ ${REXGPU_EMBEDDED_PATH} REXGPU_EMBEDDED_HEX HEX)
+        string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," REXGPU_EMBEDDED_BYTES
+            "${REXGPU_EMBEDDED_HEX}")
+        file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/generated/${REXGPU_EMBEDDED_HEADER}.h.new
+            "// Generated from d3d12/${REXGPU_EMBEDDED_FILE}.\n"
+            "static const unsigned char ${REXGPU_EMBEDDED_NAME}[] = {${REXGPU_EMBEDDED_BYTES}};\n")
+        configure_file(${CMAKE_CURRENT_BINARY_DIR}/generated/${REXGPU_EMBEDDED_HEADER}.h.new
+            ${CMAKE_CURRENT_BINARY_DIR}/generated/${REXGPU_EMBEDDED_HEADER}.h COPYONLY)
+    endforeach()
 endif()
 
 if(REXGLUE_USE_VULKAN)

@@ -12,3 +12,12 @@ target_include_directories(fm4_instruction_tests SYSTEM PRIVATE "${REX_HEADER_RO
 target_compile_definitions(fm4_instruction_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(fm4_instruction_tests PRIVATE -march=x86-64-v2 -ffp-contract=off)
 # This target has no runtime import library, code generator, or DLL-copy step.
+# Camera math of the runtime's post_ao pass (header only).
+add_executable(fm4_post_ao_camera_tests post-ao-camera-tests.cpp)
+target_include_directories(fm4_post_ao_camera_tests SYSTEM PRIVATE "${REX_HEADER_ROOT}")
+target_compile_options(fm4_post_ao_camera_tests PRIVATE -march=x86-64-v2 -ffp-contract=off)
+# The post_ao compute shaders on WARP (CPU Direct3D 12); argument: post_ao.hlsl.
+add_executable(fm4_post_ao_shader_tests post-ao-shader-tests.cpp)
+target_include_directories(fm4_post_ao_shader_tests SYSTEM PRIVATE "${REX_HEADER_ROOT}")
+target_compile_definitions(fm4_post_ao_shader_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(fm4_post_ao_shader_tests PRIVATE d3d12 dxgi d3dcompiler)

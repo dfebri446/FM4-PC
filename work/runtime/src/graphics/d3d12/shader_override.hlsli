@@ -589,6 +589,21 @@ float2 xe_texture_size_2d(uint fetch) {
   return float2((uint2(size_word, size_word >> 13u) & 0x1FFFu) + 1u);
 }
 
+// Ambient occlusion of the frame's scene from the runtime's post_ao pass, 0
+// (none) to 1, at a texture coordinate of the guest scene (the frame's resolved
+// depth texture spans 0...1). 0 without post_ao, before it runs in a frame and
+// outside the scene, so mods may apply it unconditionally.
+float xe_post_ao(float2 uv) {
+#ifdef XE_POST_AO_VIEW
+  uint3 size;
+  xe_textures_2d[XE_POST_AO_VIEW].GetDimensions(0u, size.x, size.y, size.z);
+  int2 texel = clamp(int2(uv * float2(size.xy)), int2(0, 0), int2(size.xy) - 1);
+  return xe_textures_2d[XE_POST_AO_VIEW].Load(int4(texel, 0, 0)).x;
+#else
+  return 0.0;
+#endif
+}
+
 #if XE_PIXEL_SHADER
 #define XE_LOD_DEFAULT XE_LOD_COMPUTED
 #define XE_SAMPLER_DEFAULT(fetch) XE_SAMPLER##fetch##_FFF

@@ -19,6 +19,7 @@
 #include <fmt/format.h>
 
 #include <rex/cvar.h>
+#include <rex/graphics/d3d12/command_processor.h>
 #include <rex/graphics/flags.h>
 #include <rex/graphics/pipeline/shader/dxbc_translator.h>
 #include <rex/graphics/pipeline/shader/hlsl_translator.h>
@@ -353,6 +354,11 @@ std::string ShaderOverrides::BuildContract(
   line("#define XE_GAMMA_RENDER_TARGET_AS_UNORM8 {}", int(config_.gamma_render_target_as_unorm8));
   line("#define XE_MSAA_2X_SUPPORTED {}", int(config_.msaa_2x_supported));
   line("#define XE_FUZZY_ALPHA_EPSILON {}", int(REXCVAR_GET(use_fuzzy_alpha_epsilon)));
+  // The post_ao occlusion in xe_textures_2d (xe_post_ao): 0, no occlusion,
+  // without post_ao and in frames it has not run in.
+  line("#define XE_POST_AO_VIEW {}u",
+       uint32_t(D3D12CommandProcessor::SystemBindlessView::kPostAoOcclusion) -
+           uint32_t(D3D12CommandProcessor::SystemBindlessView::kUnboundedSRVsStart));
 
   // Registers and interpolators (StartTranslation, StartPixelShader).
   uint32_t register_count = shader.register_static_address_bound();

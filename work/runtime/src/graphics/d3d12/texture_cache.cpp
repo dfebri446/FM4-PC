@@ -1410,6 +1410,59 @@ ID3D12Resource* D3D12TextureCache::RequestSwapTexture(D3D12_SHADER_RESOURCE_VIEW
   return texture_resource;
 }
 
+ID3D12Resource* D3D12TextureCache::RequestResolvedTexture(
+    uint32_t base_address, uint32_t pitch, uint32_t width, uint32_t height,
+    xenos::TextureFormat format, xenos::Endian endianness,
+    D3D12_SHADER_RESOURCE_VIEW_DESC& srv_desc_out, uint32_t& host_width_out,
+    uint32_t& host_height_out) {
+  if (!width || !height || width > pitch || (pitch & 31) || (base_address & 4095)) {
+    return nullptr;
+  }
+  // The fetch constant a guest shader sampling the resolve target would use.
+  xenos::xe_gpu_texture_fetch_t fetch = {};
+  fetch.type = xenos::FetchConstantType::kTexture;
+  fetch.pitch = pitch >> 5;
+  fetch.tiled = 1;
+  fetch.format = format;
+  fetch.endianness = endianness;
+  fetch.base_address = base_address >> 12;
+  fetch.size_2d.width = width - 1;
+  fetch.size_2d.height = height - 1;
+  fetch.swizzle = xenos::XE_GPU_TEXTURE_SWIZZLE_RGBA;
+  fetch.dimension = xenos::DataDimension::k2DOrStacked;
+  TextureKey key;
+  BindingInfoFromFetchConstant(fetch, key, nullptr);
+  if (!key.is_valid || key.base_page == 0) {
+    return nullptr;
+  }
+  D3D12Texture* texture = static_cast<D3D12Texture*>(FindOrCreateTexture(key));
+  if (texture == nullptr || !LoadTextureData(*texture)) {
+    return nullptr;
+  }
+  texture->MarkAsUsed();
+  // The state of textures bound to guest draws, so a guest shader sampling the
+  // same texture needs no transition.
+  constexpr D3D12_RESOURCE_STATES kState =
+      D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+  ID3D12Resource* texture_resource = texture->resource();
+  command_processor_.PushTransitionBarrier(texture_resource, texture->SetResourceState(kState),
+                                           kState);
+  srv_desc_out.Format = GetDXGIUnormFormat(key);
+  srv_desc_out.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+  srv_desc_out.Shader4ComponentMapping =
+      GuestToHostSwizzle(fetch.swizzle, GetHostFormatSwizzle(key)) |
+      D3D12_SHADER_COMPONENT_MAPPING_ALWAYS_SET_BIT_AVOIDING_ZEROMEM_MISTAKES;
+  srv_desc_out.Texture2D.MostDetailedMip = 0;
+  srv_desc_out.Texture2D.MipLevels = 1;
+  srv_desc_out.Texture2D.PlaneSlice = 0;
+  srv_desc_out.Texture2D.ResourceMinLODClamp = 0.0f;
+  // Only texture->key() tells whether the texture is scaled.
+  bool scaled = texture->key().scaled_resolve != 0;
+  host_width_out = width * (scaled ? draw_resolution_scale_x() : 1);
+  host_height_out = height * (scaled ? draw_resolution_scale_y() : 1);
+  return texture_resource;
+}
+
 D3D12TextureCache::D3D12Texture::D3D12Texture(D3D12TextureCache& texture_cache,
                                               const TextureKey& key, ID3D12Resource* resource,
                                               D3D12_RESOURCE_STATES resource_state,

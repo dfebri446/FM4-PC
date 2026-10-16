@@ -48,7 +48,13 @@
 
 namespace rex::graphics::d3d12 {
 
+class PostAo;
+
 class D3D12CommandProcessor : public CommandProcessor {
+  // Records its passes into the open submission, with the private state of the
+  // resolve and readback paths.
+  friend class PostAo;
+
  public:
   explicit D3D12CommandProcessor(D3D12GraphicsSystem* graphics_system,
                                  system::KernelState* kernel_state);
@@ -160,6 +166,8 @@ class D3D12CommandProcessor : public CommandProcessor {
     kNullTexture2DArray = kUnboundedSRVsStart,
     kNullTexture3D,
     kNullTextureCube,
+    // post_ao occlusion (2D array, R), for shader mods; reads 0 without post_ao.
+    kPostAoOcclusion,
 
     kCount,
   };
@@ -699,6 +707,9 @@ class D3D12CommandProcessor : public CommandProcessor {
   std::unique_ptr<PipelineCache> pipeline_cache_;
 
   std::unique_ptr<D3D12TextureCache> texture_cache_;
+
+  // Ambient occlusion of the scene depth (post_ao), or nullptr.
+  std::unique_ptr<PostAo> post_ao_;
 
   // Bytes 0x0...0x3FF - 256-entry gamma ramp table with B10G10R10X2 data (read
   // as R10G10B10X2 with swizzle).

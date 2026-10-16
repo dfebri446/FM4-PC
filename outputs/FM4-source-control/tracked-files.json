@@ -697,6 +697,14 @@
       "provenance": "runtime-fork"
     },
     {
+      "path": "work/runtime/include/rex/graphics/d3d12/post_ao.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/include/rex/graphics/d3d12/post_ao_camera.h",
+      "provenance": "runtime-fork"
+    },
+    {
       "path": "work/runtime/include/rex/graphics/d3d12/primitive_processor.h",
       "provenance": "runtime-fork"
     },
@@ -2218,6 +2226,14 @@
       "provenance": "runtime-fork"
     },
     {
+      "path": "work/runtime/src/graphics/d3d12/post_ao.cpp",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/graphics/d3d12/post_ao.hlsl",
+      "provenance": "runtime-fork"
+    },
+    {
       "path": "work/runtime/src/graphics/d3d12/primitive_processor.cpp",
       "provenance": "runtime-fork"
     },
@@ -3640,6 +3656,18 @@
     {
       "path": "work/runtime/thirdparty/CMakeLists.txt",
       "provenance": "runtime-fork"
+    },
+    {
+      "path": "outputs/FM4-analysis/GTAO-DESIGN.txt",
+      "provenance": "Project documentation; design of the post_ao (GTAO) pass from frame graph observations (addresses, hashes and registers only, no game code)"
+    },
+    {
+      "path": "work/fm4-rex/tests/post-ao-camera-tests.cpp",
+      "provenance": "Synthetic tests/oracle; no game input data"
+    },
+    {
+      "path": "work/fm4-rex/tests/post-ao-shader-tests.cpp",
+      "provenance": "Synthetic tests/oracle; no game input data"
     }
   ]
 }

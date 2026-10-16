@@ -31,6 +31,7 @@
 #include <rex/perf/counter.h>
 #include <rex/graphics/d3d12/command_processor.h>
 #include <rex/graphics/d3d12/graphics_system.h>
+#include <rex/graphics/d3d12/post_ao.h>
 #include <rex/graphics/d3d12/shader.h>
 #include <rex/graphics/flags.h>
 #include <rex/graphics/registers.h>
@@ -2511,6 +2512,19 @@ bool D3D12CommandProcessor::SetupContext() {
         nullptr, &null_srv_desc,
         provider.OffsetViewDescriptor(view_bindless_heap_cpu_start_,
                                       uint32_t(SystemBindlessView::kNullTextureCube)));
+    // kPostAoOcclusion: zero until post_ao writes it (no occlusion).
+    null_srv_desc.Format = DXGI_FORMAT_R8_UNORM;
+    null_srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+    null_srv_desc.Texture2DArray.MostDetailedMip = 0;
+    null_srv_desc.Texture2DArray.MipLevels = 1;
+    null_srv_desc.Texture2DArray.FirstArraySlice = 0;
+    null_srv_desc.Texture2DArray.ArraySize = 1;
+    null_srv_desc.Texture2DArray.PlaneSlice = 0;
+    null_srv_desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+    device->CreateShaderResourceView(
+        nullptr, &null_srv_desc,
+        provider.OffsetViewDescriptor(view_bindless_heap_cpu_start_,
+                                      uint32_t(SystemBindlessView::kPostAoOcclusion)));
     // kSharedMemoryRawSRV.
     shared_memory_->WriteRawSRVDescriptor(provider.OffsetViewDescriptor(
         view_bindless_heap_cpu_start_, uint32_t(SystemBindlessView::kSharedMemoryRawSRV)));
@@ -2607,6 +2621,8 @@ bool D3D12CommandProcessor::SetupContext() {
   // Just not to expose uninitialized memory.
   std::memset(&system_constants_, 0, sizeof(system_constants_));
 
+  post_ao_ = PostAo::Create(*this);
+
   return true;
 }
 
@@ -2614,6 +2630,7 @@ void D3D12CommandProcessor::ShutdownContext() {
   ShutdownReadbackPublishThread();
   ShutdownSubmitThread();
   AwaitAllQueueOperationsCompletion();
+  post_ao_.reset();
   InvalidateAllVertexBufferResidency();
   ShutdownOcclusionQueryResources();
   ShutdownGpuTimestamps();
@@ -2956,6 +2973,10 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
   if (!BeginSubmission(true)) {
     REXGPU_ERROR("IssueSwap: BeginSubmission failed");
     return;
+  }
+  if (post_ao_) {
+    // The occlusion is of this frame's scene only.
+    post_ao_->OnSwap();
   }
 
   // Obtain the actual swap source texture size (resolution-scaled if it's a
@@ -3357,6 +3378,10 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
     return false;
   }
   pipeline_cache_->AnalyzeShaderUcode(*vertex_shader);
+  if (post_ao_) {
+    post_ao_->OnDraw(regs, vertex_shader->ucode_data_hash(),
+                     active_pixel_shader() ? active_pixel_shader()->ucode_data_hash() : 0);
+  }
   if (draw_list_entry.trace) {
     uint32_t* values = draw_list_entry.values;
     values[0] = uint32_t(vertex_shader->ucode_data_hash());
@@ -4234,7 +4259,12 @@ bool D3D12CommandProcessor::IssueCopy() {
     const bool result = render_target_cache_->Resolve(*memory_, *shared_memory_, *texture_cache_,
                                                       written_address, written_length);
     EndGpuTimestamp(timestamp);
-    if (result) CountResolveDestination(written_address, written_length);
+    if (result) {
+      CountResolveDestination(written_address, written_length);
+      if (post_ao_) {
+        post_ao_->OnResolve(*register_file_, written_address, written_length);
+      }
+    }
     return result;
   }
   return IssueCopy_ReadbackResolvePath();
@@ -4259,6 +4289,9 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
     return false;
   }
   CountResolveDestination(written_address, written_length);
+  if (post_ao_) {
+    post_ao_->OnResolve(*register_file_, written_address, written_length);
+  }
 
   if (!written_length) {
     return true;
