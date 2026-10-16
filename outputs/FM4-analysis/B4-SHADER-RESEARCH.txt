@@ -183,3 +183,42 @@ LANGKAH 3 B4: MOD TAMPILAN (16 Oktober 2026)
   vignette 0,3, motion blur 0,3 dan A/B 5 detik: kelima mod dikompilasi
   (0,5-1,3 detik); di photo mode, aspal dan detail mobil lebih tajam, pendaran
   bloom lebih kecil, kerb dan garis jalan tidak lagi tercoreng motion blur.
+
+LANGKAH 4 B4: KURVA TONEMAP (16 Oktober 2026)
+---------------------------------------------
+- Keempat FinalCombine punya pola konstanta yang sama: A dan B di Y dan Z
+  konstanta k, CB, DF, DE dan E/F di konstanta k+1, skala dan offset LUT di X
+  konstanta s dan s+1, F di white pada interpolator 1 Z dan eksposur pada
+  interpolator 1 W (input, belum ditimpa sebelum dipakai):
+    E97AA211B556A9B3  k 5,  s 0      9CDA139F232A8A73  k 8,  s 3
+    30B67D8B86C37587  k 19, s 2      AE3B2E36FCA4958D  k 22, s 5
+  Pada varian DOF, warna yang di-tonemap adalah komposit DOF.
+- -Look tonemap=gt|aces|neutral (FM4_LOOK_TONEMAP 1-3; filmic 0 = asli): hook
+  fetch 7 (LUT) mengambil F(x) dari koordinat LUT ((coord - offset) * F(white)
+  / skala), membalik F secara eksak (akar positif persamaan kuadrat
+  A(1-q)x^2 + (CB - qB)x + (DE - q DF) = 0, q = F + E/F; galat relatif 4e-13
+  di presisi ganda), menskalakan x supaya abu-abu tengah (0,18) tetap di
+  tempat kurva game, lalu mengambil LUT pada koordinat kurva baru. LUT grading
+  lintasan, matriks warna, vignette dan auto-eksposur tetap. Kurva: GT
+  (Uchimura, CEDEC 2017: toe pangkat, bagian linear, shoulder eksponensial),
+  ACES (fit Narkowicz 2015), Khronos PBR Neutral. F(white) diteruskan dari
+  hook input lewat variabel static.
+- Simulasi dengan filmicTone Alps (A 0,6, B 0,04, C 0,63, D 0,22, E 0,003,
+  F 0,14), nilai gamma 2 per stop dari abu-abu tengah:
+              -4     -2     +0     +2     +3     +4
+    asli    0,072  0,164  0,424  0,857  0,971  1,000
+    GT      0,066  0,170  0,424  0,830  0,966  0,998
+    ACES    0,053  0,150  0,424  0,793  0,901  0,959
+    neutral 0,034  0,138  0,424  0,906  0,976  0,990
+  ACES menggelapkan bayangan dan menyisakan detail sampai sekitar 4,5 stop di
+  atas abu-abu tengah (asli jenuh sekitar 3 stop); GT paling dekat dengan
+  asli. Hasilnya sama untuk white 1, 4 dan 11,2 karena jangkarnya abu-abu
+  tengah.
+- override_fxc.py --mods: 418/418 dikompilasi untuk tonemap 0-3; E97A dengan
+  GT 691 instruksi (asli 605).
+- Di game, skenario photo dengan A/B 5 detik per kurva: kelima mod
+  dikompilasi (80-940 ms). Pasangan mod/DXBC di bagian statis photo mode
+  (diapit pasangan sefase yang identik) berbeda rata-rata 4,7 per byte untuk
+  ACES, 3,0 GT, 3,5 neutral, dan 6,4 untuk ACES dengan saturation 1,1, bloom
+  0,7 dan sharpen 0,4. Sesuai simulasi: ACES menggelapkan bayangan (pohon,
+  ban, aspal) dan menyisakan gradasi di salju; GT paling dekat ke asli.

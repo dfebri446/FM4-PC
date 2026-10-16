@@ -403,8 +403,11 @@ and the outputs (XE_HOOK_OUTPUT); --arg shader_mod_defines=NAME=VALUE;... sets
 its defines. The defaults change nothing. work/fm4-rex/look holds the look mods
 of FM4's post-processing (original code, see fm4-look.hlsli): Build.ps1 -Action
 run -Look "sharpen=0.5,bloom=0.8,contrast=0.2,saturation=1.05,vignette=0.5,
-motion_blur=0.5,exposure=0" (pipeline.py and e2e.py --look) copies them to
-<BuildRoot>\look and sets the knobs; knobs left out keep the original look.
+motion_blur=0.5,exposure=0,tonemap=aces" (pipeline.py and e2e.py --look) copies
+them to <BuildRoot>\look and sets the knobs; knobs left out keep the original
+look. tonemap=gt|aces|neutral replaces the game's filmic curve before its
+color grading LUT, with middle gray where the game puts it (filmic: the
+original).
 
 --arg shader_override_ab_ms=<N> draws with the DXBC translations instead of the
 overrides in every other period of N ms of the steady clock, so one static scene

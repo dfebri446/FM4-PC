@@ -11,6 +11,9 @@
 //   FM4_LOOK_SATURATION   >= 0   saturation of the final image (1: original)
 //   FM4_LOOK_VIGNETTE     >= 0   vignette strength (1: original, 0: off)
 //   FM4_LOOK_MOTION_BLUR  0...1  motion blur (1: original, 0: off)
+//   FM4_LOOK_TONEMAP      0...3  tone curve before the color grading LUT: 0 the game's
+//                                filmic curve, 1 GT (Uchimura), 2 ACES (Narkowicz fit),
+//                                3 neutral (Khronos PBR Neutral)
 
 #ifndef FM4_LOOK_SHARPEN
 #define FM4_LOOK_SHARPEN 0.0
@@ -32,6 +35,9 @@
 #endif
 #ifndef FM4_LOOK_MOTION_BLUR
 #define FM4_LOOK_MOTION_BLUR 1.0
+#endif
+#ifndef FM4_LOOK_TONEMAP
+#define FM4_LOOK_TONEMAP 0.0
 #endif
 
 #ifdef XE_TEXTURE0_2D_U
@@ -78,8 +84,86 @@ float4 fm4_bloom(float4 bloom) {
   return float4(bloom.rgb * sqrt(max(FM4_LOOK_BLOOM, 0.0)), bloom.a);
 }
 
-// Fetches of the final combine shaders: 0 the scene, 2 the bloom.
-float4 fm4_combine_fetch(uint fetch, float4 value, float4 coord) {
+// Tone curves. The final combine shaders map the exposed scene color x with a
+// filmic curve F(x) = (x(Ax + CB) + DE) / (x(Ax + B) + DF) - E/F (A and B in Y
+// and Z of the first of two constants, CB, DF, DE and E/F in the second), normalize it so
+// white reaches 1 (F at white comes in interpolator 1 Z) and look the result up
+// in the track's color grading LUT at t * scale + offset. These replace F
+// between the two: the LUT coordinate gives F(x) back, F is inverted for x, and
+// the new curve maps x, scaled so that middle gray (0.18) stays where the game's
+// curve puts it, which keeps the auto exposure and the grading as they are.
+
+// F at white, interpolator 1 Z of the final combine shaders (fm4_combine_input).
+static float fm4_white_filmic = 1.0;
+
+// x for which the game's filmic curve gives y (the positive root of the
+// quadratic, in the form that stays precise for either sign of its B term).
+float3 fm4_filmic_inverse(float3 y, float4 ab, float4 cdef) {
+  float3 q = min(y + cdef.w, 1.0 - 1.0e-6);
+  float3 a = ab.y * (1.0 - q);
+  float3 b = cdef.x - q * ab.z;
+  float3 c = cdef.z - q * cdef.y;
+  float3 root = sqrt(max(b * b - 4.0 * a * c, 0.0));
+  float3 x = (b >= 0.0) ? (2.0 * c) / min(-b - root, -1.0e-20) : (root - b) / max(2.0 * a, 1.0e-20);
+  return max(x, 0.0);
+}
+
+// GT tone curve (Hajime Uchimura, CEDEC 2017): a power toe, a linear middle and
+// an exponential shoulder towards 1; P 1, a 1, m 0.22, l 0.4, c 1.33, b 0.
+float3 fm4_curve_gt(float3 x) {
+  const float m = 0.22, c = 1.33;
+  const float l0 = (1.0 - m) * 0.4;
+  const float s0 = m + l0, s1 = m + l0;
+  const float cp = -1.0 / (1.0 - s1);
+  float3 w0 = 1.0 - smoothstep(0.0, m, x);
+  float3 w2 = step(s0, x);
+  float3 w1 = 1.0 - w0 - w2;
+  float3 toe = m * pow(max(x, 0.0) / m, c);
+  float3 shoulder = 1.0 - (1.0 - s1) * exp(cp * (x - s0));
+  return toe * w0 + x * w1 + shoulder * w2;
+}
+
+// ACES filmic curve fit (Krzysztof Narkowicz, 2015).
+float3 fm4_curve_aces(float3 x) {
+  return (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+}
+
+// Khronos PBR Neutral: linear up to 0.76, then the brightest channel compressed
+// towards 1 and the color desaturated by how much was compressed, so hues keep.
+float3 fm4_curve_neutral(float3 color) {
+  const float start = 0.8 - 0.04, desaturation = 0.15;
+  float low = min(color.r, min(color.g, color.b));
+  color -= (low < 0.08) ? low - 6.25 * low * low : 0.04;
+  float peak = max(color.r, max(color.g, color.b));
+  if (peak < start) {
+    return color;
+  }
+  const float d = 1.0 - start;
+  float new_peak = 1.0 - d * d / (peak + d - start);
+  color *= new_peak / peak;
+  float g = 1.0 - 1.0 / (desaturation * (peak - new_peak) + 1.0);
+  return lerp(color, new_peak.xxx, g);
+}
+
+// The LUT coordinate with the selected curve instead of the game's. ab and cdef
+// are the shader's filmic constants, scale and offset those of the LUT.
+float3 fm4_tonemap_lut_coord(float3 coord, float4 ab, float4 cdef, float scale, float offset) {
+  float to_filmic = fm4_white_filmic / (abs(scale) > 1.0e-20 ? scale : 1.0e-20);
+  float3 x = fm4_filmic_inverse((coord - offset) * to_filmic, ab, cdef);
+  // Each curve's input for 0.18, solved offline.
+  float curve_gray = FM4_LOOK_TONEMAP == 1.0 ? 0.180942 : FM4_LOOK_TONEMAP == 2.0 ? 0.130171 : 0.22;
+  float gray = fm4_filmic_inverse((0.18 * fm4_white_filmic).xxx, ab, cdef).x;
+  x *= curve_gray / max(gray, 1.0e-6);
+  float3 t = FM4_LOOK_TONEMAP == 1.0 ? fm4_curve_gt(x) :
+             FM4_LOOK_TONEMAP == 2.0 ? fm4_curve_aces(x) : fm4_curve_neutral(x);
+  return saturate(t) * scale + offset;
+}
+
+// Fetches of the final combine shaders: 0 the scene, 2 the bloom, 7 the color
+// grading LUT (its coordinate is the tone curve's output). filmic_ab, filmic_cdef,
+// lut_scale and lut_offset are the shader's constants for fm4_tonemap_lut_coord.
+float4 fm4_combine_fetch(uint fetch, float4 value, float4 coord, float4 filmic_ab,
+                         float4 filmic_cdef, float lut_scale, float lut_offset) {
 #ifdef XE_TEXTURE0_2D_U
   if (fetch == 0u) {
     return fm4_sharpen_scene(value, coord.xy);
@@ -88,6 +172,12 @@ float4 fm4_combine_fetch(uint fetch, float4 value, float4 coord) {
   if (fetch == 2u) {
     return fm4_bloom(value);
   }
+#ifdef XE_TEXTURE7_3D_U
+  if (fetch == 7u && FM4_LOOK_TONEMAP != 0.0) {
+    return XE_TFETCH3D(7, fm4_tonemap_lut_coord(coord.xyz, filmic_ab, filmic_cdef, lut_scale,
+                                                lut_offset));
+  }
+#endif
   return value;
 }
 
@@ -96,6 +186,13 @@ void fm4_exposure(inout XePixel p) {
   if (FM4_LOOK_EXPOSURE != 0.0) {
     p.r[1].w = p.r[1].w + FM4_LOOK_EXPOSURE;
   }
+}
+
+// Inputs of the final combine shaders: the exposure, and F at white for the
+// tone curves.
+void fm4_combine_input(inout XePixel p) {
+  fm4_exposure(p);
+  fm4_white_filmic = p.r[1].z;
 }
 
 // Saturation and contrast of the final image (gamma 2, 0...1).

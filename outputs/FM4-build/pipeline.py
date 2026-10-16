@@ -308,16 +308,25 @@ def build_profiling(root,fxc,jobs):
 
 LOOK_KNOBS={'sharpen':'FM4_LOOK_SHARPEN','bloom':'FM4_LOOK_BLOOM','exposure':'FM4_LOOK_EXPOSURE',
             'contrast':'FM4_LOOK_CONTRAST','saturation':'FM4_LOOK_SATURATION',
-            'vignette':'FM4_LOOK_VIGNETTE','motion_blur':'FM4_LOOK_MOTION_BLUR'}
+            'vignette':'FM4_LOOK_VIGNETTE','motion_blur':'FM4_LOOK_MOTION_BLUR',
+            'tonemap':'FM4_LOOK_TONEMAP'}
+# Knobs that take a name instead of a number.
+LOOK_NAMES={'tonemap':{'filmic':0,'gt':1,'aces':2,'neutral':3}}
 
 def look_cvars(root,look):
     """Cvars of the look mods (work/fm4-rex/look/fm4-look.hlsli): copies them to BuildRoot/look
-    and passes the knobs, 'sharpen=0.5,bloom=0.8' (unnamed knobs keep the original look)."""
+    and passes the knobs, 'sharpen=0.5,bloom=0.8,tonemap=aces' (unnamed knobs keep the original
+    look)."""
     defines=[]
     for item in filter(None,(part.strip() for part in look.split(','))):
         name,_,value=item.partition('=')
         if name not in LOOK_KNOBS:
             raise RuntimeError(f'Unknown look knob {name!r}; use {", ".join(LOOK_KNOBS)}.')
+        names=LOOK_NAMES.get(name,{})
+        if value in names:
+            value=names[value]
+        elif names:
+            raise RuntimeError(f'Unknown {name} {value!r}; use {", ".join(names)}.')
         defines.append(f'{LOOK_KNOBS[name]}={float(value)!r}')
     directory=root/'look'
     if directory.is_dir():

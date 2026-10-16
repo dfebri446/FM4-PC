@@ -781,6 +781,17 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
     30 fps GPU 6,8 ms, replay 29,97 fps p99 33,9 ms GPU 8,6 ms. FAIL compare
     vrr30-240-photo hanya pesan XAM app=FE yang sama persis di log baseline;
     tanpa frame warna clear.
+- B4 langkah 4, kurva tonemap (16 Oktober 2026): -Look tonemap=gt|aces|neutral
+  mengganti kurva filmic game sebelum LUT grading lintasan (rincian di
+  B4-SHADER-RESEARCH.txt): kurva filmic dibalik dari koordinat LUT, abu-abu
+  tengah tetap di tempat kurva game, LUT, matriks warna, vignette dan
+  auto-eksposur tetap. Skenario photo dengan A/B 5 detik per kurva: kelima
+  mod dikompilasi di game (80-940 ms); di bagian statis photo mode selisih
+  rata-rata per byte terhadap DXBC 4,7 (ACES), 3,0 (GT), 3,5 (neutral) dan
+  6,4 untuk ACES dengan saturation 1,1, bloom 0,7 dan sharpen 0,4. ACES
+  menggelapkan bayangan (pohon, ban, aspal) dan menyisakan gradasi di salju;
+  GT dan neutral lebih dekat ke asli. Perubahannya halus karena kurva game
+  sudah filmic; preset belum dipilih.
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 
