@@ -94,6 +94,9 @@ Optional actions for performance work:
   present_area_downscale=false for the earlier single bilinear tap), so 2x
   on a 1080p screen is supersampling rather than a shrink that skips
   texels. -Display 720p is the earlier default (1x in a 1280x720 window).
+  Alt+Enter switches between borderless fullscreen and the window in any
+  run (bind_fullscreen; the keyboard controller ignores keys pressed with
+  Alt, so Enter does not also press Start). The render scale stays.
 - run -Info shows the settings overlay at start (F2 toggles it in any run):
   the display and render scale, race quality, look and its knobs, shadows,
   anisotropic filtering, race frame rate and pacing, mirror rate, render

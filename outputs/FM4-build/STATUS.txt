@@ -871,6 +871,14 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   dikirim; digambar presenter (ImGui, fm4-info-overlay.h), jadi tidak masuk
   capture e2e. e2e.py menampilkannya sejak awal, launcher dengan -Info; F2
   menampilkan atau menyembunyikannya.
+- Alt+Enter (17 Oktober 2026): beralih antara layar penuh borderless dan
+  jendela di setiap run (bind_fullscreen di rex_app.cpp). Keybind runtime
+  kini menerima awalan modifier (Alt+, Ctrl+, Shift+), dan driver keyboard
+  (mnk) mengabaikan tombol yang ditekan bersama Alt, karena ia menerima Enter
+  sebelum keybind dan Enter adalah Start. Uji dengan tombol sungguhan pada
+  Quick Race di jendela 1920x1080 render 2x: 1920x1080 -> 2560x1600 ->
+  1920x1080, dan cek OCR sesudahnya hanya melihat HUD balapan (timer
+  berjalan, tanpa menu pause).
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 

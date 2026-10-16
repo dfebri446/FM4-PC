@@ -423,6 +423,13 @@ void ReXApp::SetupOverlays(rex::ui::Presenter* presenter, rex::ui::ImmediateDraw
       achievements_overlay_ = CreateAchievementsOverlay();
     }
   });
+  // FM4 PC: borderless fullscreen and back, as in most PC games. The input
+  // drivers leave Alt combinations to the host.
+  rex::ui::RegisterBind("bind_fullscreen", "Alt+Return", "Toggle fullscreen", [this] {
+    if (window_) {
+      window_->SetFullscreen(!window_->IsFullscreen());
+    }
+  });
 
   OnCreateDialogs(imgui_drawer_.get());
 }
@@ -562,6 +569,7 @@ void ReXApp::OnDestroy() {
   rex::ui::UnregisterBind("bind_console");
   rex::ui::UnregisterBind("bind_settings");
   rex::ui::UnregisterBind("bind_achievements");
+  rex::ui::UnregisterBind("bind_fullscreen");
 
   // ImGui cleanup (reverse of setup)
   if (achievement_notification_listener_ != 0) {

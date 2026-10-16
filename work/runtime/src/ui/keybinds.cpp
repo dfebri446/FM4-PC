@@ -208,13 +208,40 @@ void UnregisterBind(std::string_view name) {
   }
 }
 
+/* A bind's key with optional modifier prefixes: "F3", "Alt+Return", "Ctrl+Shift+F5". */
+struct BindKey {
+  VirtualKey key = VirtualKey::kNone;
+  bool alt = false, ctrl = false, shift = false;
+};
+
+static BindKey ParseBindKey(std::string_view text) {
+  BindKey bind;
+  for (size_t plus; (plus = text.find('+')) != std::string_view::npos;) {
+    std::string_view modifier = text.substr(0, plus);
+    if (modifier == "Alt") {
+      bind.alt = true;
+    } else if (modifier == "Ctrl") {
+      bind.ctrl = true;
+    } else if (modifier == "Shift") {
+      bind.shift = true;
+    } else {
+      return {};
+    }
+    text.remove_prefix(plus + 1);
+  }
+  bind.key = ParseVirtualKey(text);
+  return bind;
+}
+
 bool ProcessKeyEvent(KeyEvent& e) {
   std::lock_guard lock(g_binds_mutex);
   for (auto& entry : g_binds) {
     if (!entry.callback)
       continue;
-    VirtualKey vk = ParseVirtualKey(entry.current_key);
-    if (vk != VirtualKey::kNone && e.virtual_key() == vk) {
+    BindKey bind = ParseBindKey(entry.current_key);
+    if (bind.key != VirtualKey::kNone && e.virtual_key() == bind.key &&
+        (!bind.alt || e.is_alt_pressed()) && (!bind.ctrl || e.is_ctrl_pressed()) &&
+        (!bind.shift || e.is_shift_pressed())) {
       entry.callback();
       e.set_handled(true);
       return true;

@@ -481,7 +481,9 @@ void MnkInputDriver::SetKeyState(uint16_t vk, bool down) {
 }
 
 void MnkInputDriver::OnKeyDown(rex::ui::KeyEvent& e) {
-  if (!IsEnabled() || !has_focus_)
+  // Alt combinations belong to the host (Alt+Return toggles fullscreen, Alt+Tab,
+  // Alt+F4): they must not press the controller buttons of their keys.
+  if (!IsEnabled() || !has_focus_ || e.is_alt_pressed())
     return;
   std::lock_guard lock(state_mutex_);
   uint16_t vk = static_cast<uint16_t>(e.virtual_key());
