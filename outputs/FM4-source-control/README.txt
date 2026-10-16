@@ -6,8 +6,10 @@ tests and the project's runtime, a D3D12-only fork of the ReXGlue SDK. It does n
 translated game function bodies, extracted content, game shaders or build output.
 
 Included:
-- work/fm4-rex/src: application integration, runtime adapters and diagnostics.
-  Hook addresses identify externally supplied functions; their bodies are absent.
+- work/fm4-rex/src: application integration, runtime adapters, diagnostics and
+  test features (developer options fed to the title, rebuilt engageaionstart,
+  guest vblank rate). Hook addresses identify externally supplied functions;
+  their bodies are absent.
 - work/fm4-rex/tests: synthetic arithmetic vectors and SDK texture-format tests.
   vector-vectors.h is generated from a mathematical oracle, not a game dump.
 - CMake files and two local diagnostic helper scripts.
@@ -16,8 +18,13 @@ Included:
   upstream SDK revision. Inventory category runtime-fork; files may be up to
   512 KiB, and the recompiler emitter (function_graph.cpp) is marked so the
   translated-function pattern check skips it.
-- outputs/FM4-analysis: seven selected SDK source patches. They are historical
-  patches, already contained in work/runtime.
+- outputs/FM4-build: the setup/generate/build/run pipeline (Build.ps1,
+  pipeline.py, loader), reviewed integration metadata (function bounds, switch
+  recipes), the e2e harness and gates (e2e/), README.txt, STATUS.txt and
+  verification.json.
+- outputs/FM4-analysis: seven selected SDK source patches, historical and
+  already contained in work/runtime, and research notes (VISUAL-STYLE.txt,
+  B4-SHADER-RESEARCH.txt).
 - ReXGlue/Xenia copyright and BSD license notice in third-party-notices.
 
 Excluded (kept on this computer, never staged for this checkpoint):

@@ -56,8 +56,8 @@ They write saves, so run them on a copy of the profile:
 (user-data\0000000000000000) are linked, not copied. With --repeat each run gets
 its own copy. Without the AI driver the career race only holds the throttle (the
 Ford Ka ends up at a wall); career_finish needs engageaionstart.
-quickrace, photo, photo_view and career boot with one A per splash video read on
-screen (Microsoft Studios, Dolby), which skips it: the main menu shows after
+Every scenario except boot starts with one A per splash video read on screen
+(Microsoft Studios, Dolby), which skips it: the main menu shows after
 about 30 s instead of 47. A at a fixed rate is not used, because it also skips
 the short title screen and selects PLAY CAREER in the main menu.
 
@@ -179,6 +179,14 @@ buffer addresses, render target state and the backend outcome; captures write
 their steady-clock time to capture\captures.txt to match frames.
 REX_IB_TRACE=<file> lists, for every 60th frame, each indirect buffer with its
 nesting depth, guest address, length, content hash and the draws inside it.
+REX_DRAW_STATS=<file> (REX_DRAW_STATS_EVERY, default 60): per draw of a sampled
+frame, the shader pair, buffers, render targets and window offset with the
+D3D12 pipeline statistics: input assembler primitives, clipper invocations and
+primitives, pixel shader invocations. REX_DRAW_DUMP=<file> with
+REX_DRAW_DUMP_VS=<vertex shader hash, low 32 bits> (REX_DRAW_DUMP_EVERY,
+default 30): the vertex fetch constants, index and vertex data hashes and all
+vertex shader float constants of matching draws, to compare the same draw
+between runs, and the positions of the first 24 vertices computed on the CPU.
 
 Stage 3.1 inventory
 -------------------
@@ -280,15 +288,6 @@ startup vblank rate (without FM4_FRAME_RATE). race_clock.py reads the race timer
 (run with --keep-ppm) and prints its rate against wall time (1.0: real time):
 
   python outputs\FM4-build\e2e\race_clock.py <BuildRoot>\e2e\<run>
-- REX_DRAW_STATS=<file> (REX_DRAW_STATS_EVERY, default 60): per draw of a
-  sampled frame, the shader pair, buffers, render targets and window offset
-  with the D3D12 pipeline statistics: input assembler primitives, clipper
-  invocations and primitives, pixel shader invocations.
-- REX_DRAW_DUMP=<file> with REX_DRAW_DUMP_VS=<vertex shader hash, low 32 bits>
-  (REX_DRAW_DUMP_EVERY, default 30): the vertex fetch constants, index and
-  vertex data hashes and all vertex shader float constants of matching draws,
-  to compare the same draw between runs, and the positions of the first 24
-  vertices computed on the CPU.
 
 Comparing runs
 --------------
@@ -302,9 +301,10 @@ same binary with --arg, for example --arg=--readback_resolve=fast. Then:
   python outputs\FM4-build\e2e\compare.py <BuildRoot>\e2e\baseline-v2 <BuildRoot>\e2e\candidate
 
 compare.py prints the differences and a verdict and exits 1 on FAIL: crash,
-goal not reached, median FPS down > 5%, frame p99 up > 20%, or an error key
-that the baseline does not have. A wait cause up > 20% or different capture
-statistics only WARN; races are not deterministic, so check captures by eye.
+goal not reached, FPS (overall or of a phase) down > 10%, frame p99 up > 20%,
+or an error key that the baseline does not have. A wait cause up > 20% or
+different capture statistics only WARN; races are not deterministic, so check
+captures by eye.
 
 Gates
 -----
@@ -342,8 +342,13 @@ build no longer has are rebuilt in fm4-dev-features.cpp:
   engageaionstart  an AI driver drives the player's car from the start; pause,
                    photo mode, QUIT RACE, replays and CONTINUE work as usual.
                    e2e.py then sends no driving input: throttle, brake and
-                   steering steps ('rt=255', 'rt=255+back') become waits or
-                   the remaining button
+                   steering steps become a wait ('rt=255') or the remaining
+                   button ('rt=255+back' becomes 'back'), and goal mode does
+                   not hold the throttle.
+Options the retail build still reads work without a rebuild, for example nohud
+(no HUD at all; do not use it with scenarios that read the HUD, such as career
+waiting for LAPS). camoverride and its fixed cameras are gone from the retail
+build and not rebuilt.
 --env FM4_TRACE_RACE_SETUP=1 prints the guest return addresses of each race's
 player driver creation (the main loop state that loads a race, for finding the
 code behind a game mode), every car's driver setup and the pending session
@@ -408,3 +413,6 @@ The runtime (ReXGlue SDK fork) is work/runtime in this repository:
    (category runtime-fork) and run check-staged-content.py before committing.
 Never edit <BuildRoot>\runtime-source: the next build overwrites it. Verify a
 clean setup in a new BuildRoot at the end of each stage.
+The integration code (work/fm4-rex) is copied to <BuildRoot>\project by
+generate, not by build, and only the files listed in tracked-files.json: after
+editing or adding one, run generate and then build.

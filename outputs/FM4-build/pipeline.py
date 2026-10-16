@@ -327,8 +327,8 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
     if fixed_vblank:
         cvars['vblank_vrr']='false'
     if rov:
-        # The earlier pixel shader interlock path: GPU about 17.5 ms a race frame
-        # instead of 10, for comparisons when the host render target path misbehaves.
+        # The earlier pixel shader interlock path: GPU about 7 ms a race frame
+        # instead of 2.5, for comparisons when the host render target path misbehaves.
         cvars.pop('edram_single_rt_no_wrap')
         cvars.update({'render_target_path_d3d12':'rov','rov_occlusion_async':'all'})
     if resolution_scale>1:
@@ -395,7 +395,8 @@ def main():
     parser.add_argument('--fixed-vblank',action='store_true',
                         help='run: hold every swap to the fixed 60 Hz vblank grid (vblank_vrr=false)')
     parser.add_argument('--frame-rate',type=int,choices=range(30,241),metavar='30-240',
-                        help='run: unlock the 30/60 fps limits (for example 120)')
+                        help='run: race frame rate above 60 (for example 120 or 240); menus, '
+                             'replays and photo mode keep their own')
     parser.add_argument('--resolution-scale',type=int,choices=range(1,4),default=1,metavar='1-3',
                         help='run: render at 2x (2560x1440) or 3x (3840x2160) of 1280x720')
     parser.add_argument('--full-rate-mirror',action='store_true',

@@ -4,7 +4,7 @@ Proyek eksperimental recompilation **Forza Motorsport 4 untuk Windows x64**, men
 
 Proyek ini menyediakan kode integrasi serta alur setup, generate, build, dan menjalankan game dari **data game milik pengguna**. ReXGlue menerjemahkan kode executable Xbox 360 menjadi C++ secara lokal, lalu toolchain membangunnya menjadi executable dan DLL untuk PC. Layanan Xbox dan grafis tetap ditangani oleh runtime SDK.
 
-**Status: sudah dapat dibangun dan menjalankan intro game dari source bersih, tetapi belum merupakan full port dengan seluruh fitur dan stabilitas terverifikasi.** Beberapa balapan dan fitur lain berhasil diuji pada build pengembangan sebelumnya; cakupan pengujiannya dijelaskan di bawah.
+**Status: dapat dibangun dari source bersih dan menjalankan Quick Race, mode foto, serta balapan karier sampai hadiah pada build terbaru (diuji otomatis lewat harness e2e), tetapi belum merupakan full port dengan seluruh fitur dan stabilitas terverifikasi.** Cakupan pengujiannya dijelaskan di bawah.
 
 Repo ini tidak menyertakan game, aset asli, kode hasil recompilation, atau binary siap main. Clone saja belum cukup: siapkan data game dan prasyarat build terlebih dahulu.
 
@@ -90,9 +90,9 @@ $discs = @{
 
 Hapus entri `Disc2` jika hanya ingin menggunakan konten Disc 1. Aksi `all` menjalankan tiga tahap:
 
-1. **Setup:** mengambil SDK pada commit `f5337cdc947ff6d4c4196737e2c807a48f2a1fc2`, menyiapkan submodule, menerapkan patch SDK, membangun shader resolve berlisensi, lalu membangun dan memasang SDK secara lokal.
+1. **Setup:** menyalin runtime proyek (`work/runtime`, fork SDK ReXGlue khusus D3D12) ke `BuildRoot`, mengambil library pihak ketiga dari SDK upstream pada commit `f5337cdc947ff6d4c4196737e2c807a48f2a1fc2` (13 submodule yang dibutuhkan D3D12), membangun shader resolve berlisensi, lalu membangun dan memasang runtime secara lokal.
 2. **Generate:** memvalidasi executable milikmu, membaca image tanpa menjalankan kode guest, membentuk kembali tabel switch, dan menghasilkan C++ untuk executable utama serta kedua modul tambahan. Pemeriksaan hasil generate menolak diagnostik branch/label yang belum terselesaikan.
-3. **Build:** mengompilasi executable/DLL, menyalin runtime dan plugin GPU yang cocok, menjalankan pemeriksaan instruksi, dan menyimpan `build-result.json`.
+3. **Build:** menyinkronkan dan membangun ulang runtime secara inkremental, mengompilasi executable/DLL, menyalin runtime dan plugin GPU yang cocok, menjalankan pemeriksaan instruksi, dan menyimpan `build-result.json`.
 
 `all` tidak langsung membuka game. Hasil generate dan seluruh binary berada di `BuildRoot`, bukan di source yang masuk Git.
 
@@ -104,7 +104,7 @@ Tahap-tahap tersebut juga dapat dijalankan terpisah:
 .\outputs\FM4-build\Build.ps1 -Action build @common
 ```
 
-Gunakan `BuildRoot` yang sama untuk seluruh tahap. Setelah mengubah source integrasi, ulangi `generate` dan `build` agar salinan proyek lokal diperbarui. Jika revisi atau patch SDK berubah, gunakan `BuildRoot` baru.
+Gunakan `BuildRoot` yang sama untuk seluruh tahap. Setelah mengubah source integrasi (`work/fm4-rex`), ulangi `generate` dan `build` agar salinan proyek lokal diperbarui; perubahan di `work/runtime` cukup dengan `build`.
 
 ## Menjalankan game
 
@@ -114,7 +114,20 @@ Gunakan `BuildRoot` yang sama untuk seluruh tahap. Setelah mengubah source integ
 
 Jika membuka PowerShell baru, definisikan kembali `$common` seperti contoh sebelumnya. Aksi `run` membaca lokasi disc yang disimpan saat `generate`.
 
-Launcher memeriksa artifact build dan versi executable, menggunakan profil lokal baru, serta mengimpor empat paket Disc 2 jika path-nya diberikan. Impor pertama memerlukan waktu dan ruang tambahan. Shader sinkron dan workaround bayangan saat ini aktif secara bawaan.
+Launcher memeriksa artifact build dan versi executable, menggunakan profil lokal baru, serta mengimpor empat paket Disc 2 jika path-nya diberikan. Impor pertama memerlukan waktu dan ruang tambahan. Shader sinkron dan workaround bayangan saat ini aktif secara bawaan. Rendering memakai jalur host render target (RTV): Quick Race stabil 60 fps dengan GPU sekitar 2,5 ms per frame balapan pada komputer pengembangan.
+
+Opsi tambahan untuk `run` (rincian dan angka ukur ada di [panduan build lengkap](outputs/FM4-build/README.txt)):
+
+| Opsi | Fungsi |
+| --- | --- |
+| `-FrameRate 120` (30-240) | Frame rate balapan di atas 60. Menu, replay, dan photo mode tetap memakai waktunya sendiri (vblank guest 60 Hz di luar balapan). Diukur: 118-120 fps pada 120, 220-235 fps pada 240. |
+| `-ResolutionScale 2` / `3` | Render 2560x1440 atau 3840x2160. |
+| `-Rov` | Jalur render target lama (pixel shader interlock) untuk perbandingan. |
+| `-SingleTile` | Balapan satu tile 720p tanpa MSAA, dengan FXAA. |
+| `-FixedVblank` | Grid vblank 60 Hz tetap (tanpa vblank_vrr). |
+| `-FullRateMirror` | Spion digambar setiap frame. |
+
+`-Action warmcache` mengisi cache shader dengan menjalankan timeline Quick Race sekali.
 
 Controller menggunakan backend SDL. Pemetaan keyboard dari launcher:
 
@@ -139,6 +152,8 @@ FM4-build/
 ├── user-data/        # Profil, save, dan konten Disc 2 yang diimpor
 ├── cache/            # Cache game/shader
 ├── logs/             # Log setup, generate, build, dan startup
+├── e2e/              # Hasil run e2e (capture, log, summary.json)
+├── snapshots/        # Salinan game-build yang dipakai gate matrix.py
 ├── loaded-image.bin  # Image privat dari executable milik pengguna
 ├── local.json        # Path disc lokal
 └── build-result.json # Hash artifact dan hasil build
@@ -148,11 +163,20 @@ Disc dibaca dari lokasi input; penulisan relatif ke direktori game dinonaktifkan
 
 ## Yang sudah bekerja
 
-Status pengujian: **13 Oktober 2026**. Hasil build portable terbaru dibedakan dari hasil gameplay historis karena binary, profil, dan pengaturannya berbeda.
+Status pengujian: **16 Oktober 2026**. Hasil pada build terbaru dibedakan dari hasil gameplay historis karena binary, profil, dan pengaturannya berbeda.
 
-### Terverifikasi pada build portable
+### Terverifikasi otomatis pada build terbaru
 
-- Setup SDK, generate dan build dari salinan bersih berkas Git, tanpa hasil recompilation lama; generate/build ulang juga berhasil.
+Harness e2e menjalankan game dengan pengaturan launcher bawaan dan salinan profil, lalu memeriksa layar lewat OCR:
+
+- Quick Race pada 60, 120, dan 240 Hz: 60,0 / 118-120 / 224-235 fps, tanpa crash dan tanpa frame jalan yang hilang.
+- Simpan foto dari photo mode, lalu muat foto itu pada proses baru.
+- Balapan karier World Tour, keluar lewat QUIT RACE, replay, lalu CONTINUE kembali ke event.
+- Balapan karier Tsukuba (Ford Ka) sampai finis dengan AI FM4 sebagai pengemudi: hadiah kredit, level driver dan afinitas, EVENT COMPLETE, lalu progres dan saldo baru terbaca setelah restart (240 Hz).
+
+### Terverifikasi pada build bersih (13-14 Oktober 2026)
+
+- Setup, generate dan build dari salinan bersih berkas Git, tanpa hasil recompilation lama; generate/build ulang juga berhasil. Setelah runtime pindah ke `work/runtime`, setup/generate/build penuh di BuildRoot baru juga lolos.
 - Executable utama, modul XMediaFacade dan SpeechFacade, runtime, serta plugin GPU berhasil dibangun.
 - **271 tabel switch** dibentuk kembali dari input pengguna dan cocok dengan build sebelumnya.
 - Set registrasi fungsi cocok dengan build sebelumnya: **50.233 utama, 3.212 XMedia, dan 6.715 Speech**. Ini tidak berarti setiap fungsi sudah diuji melalui gameplay.
@@ -160,7 +184,7 @@ Status pengujian: **13 Oktober 2026**. Hasil build portable terbaru dibedakan da
 - Keempat paket Disc 2 berhasil diimpor ke profil baru.
 - Logo dan video intro tampil; proses tetap berjalan selama 60 detik, lalu ditutup normal dengan exit code `0`.
 
-Pengujian ini memakai source bersih pada komputer pengembangan yang sama, **belum komputer fisik kedua dan belum balapan penuh pada binary portable tersebut**. Lihat [hasil verifikasi](outputs/FM4-build/verification.json).
+Pengujian ini memakai source bersih pada komputer pengembangan yang sama, **belum komputer fisik kedua**. Lihat [hasil verifikasi](outputs/FM4-build/verification.json) (13 Oktober 2026).
 
 ### Pernah berhasil pada build pengembangan sebelumnya
 
@@ -177,14 +201,20 @@ Hasil historis ini belum seluruhnya diuji ulang pada build portable terbaru. Det
 ## Keterbatasan saat ini
 
 - **Kompatibilitas terbatas:** Windows x64 dan revisi Japan/Asia yang diperiksa hash-nya. Belum mendukung setiap region atau title update.
-- **Grafis belum sepenuhnya akurat:** silau matahari yang terlalu terang sudah diatasi dengan koreksi empiris pada query occlusion matahari (faktor 2, aktif di launcher), tetapi belum dibuktikan setara perangkat keras Xenos. Noise, refleksi, tepi objek, kombinasi MSAA dan skala resolusi perlu pengujian lebih luas. Workaround bayangan masih aktif di launcher.
-- **Shader sinkron:** dipakai untuk menghindari draw terlewat yang pernah menyebabkan foto hitam. Dampak stutter/performa dan foto dengan cache shader kosong belum tuntas diverifikasi.
-- **Input menu:** input diagnostik kadang terbaca tetapi belum membuat UI berpindah. Penyebab terkait fokus/waktu idle belum dipastikan. Pengemudi otomatis pengembangan bukan autopilot siap pakai.
+- **Grafis belum sepenuhnya akurat:** koreksi empiris pada query occlusion matahari (faktor 2) hanya berlaku di jalur ROV (`-Rov`); di jalur bawaan RTV silau matahari belum dikalibrasi. Noise, refleksi, tepi objek, kombinasi MSAA dan skala resolusi perlu pengujian lebih luas. Workaround bayangan masih aktif di launcher.
+- **Shader sinkron:** dipakai untuk menghindari draw terlewat yang pernah menyebabkan foto hitam. Dengan cache shader kosong hanya menambah hitch saat memuat, tanpa menurunkan fps balapan; foto dengan cache kosong belum diuji ulang.
+- **Alat pengujian:** pengemudi otomatis di harness memakai AI FM4 sendiri (opsi developer `engageaionstart` yang dibangun ulang), bukan fitur untuk pemain. Menu FM4 mengabaikan tekanan pertama di beberapa layar dan menu karier bersembunyi setelah sekitar 9 detik tanpa input, jadi skenario e2e menekan sampai layar yang diharapkan terbaca.
 - **Runtime belum lengkap:** masih ada layanan Xbox berupa stub. Tes instruksi tidak membuktikan seluruh kernel, audio, timing atau sinkronisasi benar.
 - **Cakupan gameplay belum lengkap:** seluruh mobil/lintasan/mode, sesi panjang, audio, Kinect, multiplayer/online, dan DLC di luar Disc 2 belum tervalidasi menyeluruh. Belum diverifikasi tidak otomatis berarti rusak.
 - **Save dan perangkat lain:** migrasi seluruh save antar-build/komputer, GPU lain, dan performa belum dijamin oleh pengujian saat ini.
 
-Prioritas validasi berikutnya adalah komputer kedua, balapan karier sampai hadiah dan restart, balapan Disc 2 pada binary portable, serta pengujian foto dengan cache shader kosong. Daftar lengkap ada di [STATUS.txt](outputs/FM4-build/STATUS.txt).
+Prioritas validasi berikutnya adalah komputer kedua, balapan mobil Disc 2 pada build terbaru, overwrite foto dan foto dengan cache shader kosong, serta Autovista. Daftar lengkap ada di [STATUS.txt](outputs/FM4-build/STATUS.txt).
+
+## Pengujian otomatis
+
+[e2e.py](outputs/FM4-build/e2e/e2e.py) menjalankan build dari `BuildRoot`, mengendalikan controller diagnostik, merekam capture serta trace performa per detik, dan menulis `summary.json`. Skenario (Quick Race, simpan dan muat foto, balapan karier, balapan karier sampai hadiah dan cek progres setelah restart) berjalan dengan timeline tetap dan cek layar OCR Windows, tanpa jaringan. [matrix.py](outputs/FM4-build/e2e/matrix.py) menjalankannya sebagai gate bertingkat (smoke sekitar 10 menit, perf, full sekitar 1 jam, career) pada salinan build, sehingga build berikutnya dapat dikompilasi selama gate berjalan, lalu membandingkannya dengan gate sebelumnya.
+
+Opsi developer FM4 yang dikosongkan build retail dapat diisi lewat variabel `FM4_GAME_CMDLINE` (misalnya `engageaionstart` atau `nohud`). Hasil run berisi capture game, jadi simpan di luar repo (di bawah `BuildRoot`). Cara pakai lengkap ada di [e2e/README.txt](outputs/FM4-build/e2e/README.txt).
 
 ## Jika setup atau build gagal
 

@@ -52,8 +52,9 @@ process-only policy, for example:
 Stages can be run separately: setup, generate, build, run. generate requires
 Disc1/Disc2 parameters; build and run read saved local paths from BuildRoot.
 The all action performs setup + generate + build, but does not launch gameplay.
-After source edits, repeat generate + build to refresh the private project.
-If the pinned SDK revision/patch changes, choose a new BuildRoot.
+After edits in work/fm4-rex, repeat generate + build to refresh the private
+project; edits in work/runtime only need build. A BuildRoot from before the
+runtime fork (with sdk-source) is rejected; choose a new BuildRoot.
 
 Optional actions for performance work:
 - run -FixedVblank returns to the fixed 60 Hz guest vblank grid. By default
@@ -90,8 +91,9 @@ Optional actions for performance work:
   instead of 8.1 a frame; at -FrameRate 120 75 fps instead of 84.
 - run -Rov uses the earlier pixel shader interlock render target path
   (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
-  Quick Race 59.9 fps, frame p99 20 ms, GPU 9.5 ms a frame (2.5 on the
-  default path).
+  Quick Race 60.0 fps, GPU about 7.1 ms a frame (2.5 on the default path).
+  Only this path halves the sun occlusion query
+  (rov_occlusion_awaited_report_divisor=2).
 - warmcache drives the e2e Quick Race timeline once (no network) so the shader
   and pipeline cache under BuildRoot\cache is filled before playing.
 - build -Flavor thinlto,v3,pgo-gen,pgo-use builds a compiler experiment into
@@ -104,7 +106,7 @@ Optional actions for performance work:
 What happens
 ------------
 1. setup builds the project's runtime, a D3D12-only fork of the ReXGlue SDK kept
-   in work/runtime. It mirrors work/runtime to BuildRootuntime-source, takes
+   in work/runtime. It mirrors work/runtime to BuildRoot\runtime-source, takes
    the third-party libraries from rexglue/rexglue-sdk at
    f5337cdc947ff6d4c4196737e2c807a48f2a1fc2 (its vendored directories and the
    13 submodules the D3D12 build needs; Vulkan, SPIR-V, Tracy and the tests are
@@ -127,7 +129,7 @@ What happens
    renders the rear-view mirror every other frame (see -FullRateMirror).
    Rendering uses the host render target path (render_target_path_d3d12=rtv with
    edram_single_rt_no_wrap=true): GPU about 2.5 ms a race frame instead of
-   9.5 on the pixel shader interlock path, a stable 60 fps in Quick Race. Guest
+   about 7 on the pixel shader interlock path, a stable 60 fps in Quick Race. Guest
    memory the CPU wrote is uploaded to the GPU once, not again every frame
    (clear_memory_page_state=false), command lists are recorded and executed
    on a thread of their own (d3d12_submit_thread=true), and so are the copies
@@ -138,11 +140,16 @@ What happens
    (readback_resolve=fast). A frame that misses a guest vblank gets it as soon
    as it is ready (vblank_vrr=true). The road sections this path used to leave
    undrawn came from the title's track streaming and are fixed for every path
-   (STATUS.txt). Sun glare has not been calibrated on this path, and career,
-   photo mode and interactive Autovista have not been tested on it; if
-   rendering misbehaves, compare with run -Rov (render_target_path_d3d12=rov,
+   (STATUS.txt). On this path the e2e scenarios pass: Quick Race, saving a
+   photo and loading it in a new process and a career race with its replay at
+   60, 120 and 240 Hz, and a career race to its rewards with the progress
+   checked after a restart at 240 Hz. Sun glare
+   has not been calibrated on it (the sun query divisor only applies to
+   -Rov), and interactive Autovista has not been tested on it; if rendering
+   misbehaves, compare with run -Rov (render_target_path_d3d12=rov,
    rov_occlusion_async=all, sun query scaled by
-   rov_occlusion_awaited_report_divisor=2). Controller input uses SDL. Keyboard defaults include W/S for pedals and A/D for steering.
+   rov_occlusion_awaited_report_divisor=2). Controller input uses SDL.
+   Keyboard defaults include W/S for pedals and A/D for steering.
 
 All private output is under BuildRoot: project/generated, loaded-image.bin,
 game-build, local.json, user-data, cache and logs. Input discs are read in place;
@@ -154,9 +161,16 @@ its contents.
 End-to-end tests
 ----------------
 e2e/e2e.py launches a built BuildRoot, drives a diagnostic controller and
-records captures, a per-second GPU stall trace and a summary. Its optional goal
-mode navigates menus with the Jev model and sends OCR'd screen text to
-TypeSafe; see e2e/README.txt before using it.
+records captures, a per-second GPU stall trace and a summary. Its scenarios
+(Quick Race, photo save and load, career race, career race to its rewards and
+the progress after a restart) run on fixed timelines with OCR screen checks and
+no network. e2e/matrix.py runs them as gates (smoke, perf, full, career tiers)
+on a snapshot of game-build and compares them with an older gate. In the gates
+the title's own AI drives the player's car: FM4's developer option
+engageaionstart, rebuilt in work/fm4-rex (FM4_GAME_CMDLINE feeds developer
+options to the title). The optional goal mode navigates menus with the Jev
+model and sends OCR'd screen text to TypeSafe; see e2e/README.txt before using
+it.
 
 Tracked content / provenance
 ----------------------------

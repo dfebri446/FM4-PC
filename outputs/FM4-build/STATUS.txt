@@ -1,19 +1,37 @@
-STATUS FM4 RECOMPILATION - 13 Oktober 2026
+STATUS FM4 RECOMPILATION - 16 Oktober 2026
 ========================================
-Baseline kode: d1fa29a (workflow setup/generate/build/run).
+Kode terakhir: 16e40bb (override shader B4, opt-in; default launcher terakhir
+diuji gate pada 34e737e). Verifikasi build bersih: d1fa29a (13 Oktober 2026,
+verification.json) dan runtime milik proyek (14 Oktober 2026, di bawah).
 
-Tahap saat ini: build eksperimental yang sudah dapat menjalankan game dan telah
-melewati beberapa uji gameplay pada build pengembangan sebelumnya. Belum dapat
-disebut full port yang seluruh fitur, tampilan, dan stabilitasnya terverifikasi.
+Tahap saat ini: build eksperimental yang menjalankan Quick Race, mode foto dan
+balapan karier sampai hadiah pada binary terbaru (diuji otomatis lewat e2e).
+Belum dapat disebut full port yang seluruh fitur, tampilan, dan stabilitasnya
+terverifikasi.
 
-Penting: hasil uji build portable terbaru dan hasil gameplay historis di bawah
-berasal dari binary/profil/pengaturan yang berbeda. Keberhasilan historis tidak
-otomatis membuktikan bahwa semua fitur itu sudah diuji ulang pada binary baru.
+Penting: hasil gameplay historis di bawah berasal dari binary/profil/pengaturan
+yang berbeda. Keberhasilan historis tidak otomatis membuktikan bahwa fitur itu
+sudah diuji ulang pada binary baru; yang diuji ulang tercatat di SKENARIO E2E
+GAMEPLAY.
 
-SUDAH DIVERIFIKASI PADA BUILD PORTABLE TERBARU
---------------------------------------------
-- Setup mengambil SDK pada commit tetap, menerapkan patch runtime/GPU, membangun
-  delapan shader resolve SDK, lalu membangun dan memasang SDK secara lokal.
+DIVERIFIKASI OTOMATIS PADA BINARY TERBARU (16 OKTOBER 2026)
+---------------------------------------------------------
+Default launcher (jalur RTV), profil BuildRoot yang disalin per run; rincian di
+SKENARIO E2E GAMEPLAY:
+- Quick Race 60, 120 dan 240 Hz (60,0 / 118-120 / 224-235 fps).
+- Simpan foto dari photo mode, lalu muat foto itu pada proses baru.
+- Balapan karier World Tour, QUIT RACE, replay dan CONTINUE kembali ke event.
+- Balapan karier sampai finis dengan pengemudi AI FM4 (engageaionstart yang
+  dibangun ulang): hadiah, level driver, EVENT COMPLETE, dan progres yang
+  terbaca setelah restart (240 Hz).
+
+BUILD BERSIH TERVERIFIKASI (13-14 OKTOBER 2026)
+---------------------------------------------
+- 13 Oktober (d1fa29a): setup mengambil SDK pada commit tetap, menerapkan patch
+  runtime/GPU, membangun delapan shader resolve SDK, lalu membangun dan memasang
+  SDK secara lokal. Sejak 14 Oktober setup membangun runtime milik proyek
+  (work/runtime) dengan library pihak ketiga dari SDK upstream; setup, generate
+  dan build penuh di BuildRoot baru juga lolos (lihat "Runtime milik proyek").
 - Generate dan build berjalan dari salinan bersih berkas Git, tanpa memakai
   folder kode hasil recompilation lama. Generate/build ulang juga berhasil.
 - Executable utama, DLL XMediaFacade dan SpeechFacade, runtime, serta plugin
@@ -77,21 +95,27 @@ KETERBATASAN DAN MASALAH YANG MASIH ADA
   auto-exposure tidak diubah. Hasil uji visual 13 Oktober 2026: matahari tampil
   dan silau wajar pada kamera belakang dan kokpit. Faktor 2 ditentukan secara
   empiris, bukan dari perilaku perangkat keras Xenos yang sudah dibuktikan.
+  Pembagi ini hanya berlaku di jalur ROV (-Rov); di jalur default RTV (query
+  host) silau belum dikalibrasi.
 - Noise warna, refleksi, tepi objek, seluruh kombinasi MSAA/skala resolusi dan
   kesesuaian dengan Xbox asli belum seluruhnya terverifikasi.
 - Launcher portable masih mengaktifkan workaround bayangan. Uji historis yang
   berhasil menampilkan bayangan asli tidak berarti workaround ini sudah
   dilepas atau seluruh masalah bayangan telah selesai.
 - Shader sinkron menjadi bawaan untuk menghindari draw terlewat yang pernah
-  menyebabkan foto hitam. Dampak stutter/performa dan uji foto dengan cache
-  shader kosong masih perlu diperiksa. Keberhasilan overwrite sebelumnya belum
-  diulang sebagai uji fitur pada build portable baru.
-- Navigasi menu melalui input diagnostik kadang tidak konsisten. Menekan A
-  terbaca pada diagnostik belum selalu membuat UI berpindah. Fokus jendela dan
-  waktu idle belum terbukti sebagai akar masalah; belum ada perbaikan menyeluruh.
-- Pengemudi otomatis masih eksperimental: dapat menabrak pembatas, kehilangan
-  minimap dan gagal memulihkan arah. Bantuan Easy saja tidak menjamin finish.
-  Sistem ini bukan fitur autopilot siap pakai dalam workflow portable.
+  menyebabkan foto hitam. Dengan cache kosong ia hanya menambah hitch saat
+  memuat, tanpa menurunkan fps balapan (PENGUKURAN PERFORMA). Uji foto dengan
+  cache shader kosong dan overwrite foto belum diulang pada build baru.
+- Navigasi menu lewat input diagnostik: FM4 mengabaikan tekanan pertama setelah
+  beberapa layar terbuka, dan menu karier serta GO RACE bersembunyi sekitar 9
+  detik setelah tekanan terakhir (timer waktu nyata). Skenario e2e karenanya
+  menekan sampai layar yang diharapkan terbaca lewat OCR, bukan menghitung
+  tekanan; dengan cara ini navigasi menu andal.
+- Pengemudi otomatis pengembangan sebelumnya dapat menabrak pembatas,
+  kehilangan minimap dan gagal memulihkan arah; harness e2e sendiri hanya
+  menahan gas. Pengujian kini memakai AI FM4 sendiri lewat opsi developer
+  engageaionstart yang dibangun ulang (menang posisi 1 di Tsukuba). Ini alat
+  pengujian, bukan fitur pemain.
 - Masih ada fungsi layanan Xbox/runtime berupa stub. Tes instruksi sintetis
   tidak membuktikan seluruh kernel, audio, timing, sinkronisasi atau shader benar.
 - Belum ada validasi lengkap semua mobil, lintasan, karier, Autovista, replay,
@@ -101,8 +125,8 @@ KETERBATASAN DAN MASALAH YANG MASIH ADA
   migrasi profil antar-build/komputer belum dijamin. Workflow memakai profil
   lokal tersendiri dan tidak menyalin save lama secara otomatis.
 
-PENGUKURAN PERFORMA (13 OKTOBER 2026)
-------------------------------------
+PENGUKURAN PERFORMA (13-15 OKTOBER 2026)
+---------------------------------------
 - Diukur dengan e2e/e2e.py --goal quickrace (Quick Race Bernese Alps, kamera
   kokpit, 30 detik terakhir balapan) pada komputer pengembangan: FPS median
   24-30, minimum sekitar 19-24.
@@ -222,7 +246,8 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   GPU 8,4-9,4 ms per frame, 0 frame warna clear, tanpa crash, error sama dengan
   baseline; satu run memakai cadangan fGPU (section 0x1C15A4 byte, berhasil)
   dan start straight tergambar. Silau matahari, karier, photo mode dan
-  Autovista interaktif belum diuji di RTV.
+  Autovista interaktif belum diuji di RTV saat itu (karier dan photo mode
+  kemudian lolos e2e, SKENARIO E2E GAMEPLAY).
 - 2.1 predicated tiling (14 Oktober 2026): FM4 memilih tiling per skenario
   render (media/RenderScenarios, TilingScenario). Balapan 8-16 mobil memakai
   1 (2 tile, MSAA 2x, 4 bin select per frame); pre-race, replay dan balapan
@@ -260,7 +285,8 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   p99 35,4 -> 26,0 ms, frame 34-50 ms 0,8% -> 0,1%, error sama, tanpa frame
   warna clear. Default launcher sejak 14 Oktober
   2026 atas keputusan pemilik proyek (Build.ps1 -FixedVblank mengembalikan
-  grid tetap); karier, foto dan Autovista belum diuji dengan VRR.
+  grid tetap); karier, foto dan Autovista belum diuji dengan VRR saat itu
+  (karier dan foto kemudian lolos e2e dengan default launcher).
 - Query matahari: keempat vertex sprite yang diukur bertumpuk di satu posisi
   (quad degenerate), sehingga 0 sampel di ROV maupun RTV; kalibrasi silau
   perlu menelusuri dari mana posisi sudut sprite seharusnya berasal.
@@ -314,8 +340,9 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   lebih cepat. Frame graph tiap frame: setiap frame berisi pass scene penuh
   (sekitar 1.500-1.900 draw), bukan frame duplikat. Hanya refresh 120: 100 fps,
   jam 1,001; hanya FrameRate 120 pada 60 Hz: tetap 60. GPU sekitar 5 ms per
-  frame; batasnya command processor. Belum diuji: karier, replay penuh,
-  photo mode, split screen, dan fisika/handling secara subjektif.
+  frame; batasnya command processor. Belum diuji saat itu: karier, replay
+  penuh, photo mode, split screen, dan fisika/handling secara subjektif
+  (karier, replay dan photo mode kemudian lolos e2e pada 120 dan 240 Hz).
   Koreksi (15 Oktober 2026): angka 114,7 fps di atas berasal dari 20 detik
   terakhir run ketika mobil (gas ditahan tanpa setir) menghadap dinding,
   sekitar 850 draw per frame. Per detik dikelompokkan menurut draw per frame:
@@ -613,6 +640,7 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   menggantikan skenario quickrace di gate. Boot menekan A sekali per video
   splash yang terbaca (Microsoft Studios, Dolby): menu utama sekitar detik 30,
   bukan 47. Matriks 3 Hz x 4 skenario x 3 run sebelumnya sekitar 113 menit.
+  Tier career (career_finish, career_progress) ditambahkan kemudian, di bawah.
 - Opsi developer FM4 (16 Oktober 2026): image masih memuat
   CForzaCommandLineParameters (singleton sub_8237D468, data 0x82DC4420) dan
   parsernya (vtable 0x8200ED8C slot 2-5; name=value, switch tanpa nilai
@@ -689,8 +717,8 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   hanya di transisi layar (LOADING foto, boot), dengan angka yang sama seperti
   run override tulisan tangan. Run e2e lolos. Bagian balapan bergerak tidak
   bisa dibandingkan dengan A/B.
-- Belum dicakup: overwrite foto, foto dengan cache shader kosong, Autovista,
-  mobil Disc 2. (Balapan karier sampai hadiah: tier career, di bawah.)
+- Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
+  Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------
@@ -700,7 +728,7 @@ VALIDASI BERIKUTNYA YANG DIPERLUKAN
    career_finish dan career_progress dengan pengemudi AI.)
 3. Ulangi overwrite foto dan simpan/muat foto dengan cache shader kosong.
    (Simpan foto baru lalu muat setelah restart sudah dicakup e2e photo dan
-   photo_view, di 60 dan 120 Hz.)
+   photo_view, di 60, 120 dan 240 Hz.)
 4. Perluas pengujian tampilan, input, mode, perangkat GPU dan sesi panjang;
    ukur performa serta selidiki cahaya berlebihan tanpa menganggapnya sudah beres.
 
