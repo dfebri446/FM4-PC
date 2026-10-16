@@ -12,7 +12,8 @@ param(
     [switch]$Rov,
     [switch]$FullRateMirror,
     [ValidateRange(1,3)][int]$ResolutionScale = 1,
-    [ValidateRange(30,240)][int]$FrameRate
+    [ValidateRange(30,240)][int]$FrameRate,
+    [string]$Look
 )
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'This workflow supports Windows x64.' }
@@ -34,5 +35,6 @@ if ($Rov) { $arguments += @('--rov') }
 if ($FullRateMirror) { $arguments += @('--full-rate-mirror') }
 if ($ResolutionScale -gt 1) { $arguments += @('--resolution-scale', "$ResolutionScale") }
 if ($FrameRate) { $arguments += @('--frame-rate', "$FrameRate") }
+if ($Look) { $arguments += @('--look', $Look) }
 & $Python @arguments
 if ($LASTEXITCODE -ne 0) { throw "FM4 workflow failed (exit $LASTEXITCODE). See the build-root logs." }

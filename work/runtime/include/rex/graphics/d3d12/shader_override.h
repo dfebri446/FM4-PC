@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <rex/graphics/d3d12/shader.h>
@@ -40,10 +41,11 @@ class ShaderOverrides {
   static std::unique_ptr<ShaderOverrides> Create(const HostConfig& config);
   ~ShaderOverrides();
 
-  // Whether the guest pixel shader is overridden: by a file, or by generated
-  // HLSL (shader_override_generated).
+  // Whether the guest pixel shader is overridden: by a file, by generated HLSL
+  // (shader_override_generated), or by generated HLSL with a mod.
   bool HasPixelShader(uint64_t ucode_hash) const {
-    return use_generated_ || pixel_shaders_.find(ucode_hash) != pixel_shaders_.end();
+    return use_generated_ || pixel_shaders_.find(ucode_hash) != pixel_shaders_.end() ||
+           mod_shaders_.find(ucode_hash) != mod_shaders_.end();
   }
   // Whether shader_override_ab_ms currently selects the DXBC translations.
   static bool IsAbOffPhase();
@@ -60,7 +62,7 @@ class ShaderOverrides {
 
   std::string BuildContract(const D3D12Shader::D3D12Translation& translation) const;
   bool Compile(const D3D12Shader::D3D12Translation& translation, const std::string& contract,
-               const std::string& text, const std::string& name,
+               const std::string& text, const std::string& name, const std::string& mod,
                std::vector<uint8_t>& binary_out) const;
 
   HostConfig config_;
@@ -68,6 +70,10 @@ class ShaderOverrides {
   std::string generate_path_;
   bool use_generated_ = false;
   std::unordered_set<uint64_t, rex::IdentityHasher<uint64_t>> pixel_shaders_;
+  // Shader mods (shader_mod_path): shader_<hash>.mod.hlsli.
+  std::filesystem::path mod_directory_;
+  std::unordered_set<uint64_t, rex::IdentityHasher<uint64_t>> mod_shaders_;
+  std::vector<std::pair<std::string, std::string>> mod_defines_;
   void* d3dcompiler_ = nullptr;
   void* d3d_compile_ = nullptr;
 };

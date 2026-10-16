@@ -306,8 +306,29 @@ def build_profiling(root,fxc,jobs):
         shutil.copyfile(mirror/'out/win-amd64'/name,profiling/name)
     print(f'Profiling build in {profiling}: e2e/e2e.py --game-build game-build-prof, then e2e/cp_profile.py.')
 
+LOOK_KNOBS={'sharpen':'FM4_LOOK_SHARPEN','bloom':'FM4_LOOK_BLOOM','exposure':'FM4_LOOK_EXPOSURE',
+            'contrast':'FM4_LOOK_CONTRAST','saturation':'FM4_LOOK_SATURATION',
+            'vignette':'FM4_LOOK_VIGNETTE','motion_blur':'FM4_LOOK_MOTION_BLUR'}
+
+def look_cvars(root,look):
+    """Cvars of the look mods (work/fm4-rex/look/fm4-look.hlsli): copies them to BuildRoot/look
+    and passes the knobs, 'sharpen=0.5,bloom=0.8' (unnamed knobs keep the original look)."""
+    defines=[]
+    for item in filter(None,(part.strip() for part in look.split(','))):
+        name,_,value=item.partition('=')
+        if name not in LOOK_KNOBS:
+            raise RuntimeError(f'Unknown look knob {name!r}; use {", ".join(LOOK_KNOBS)}.')
+        defines.append(f'{LOOK_KNOBS[name]}={float(value)!r}')
+    directory=root/'look'
+    if directory.is_dir():
+        shutil.rmtree(directory)
+    directory.mkdir()
+    for path in (REPO/'work/fm4-rex/look').glob('*.hlsli'):
+        shutil.copyfile(path,directory/path.name)
+    return {'shader_mod_path':directory,'shader_mod_defines':';'.join(defines)}
+
 def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,resolution_scale=1,
-           full_rate_mirror=False):
+           full_rate_mirror=False,look=None):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -343,6 +364,10 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
         # The title scales its time step, so the race clock stays real time.
         cvars['video_mode_refresh_rate']=str(frame_rate)
         env['FM4_FRAME_RATE']=str(frame_rate)
+    if look:
+        # Shader mods on the game's post-processing (sharpening, bloom, exposure,
+        # contrast, saturation, vignette, motion blur).
+        cvars.update(look_cvars(root,look))
     if disc2:
         env['FM4_DISC2_ROOT']=str(disc2)
     args=[root/'game-build/fm4_rex.exe']+[f'--{k}={v}' for k,v in cvars.items()]
@@ -403,6 +428,9 @@ def main():
                         help='run: render the rear-view mirror every frame in every race')
     parser.add_argument('--rov',action='store_true',
                         help='run: the slower pixel shader interlock render target path instead of RTV')
+    parser.add_argument('--look',
+                        help='run: post-processing changes, for example "sharpen=0.5,bloom=0.8" '
+                             '(knobs: '+', '.join(LOOK_KNOBS)+'; work/fm4-rex/look/fm4-look.hlsli)')
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
     args=parser.parse_args()
     root=args.build_root.resolve()
@@ -425,7 +453,7 @@ def main():
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
     if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
     if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,
-                                     args.resolution_scale,args.full_rate_mirror)
+                                     args.resolution_scale,args.full_rate_mirror,args.look)
     if args.action=='warmcache': warm_cache(root)
     if args.action=='profbuild': build_profiling(root,fxc,args.jobs)
 

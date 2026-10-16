@@ -125,3 +125,61 @@ LANGKAH 2 B4: BACKEND HLSL (16 Oktober 2026)
   capture di bagian statis photo mode dan layar boot identik bit per bit dengan
   terjemahan DXBC; pasangan yang berbeda jatuh di transisi layar, sama persis
   dengan run override tulisan tangan.
+
+KATALOG POST-PROCESS (16 Oktober 2026)
+-------------------------------------
+Pixel shader skenario photo (422) dicocokkan dengan kontainer di default.xex
+dan .fxobj disc lewat md5 ucode (224 cocok, termasuk semua yang di bawah),
+digabung dengan inventaris draw Quick Race (primitif rect/quad = layar penuh).
+Hash, jumlah draw di sampel, dan nama konstanta (bukan kode):
+- FinalCombine balapan (scene + bloom, filmic, LUT 3D, gamma 2,0):
+  E97AA211B556A9B3 (4.940); dengan vignette 9CDA139F232A8A73 (741); dengan
+  DOF 30B67D8B86C37587 (754) dan AE3B2E36FCA4958D (87; dofFocalParams,
+  combineQVals). Konstanta: filmicParams1, filmicParamsE, colorTransform,
+  colorGradingTexScale/Offset.
+- Auto-exposure: CAF3881F7C4CDCAA (tonemapAdaptiveLuminanceKeys,
+  previousFrameAmount, tonemapReset, tonemapWeightRange).
+- Bloom: blur Gaussian 1D7A35C8776E7F52 dan 4C519B38C0A7FB8B (16.112 masing-
+  masing, gaussWeight), 7 tap 3C7134E656BA9E0A dan 2A8603D90CD65ECA
+  (gaussOffsets7Tap); gabungan 5 tekstur 9B70AAB58FB9F35E dan 2 tekstur
+  D31AE23A56F1818D (srcTexPreMultiply); downsample 805C1FEAC31575B3
+  (srcMipLevel).
+- Motion blur: 4746CAD32EF168CF (invCurrentVPThenPrevVP,
+  QAndNegNearQAndScale).
+- Blit dan UI: BCFAE662E7F38473, AE59F518D522BDD1, 618DD627F3D3B9A4,
+  ECBE193E90A42B68 (s0), 6E57A6E305D5D69B (g_TextureSrc1), C23E686D7A951CE1
+  dan 9A20F0519E2257A5 (offset, sourceTexture), 59371DD872E33420.
+- Bukan post-process walau layar penuh/quad: detail jalan (roadDetailBlur*),
+  garis balap, skid mark, bayangan, impostor (Ambient, FogColor, SunColor),
+  pemrosesan peta lingkungan (spherical*).
+Override yang mengubah tampilan sebaiknya kode asli proyek yang memakai input
+dan konstanta shader itu (lewat kontrak), bukan salinan ucode game, supaya
+bisa di-commit; salinan setia hasil generator tetap lokal.
+
+Rumus FinalCombine (dari ucode, untuk menulis mod): x = (scene^2 + bloom^2) *
+2^(interpolator 1 W); filmic Hable f(x) = (x(Ax+CB)+DE)/(x(Ax+B)+DF) - E/F
+(filmicParams1/E); lalu * (c / interpolator 1 Z) + bias (normalisasi white
+point yang dihitung vertex shader), LUT 3D, transform warna afin 3x4, saturate,
+sqrt (gamma 2). Varian vignette mencampur ke vignetteColor.xyz sesudah LUT
+dengan kekuatan vignetteColor.w * saturate((|T*pos|^2 + offset)^power). Karena
+white point dinormalisasi di vertex shader, mengubah parameter filmic hanya di
+pixel shader menggeser kecerahan; kurva diubah di ruang output.
+
+LANGKAH 3 B4: MOD TAMPILAN (16 Oktober 2026)
+-------------------------------------------
+- Generator meninggalkan hook netral: XE_HOOK_TFETCH di setiap hasil fetch,
+  XE_CONSTANT -> XE_HOOK_CONSTANT di setiap konstanta, XE_HOOK_INPUT sesudah
+  prolog, XE_HOOK_OUTPUT sebelum epilog. shader_mod_path=<dir> dengan
+  shader_<hash>.mod.hlsli: HLSL hasil generator untuk hash itu dikompilasi
+  dengan mod sesudah pustaka (mod #undef lalu mendefinisikan ulang hook);
+  shader_mod_defines memberi kenop. Tanpa kode game di file mod.
+- work/fm4-rex/look (fm4-look.hlsli + 5 mod): penajaman CAS pada fetch scene
+  (tf0) keempat FinalCombine, energi bloom (tf2), eksposur (interpolator 1 W),
+  kontras (kurva S) dan saturasi di output, kekuatan vignette (c2.w di
+  9CDA139F232A8A73, c4.w di AE3B2E36FCA4958D), motion blur 4746CAD32EF168CF
+  dicampur dengan sampel scene tanpa blur. Build.ps1 -Look "sharpen=...,..."
+  (pipeline.py dan e2e.py --look).
+- Uji photo dengan sharpen 0,6, bloom 0,7, contrast 0,25, saturation 1,1,
+  vignette 0,3, motion blur 0,3 dan A/B 5 detik: kelima mod dikompilasi
+  (0,5-1,3 detik); di photo mode, aspal dan detail mobil lebih tajam, pendaran
+  bloom lebih kecil, kerb dan garis jalan tidak lagi tercoreng motion blur.

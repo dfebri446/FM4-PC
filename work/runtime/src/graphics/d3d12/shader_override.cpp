@@ -45,6 +45,15 @@ REXCVAR_DEFINE_BOOL(shader_override_generated, false, "GPU/D3D12",
                     "override file (tests the generator against the DXBC translations)")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
+REXCVAR_DEFINE_STRING(shader_mod_path, "", "GPU/D3D12",
+                      "Directory of shader mods, shader_<ucode hash>.mod.hlsli: hooks into the "
+                      "generated HLSL of that pixel shader (see shader_override.hlsli)")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
+REXCVAR_DEFINE_STRING(shader_mod_defines, "", "GPU/D3D12",
+                      "Preprocessor defines for shader mods, NAME=VALUE separated by ';'")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 REXCVAR_DEFINE_INT32(shader_override_ab_ms, 0, "GPU/D3D12",
                      "Use the DXBC translations instead of the overrides in every other "
                      "period of this many milliseconds of the steady clock (0: always the "
@@ -60,10 +69,12 @@ using Modification = DxbcShaderTranslator::Modification;
 
 constexpr char kHlsliName[] = "xenos_override.hlsli";
 
-// Serves the embedded library and other includes from the override directory.
+// Serves the embedded library, and other includes from the mod and override
+// directories.
 class OverrideInclude final : public ID3DInclude {
  public:
-  explicit OverrideInclude(const std::filesystem::path& directory) : directory_(directory) {}
+  explicit OverrideInclude(std::vector<std::filesystem::path> directories)
+      : directories_(std::move(directories)) {}
 
   HRESULT __stdcall Open(D3D_INCLUDE_TYPE, LPCSTR file_name, LPCVOID, LPCVOID* data_out,
                          UINT* bytes_out) noexcept override {
@@ -72,15 +83,21 @@ class OverrideInclude final : public ID3DInclude {
       *bytes_out = UINT(sizeof(kShaderOverrideHlsli));
       return S_OK;
     }
-    std::ifstream file(directory_ / file_name, std::ios::binary);
-    if (!file) {
-      return E_FAIL;
+    for (const std::filesystem::path& directory : directories_) {
+      if (directory.empty()) {
+        continue;
+      }
+      std::ifstream file(directory / file_name, std::ios::binary);
+      if (!file) {
+        continue;
+      }
+      std::string& text = files_.emplace_back(std::istreambuf_iterator<char>(file),
+                                              std::istreambuf_iterator<char>());
+      *data_out = text.data();
+      *bytes_out = UINT(text.size());
+      return S_OK;
     }
-    std::string& text = files_.emplace_back(std::istreambuf_iterator<char>(file),
-                                            std::istreambuf_iterator<char>());
-    *data_out = text.data();
-    *bytes_out = UINT(text.size());
-    return S_OK;
+    return E_FAIL;
   }
 
   HRESULT __stdcall Close(LPCVOID data) noexcept override {
@@ -89,9 +106,32 @@ class OverrideInclude final : public ID3DInclude {
   }
 
  private:
-  std::filesystem::path directory_;
+  std::vector<std::filesystem::path> directories_;
   std::list<std::string> files_;
 };
+
+// shader_<16 hex digits>[...]<suffix> in a directory.
+void ScanShaderFiles(const std::filesystem::path& directory, const char* suffix,
+                     std::unordered_set<uint64_t, rex::IdentityHasher<uint64_t>>& hashes_out) {
+  std::error_code error;
+  if (directory.empty()) {
+    return;
+  }
+  size_t suffix_length = std::strlen(suffix);
+  for (const auto& entry : std::filesystem::directory_iterator(directory, error)) {
+    std::string name = entry.path().filename().string();
+    if (name.size() < 7 + 16 + suffix_length || name.compare(0, 7, "shader_") ||
+        name.compare(name.size() - suffix_length, suffix_length, suffix)) {
+      continue;
+    }
+    const char* digits = name.c_str() + 7;
+    char* end = nullptr;
+    uint64_t hash = std::strtoull(digits, &end, 16);
+    if (end == digits + 16) {
+      hashes_out.insert(hash);
+    }
+  }
+}
 
 struct SignatureElement {
   std::string name;
@@ -200,8 +240,9 @@ std::string CompareSignatures(const std::vector<uint8_t>& translated,
 std::unique_ptr<ShaderOverrides> ShaderOverrides::Create(const HostConfig& config) {
   std::string path = REXCVAR_GET(shader_override_path);
   std::string generate_path = REXCVAR_GET(shader_override_generate_path);
+  std::string mod_path = REXCVAR_GET(shader_mod_path);
   bool use_generated = REXCVAR_GET(shader_override_generated);
-  if (path.empty() && generate_path.empty() && !use_generated) {
+  if (path.empty() && generate_path.empty() && mod_path.empty() && !use_generated) {
     return nullptr;
   }
   if (!config.bindless_resources_used || config.edram_rov_used) {
@@ -215,8 +256,21 @@ std::unique_ptr<ShaderOverrides> ShaderOverrides::Create(const HostConfig& confi
   }
   overrides->generate_path_ = generate_path;
   overrides->use_generated_ = use_generated;
-  REXGPU_INFO("Shader overrides: {} pixel shaders in '{}'{}{}", overrides->pixel_shaders_.size(),
-              path, use_generated ? ", generated HLSL for the others" : "",
+  overrides->mod_directory_ = mod_path;
+  ScanShaderFiles(overrides->mod_directory_, ".mod.hlsli", overrides->mod_shaders_);
+  // NAME=VALUE;NAME=VALUE
+  std::istringstream defines(REXCVAR_GET(shader_mod_defines));
+  for (std::string define; std::getline(defines, define, ';');) {
+    size_t equals = define.find('=');
+    if (!define.empty()) {
+      overrides->mod_defines_.emplace_back(define.substr(0, equals),
+                                           equals == std::string::npos ? std::string("1")
+                                                                       : define.substr(equals + 1));
+    }
+  }
+  REXGPU_INFO("Shader overrides: {} pixel shaders in '{}', {} mods in '{}'{}{}",
+              overrides->pixel_shaders_.size(), path, overrides->mod_shaders_.size(), mod_path,
+              use_generated ? ", generated HLSL for the others" : "",
               generate_path.empty() ? "" : ", writing generated HLSL to " + generate_path);
   return overrides;
 }
@@ -228,24 +282,8 @@ ShaderOverrides::ShaderOverrides(const HostConfig& config, std::filesystem::path
   if (library) {
     d3d_compile_ = reinterpret_cast<void*>(GetProcAddress(library, "D3DCompile"));
   }
-  std::error_code error;
-  if (directory_.empty()) {
-    return;
-  }
-  for (const auto& entry : std::filesystem::directory_iterator(directory_, error)) {
-    // shader_<16 hex digits>[_<16 hex digits>].ps.hlsl
-    std::string name = entry.path().filename().string();
-    if (name.size() < 7 + 16 + 8 || name.compare(0, 7, "shader_") ||
-        name.compare(name.size() - 8, 8, ".ps.hlsl")) {
-      continue;
-    }
-    const char* digits = name.c_str() + 7;
-    char* end = nullptr;
-    uint64_t hash = std::strtoull(digits, &end, 16);
-    if (end == digits + 16) {
-      pixel_shaders_.insert(hash);
-    }
-  }
+  // shader_<16 hex digits>[_<16 hex digits>].ps.hlsl
+  ScanShaderFiles(directory_, ".ps.hlsl", pixel_shaders_);
 }
 
 ShaderOverrides::~ShaderOverrides() {
@@ -425,18 +463,31 @@ std::string ShaderOverrides::BuildContract(
 
 bool ShaderOverrides::Compile(const D3D12Shader::D3D12Translation& translation,
                               const std::string& contract, const std::string& text,
-                              const std::string& name, std::vector<uint8_t>& binary_out) const {
+                              const std::string& name, const std::string& mod,
+                              std::vector<uint8_t>& binary_out) const {
+  // Contract, library (with the default hooks), mod (redefining hooks), the
+  // shader, main.
   std::string source = contract;
-  source += fmt::format("#include \"{}\"\n#line 1 \"{}\"\n", kHlsliName, name);
+  source += fmt::format("#include \"{}\"\n", kHlsliName);
+  if (!mod.empty()) {
+    source += fmt::format("#include \"{}\"\n", mod);
+  }
+  source += fmt::format("#line 1 \"{}\"\n", name);
   source += text;
   source += fmt::format("\n#define XE_OVERRIDE_MAIN\n#include \"{}\"\n", kHlsliName);
 
-  OverrideInclude include(directory_);
+  std::vector<D3D_SHADER_MACRO> defines;
+  for (const auto& define : mod_defines_) {
+    defines.push_back({define.first.c_str(), define.second.c_str()});
+  }
+  defines.push_back({nullptr, nullptr});
+
+  OverrideInclude include({mod_directory_, directory_});
   ID3DBlob* code = nullptr;
   ID3DBlob* messages = nullptr;
   auto start = std::chrono::steady_clock::now();
   HRESULT result = pD3DCompile(d3d_compile_)(
-      source.data(), source.size(), name.c_str(), nullptr, &include, "main", "ps_5_1",
+      source.data(), source.size(), name.c_str(), defines.data(), &include, "main", "ps_5_1",
       D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES | D3DCOMPILE_IEEE_STRICTNESS |
           D3DCOMPILE_OPTIMIZATION_LEVEL3,
       0, &code, &messages);
@@ -467,8 +518,8 @@ bool ShaderOverrides::Compile(const D3D12Shader::D3D12Translation& translation,
     REXGPU_ERROR("Shader override {}: {}", name, mismatch);
     return false;
   }
-  REXGPU_INFO("Shader override {} compiled for modification {:016X} in {:.1f} ms", name,
-              translation.modification(), milliseconds);
+  REXGPU_INFO("Shader override {}{}{} compiled for modification {:016X} in {:.1f} ms", name,
+              mod.empty() ? "" : " with ", mod, translation.modification(), milliseconds);
   return true;
 }
 
@@ -494,7 +545,13 @@ void ShaderOverrides::Apply(D3D12Shader::D3D12Translation& translation) {
       }
     }
   }
-  bool generate = path.empty() && !disabled && (use_generated_ || !generate_path_.empty());
+  // A mod hooks into the generated HLSL (or into the override file).
+  std::string mod;
+  if (mod_shaders_.find(hash) != mod_shaders_.end()) {
+    mod = fmt::format("shader_{:016X}.mod.hlsli", hash);
+  }
+  bool use_generated = use_generated_ || !mod.empty();
+  bool generate = path.empty() && !disabled && (use_generated || !generate_path_.empty());
   if (path.empty() && !generate && dump_path.empty()) {
     return;
   }
@@ -556,12 +613,12 @@ void ShaderOverrides::Apply(D3D12Shader::D3D12Translation& translation) {
     } else {
       name = "generated/" + file_name;
     }
-    if (!use_generated_) {
+    if (!use_generated) {
       return;
     }
   }
   std::vector<uint8_t> binary;
-  if (Compile(translation, contract, text, name, binary)) {
+  if (Compile(translation, contract, text, name, mod, binary)) {
     translation.ReplaceTranslatedBinary(std::move(binary));
   }
 }

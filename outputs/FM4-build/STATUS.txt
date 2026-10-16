@@ -717,6 +717,15 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   hanya di transisi layar (LOADING foto, boot), dengan angka yang sama seperti
   run override tulisan tangan. Run e2e lolos. Bagian balapan bergerak tidak
   bisa dibandingkan dengan A/B.
+- B4 langkah 3, mod tampilan (16 Oktober 2026): Build.ps1 -Action run -Look
+  "sharpen=..,bloom=..,exposure=..,contrast=..,saturation=..,vignette=..,
+  motion_blur=.." memakai mod work/fm4-rex/look (kode asli proyek, hook pada
+  HLSL hasil generator untuk keempat FinalCombine dan motion blur; rincian di
+  B4-SHADER-RESEARCH.txt). Skenario photo dengan A/B 5 detik: dengan kenop
+  netral, capture mod dan DXBC identik bit per bit di bagian statis; dengan
+  sharpen 0,6, bloom 0,7, contrast 0,25, saturation 1,1, vignette 0,3 dan
+  motion blur 0,3, aspal dan mobil lebih tajam, pendaran bloom lebih kecil dan
+  motion blur di kerb berkurang. Nilai preset belum dipilih.
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 

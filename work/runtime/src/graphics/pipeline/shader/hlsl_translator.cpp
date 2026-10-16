@@ -348,7 +348,8 @@ HlslShaderTranslator::Operand HlslShaderTranslator::LoadOperand(const Instructio
                 operand.storage_index) == UINT32_MAX) {
           return result;
         }
-        result.base = fmt::format("XE_C({})", operand.storage_index);
+        // XE_C through the constant hook of shader mods.
+        result.base = fmt::format("XE_CONSTANT({})", operand.storage_index);
       } else {
         // Dynamically indexed constants are not packed.
         result.base = "xe_float_constants[" +
@@ -941,7 +942,8 @@ void HlslShaderTranslator::ProcessTextureFetchInstruction(
                              Float(attributes.offset_z), lod, gradients);
           break;
       }
-      Line("float4 t = " + call + ";");
+      // Through the texture fetch hook of shader mods.
+      Line(fmt::format("float4 t = XE_HOOK_TFETCH({}u, {}, {});", fetch, call, coord.Vector()));
       std::string zero = Mask(instr.result.GetUsedResultComponents() & ~non_zero);
       if (!zero.empty()) {
         Line("t." + zero + " = 0.0;");

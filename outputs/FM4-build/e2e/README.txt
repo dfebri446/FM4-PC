@@ -386,8 +386,20 @@ test the generator against the DXBC translations with the A/B below.
 override_fxc.py compiles overrides like the runtime without starting the game,
 against the contracts of a dump_shaders run (about 8 s for 418 shaders):
 
-  python outputs\FM4-build\e2e\override_fxc.py <override file or dir> <dump_shaders dir>
+  python outputs\FM4-build\e2e\override_fxc.py <override file or dir> <dump_shaders dir> [--mods work\fm4-rex\look --define FM4_LOOK_SHARPEN=0.5]
 
+
+Shader mods change a generated override without copying it: with --arg
+shader_mod_path=<dir>, a pixel shader with <dir>\shader_<hash>.mod.hlsli gets its
+generated HLSL with that file included after the library, where it redefines
+the hooks the generator leaves at each texture fetch (XE_HOOK_TFETCH), float
+constant (XE_HOOK_CONSTANT), the registers after the prologue (XE_HOOK_INPUT)
+and the outputs (XE_HOOK_OUTPUT); --arg shader_mod_defines=NAME=VALUE;... sets
+its defines. The defaults change nothing. work/fm4-rex/look holds the look mods
+of FM4's post-processing (original code, see fm4-look.hlsli): Build.ps1 -Action
+run -Look "sharpen=0.5,bloom=0.8,contrast=0.2,saturation=1.05,vignette=0.5,
+motion_blur=0.5,exposure=0" (pipeline.py and e2e.py --look) copies them to
+<BuildRoot>\look and sets the knobs; knobs left out keep the original look.
 
 --arg shader_override_ab_ms=<N> draws with the DXBC translations instead of the
 overrides in every other period of N ms of the steady clock, so one static scene

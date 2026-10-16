@@ -6,7 +6,10 @@ descriptor tables. Contracts come from a run with --arg dump_shaders=<dir>
 every contract of that hash.
 
   override_fxc.py <override file or directory> <contracts dir> [--asm <dir>]
+      [--mods <shader_mod_path dir> --define NAME=VALUE ...]
 
+With --mods, an override whose hash has shader_<hash>.mod.hlsli there is compiled with the mod
+included after the library, as shader_mod_path does (with --define as shader_mod_defines).
 Prints how many compiled and groups the failures by their first error."""
 import argparse
 import concurrent.futures
@@ -27,16 +30,24 @@ def find_fxc():
     return candidates[-1]
 
 
-def compile_one(fxc, override, contract, asm_dir):
+def compile_one(fxc, override, contract, asm_dir, mods, defines):
     with tempfile.TemporaryDirectory() as work:
         work = pathlib.Path(work)
         (work / 'xenos_override.hlsli').write_bytes(LIBRARY.read_bytes())
-        source = (contract.read_text() + '\n#include "xenos_override.hlsli"\n'
+        mod = ''
+        if mods:
+            for path in mods.glob('*.hlsli'):
+                (work / path.name).write_bytes(path.read_bytes())
+            name = f'{contract.name[:23]}.mod.hlsli'
+            if (mods / name).is_file():
+                mod = f'#include "{name}"\n'
+        source = (contract.read_text() + '\n#include "xenos_override.hlsli"\n' + mod +
                   f'#line 1 "{override.as_posix()}"\n' + override.read_text() +
                   '\n#define XE_OVERRIDE_MAIN\n#include "xenos_override.hlsli"\n')
         (work / 'main.hlsl').write_text(source)
         command = [str(fxc), '/nologo', '/T', 'ps_5_1', '/E', 'main', '/Gis', '/O3',
                    '/enable_unbounded_descriptor_tables', '/Fo', str(work / 'main.cso')]
+        command += [f'/D{define}' for define in defines]
         if asm_dir:
             command += ['/Fc', str(asm_dir / contract.name.replace('.contract.hlsli', '.asm'))]
         result = subprocess.run(command + [str(work / 'main.hlsl')], capture_output=True,
@@ -51,8 +62,11 @@ def main():
     parser.add_argument('overrides', help='an override file or a directory of them')
     parser.add_argument('contracts', help='the dump_shaders directory of a run')
     parser.add_argument('--asm', help='write the FXC disassembly of each to this directory')
+    parser.add_argument('--mods', help='a shader_mod_path directory')
+    parser.add_argument('--define', action='append', default=[], help='NAME=VALUE for the mods')
     parser.add_argument('--workers', type=int, default=8)
     options = parser.parse_args()
+    mods = pathlib.Path(options.mods) if options.mods else None
     overrides = pathlib.Path(options.overrides)
     contracts = pathlib.Path(options.contracts)
     asm_dir = pathlib.Path(options.asm) if options.asm else None
@@ -70,7 +84,8 @@ def main():
     fxc = find_fxc()
     failures = {}
     with concurrent.futures.ThreadPoolExecutor(options.workers) as pool:
-        for name, code, errors in pool.map(lambda job: compile_one(fxc, *job, asm_dir), jobs):
+        for name, code, errors in pool.map(
+                lambda job: compile_one(fxc, *job, asm_dir, mods, options.define), jobs):
             if code:
                 failures[name] = errors
     print(f'{len(jobs) - len(failures)}/{len(jobs)} compiled')

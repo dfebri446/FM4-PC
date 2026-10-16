@@ -51,6 +51,8 @@ uint xe_flags() { return xe_system_uint(XE_SYS_FLAGS); }
 // Guest float constant c<n> as read by this translation (XE_C(5) for c5). FXC
 // doesn't expand a pasted name that begins with the macro's own name.
 #define XE_C(n) XE_FLOAT_CONSTANT_##n
+// c<n> through XE_HOOK_CONSTANT, as generated overrides read constants.
+#define XE_CONSTANT(n) XE_HOOK_CONSTANT(n, XE_C(n))
 
 bool xe_bool_constant(uint index) {
   return ((xe_bool_constants[index >> 7u][(index >> 5u) & 3u] >> (index & 31u)) & 1u) != 0u;
@@ -581,6 +583,12 @@ float4 xe_tfetch_cube(uint fetch, uint texture_unsigned, uint texture_signed, ui
   return xe_texture_finish(fetch, value, signs);
 }
 
+// Size of a 2D texture from its fetch constant, for mods sampling neighbors.
+float2 xe_texture_size_2d(uint fetch) {
+  uint size_word = xe_fetch_word(fetch, 2u);
+  return float2((uint2(size_word, size_word >> 13u) & 0x1FFFu) + 1u);
+}
+
 #if XE_PIXEL_SHADER
 #define XE_LOD_DEFAULT XE_LOD_COMPUTED
 #define XE_SAMPLER_DEFAULT(fetch) XE_SAMPLER##fetch##_FFF
@@ -763,13 +771,30 @@ XePsOutput xe_ps_epilogue(XePixel p, XePsInput input) {
 
 #endif  // XE_PIXEL_SHADER
 
+// Hooks of shader mods (shader_mod_path), included after this part: they #undef
+// and redefine these. The defaults change nothing, so generated overrides stay
+// exact without a mod.
+//   XE_HOOK_TFETCH(fetch, value, coord): the result of each texture fetch of a
+//     generated override, with its fetch constant and coordinate operand.
+//   XE_HOOK_CONSTANT(n, value): float constant c<n> as XE_CONSTANT(n) reads it.
+//   XE_HOOK_INPUT(p): the registers after the prologue.
+//   XE_HOOK_OUTPUT(p, input): the outputs before the epilogue (input: the
+//     registers after the prologue and XE_HOOK_INPUT).
+#define XE_HOOK_TFETCH(fetch, value, coord) (value)
+#define XE_HOOK_CONSTANT(n, value) (value)
+#define XE_HOOK_INPUT(p)
+#define XE_HOOK_OUTPUT(p, input)
+
 #else  // XE_OVERRIDE_MAIN
 
 #if XE_PIXEL_SHADER
 XE_PS_ATTRIBUTES
 XePsOutput main(XePsInput xe_input) {
   XePixel p = xe_ps_prologue(xe_input);
+  XE_HOOK_INPUT(p);
+  XePixel xe_input_pixel = p;
   xe_pixel_shader(p);
+  XE_HOOK_OUTPUT(p, xe_input_pixel);
   return xe_ps_epilogue(p, xe_input);
 }
 #endif

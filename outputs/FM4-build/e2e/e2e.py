@@ -707,6 +707,8 @@ def run_once(options, out):
     if options.profile:
         source = root / 'user-data' if options.profile == 'copy' else Path(options.profile)
         args['user_data_root'] = str(prepare_profile(source, root, out))
+    if options.look:
+        args.update({k: str(v) for k, v in pipeline.look_cvars(root, options.look).items()})
     for item in options.arg:
         key, value = item.lstrip('-').split('=', 1)
         args[key] = value
@@ -915,6 +917,7 @@ def main():
     parser.add_argument('--env', action='append', default=[], help='extra NAME=value for the game process')
     parser.add_argument('--steps', help='JSON list of steps or a preset name (camera), overrides --scenario')
     parser.add_argument('--arg', action='append', default=[], help='extra/override --cvar=value')
+    parser.add_argument('--look', help='look mods like Build.ps1 -Look, e.g. "sharpen=0.5,bloom=0.8"')
     parser.add_argument('--tail', type=float, default=10, help='seconds to keep running after the last step')
     parser.add_argument('--keep-ppm', action='store_true', help='keep full-resolution captures')
     parser.add_argument('--measure', type=int, default=0, help='summarize only the last N perf seconds')
