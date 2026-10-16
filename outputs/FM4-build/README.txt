@@ -61,7 +61,11 @@ Optional actions for performance work:
   (vblank_vrr=true) a frame that misses a vblank gets its vblank as soon as it
   is ready instead of waiting for the next one. Quick Race on ROV, three runs
   each, interleaved: same average fps (52.5 vs 52.7) but frame p95 23 ms
-  instead of 33 and p99 26 instead of 35; game speed unchanged.
+  instead of 33 and p99 26 instead of 35; game speed unchanged. Scenarios
+  that render at 30 fps (countdown, post-race, replays, photo mode) keep the
+  fixed grid either way: their render thread waits for the vblanks itself,
+  and with vblank_vrr one long frame left every later vblank forced or late
+  (the career replay at -ResolutionScale 2 stayed at 23 fps instead of 30).
 - run -SingleTile renders races as one 720p tile without MSAA (the title's own
   UI tiling scenario, through the render scenario override) and applies FXAA
   on the swap. Quick Race on ROV: 58.6 fps instead of 54.3, frame p95 20 ms
@@ -83,9 +87,8 @@ Optional actions for performance work:
   frame at 2, 59.9 fps with GPU about 6.8 ms at 3, sharp HUD and scene.
   The smoke gate at 2 (240 Hz) passes: races 202-206 fps, photo mode 30 fps
   (GPU 7.5 ms), saving and loading a photo, and a career race with its
-  replay. The replay runs at 23.5 fps instead of 30 there, held up by the
-  title's CPU side (the command processor waits for guest commands about
-  880 ms a second); not investigated yet. 3 has not been through the gates.
+  replay at 30 fps (GPU 8.2 ms). The replay used to drop to 23.5 fps after a
+  long frame: see -FixedVblank. 3 has not been through the gates.
 - run -FullRateMirror renders the rear-view mirror every frame. By default
   every race renders it every other frame, as the title itself does for 12 and
   16 car races (HalfRateMirror in the race render scenarios; 1 and 8 car races

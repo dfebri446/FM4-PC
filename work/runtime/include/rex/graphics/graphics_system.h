@@ -92,6 +92,15 @@ class GraphicsSystem : public system::IGraphicsSystem {
   }
   double vblank_rate() const { return vblank_rate_hz_.load(std::memory_order_relaxed); }
 
+  // Holds vblank_vrr to the fixed refresh grid while set, for example while a
+  // title paces its frames over several vblanks on the CPU (the vsync thread
+  // cannot see such a wait, see graphics_system.cpp). Any thread.
+  void SetVblankVrrPaused(bool paused) {
+    if (vblank_vrr_paused_.exchange(paused, std::memory_order_relaxed) != paused) {
+      WakeVsyncWorker();
+    }
+  }
+
   virtual void ClearCaches();
   virtual void InvalidateGpuMemory();
 
@@ -135,6 +144,7 @@ class GraphicsSystem : public system::IGraphicsSystem {
 
   std::atomic<bool> vsync_worker_running_;
   std::atomic<double> vblank_rate_hz_{0.0};
+  std::atomic<bool> vblank_vrr_paused_{false};
   std::unique_ptr<rex::thread::Event> vsync_wake_event_;
   system::object_ref<system::XHostThread> vsync_worker_thread_;
 

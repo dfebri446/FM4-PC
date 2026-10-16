@@ -284,7 +284,8 @@ scenarios (countdown, post-race, replays and photo mode keep 30). The guest
 vblank then runs at 60 Hz and at <n> Hz only while a race scenario sets the frame
 rate (fm4-vblank-rate.cpp); --env FM4_VBLANK_TRACE=1 prints each render
 scenario push and pop with the vblank rate, --env FM4_VBLANK_SWITCH=0 keeps the
-vblank at the reported refresh rate, and --arg=--vblank_rate=<hz> sets a fixed
+vblank at the reported refresh rate, --env FM4_VRR_HALF_RATE=1 keeps vblank_vrr
+in the 30 fps scenarios (held to the fixed grid by default), and --arg=--vblank_rate=<hz> sets a fixed
 startup vblank rate (without FM4_FRAME_RATE). race_clock.py reads the race timer of the captures
 (run with --keep-ppm) and prints its rate against wall time (1.0: real time):
 

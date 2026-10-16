@@ -208,7 +208,13 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
           }
           uint64_t interval_ticks =
               REXCVAR_GET(vsync) ? vsync_interval_ticks : no_vsync_interval_ticks;
-          if (REXCVAR_GET(vblank_vrr) && REXCVAR_GET(vsync)) {
+          // vblank_vrr only sees the command processor wait. A title that
+          // waits for vblanks on its own CPU thread instead (frames paced over
+          // two vblanks) leaves the command processor idle, so after one long
+          // frame its vblanks stay forced/late and the frame takes two
+          // intervals plus the time to its swap: SetVblankVrrPaused.
+          if (REXCVAR_GET(vblank_vrr) && REXCVAR_GET(vsync) &&
+              !vblank_vrr_paused_.load(std::memory_order_relaxed)) {
             const uint64_t elapsed = current_time - last_frame_time;
             const bool waiting = command_processor_ && command_processor_->is_waiting_reg_mem();
             if (waiting && vblank_late) {
@@ -236,6 +242,7 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
               }
             }
           } else {
+            vblank_late = false;
             while (current_time - last_frame_time >= interval_ticks) {
               MarkVblank();
               perf_trace::CountVblank(0);

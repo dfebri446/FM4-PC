@@ -15,6 +15,13 @@
 // (the control's default, 60).
 // FM4_VBLANK_SWITCH=0 keeps the vblank rate fixed; FM4_VBLANK_TRACE=1 prints
 // every push and pop.
+//
+// Scenarios below 60 (30: two vblanks per frame) also hold vblank_vrr to the
+// fixed grid: their render thread waits for the vblanks itself, which the
+// vsync thread cannot see, and after one long frame (a 200 ms hitch in the
+// career replay at draw_resolution_scale 2) every vblank came forced or late
+// and the replay ran at 23 fps instead of 30. FM4_VRR_HALF_RATE=1 keeps
+// vblank_vrr there for comparisons.
 #include <rex/graphics/graphics_system.h>
 #include <rex/hook.h>
 #include <rex/memory.h>
@@ -37,6 +44,7 @@ constexpr uint32_t kDefaultFrameRate = 60;
 
 rex::Runtime* runtime = nullptr;
 uint32_t race_rate = 0;  // 0: switching off
+bool vrr_half_rate = false;
 bool trace = false;
 std::mutex mutex;
 std::vector<uint32_t> frame_rates;  // per pushed scenario, bottom first
@@ -65,6 +73,7 @@ void Apply(const char* event, const std::string& name) {
   }
   const double rate = frame_rate > kDefaultFrameRate ? race_rate : kDefaultFrameRate;
   auto* gpu = static_cast<rex::graphics::GraphicsSystem*>(runtime->graphics_system());
+  if (gpu) gpu->SetVblankVrrPaused(!vrr_half_rate && frame_rate < kDefaultFrameRate);
   if (race_rate && gpu && rate != current_rate) {
     gpu->SetVblankRate(rate);
     current_rate = rate;
@@ -79,7 +88,9 @@ void FM4InstallVblankRate(rex::Runtime* rt) {
   const char* frame_rate = std::getenv("FM4_FRAME_RATE");
   const char* enabled = std::getenv("FM4_VBLANK_SWITCH");
   const char* traced = std::getenv("FM4_VBLANK_TRACE");
+  const char* half_rate = std::getenv("FM4_VRR_HALF_RATE");
   trace = traced && std::strcmp(traced, "1") == 0;
+  vrr_half_rate = half_rate && std::strcmp(half_rate, "1") == 0;
   runtime = rt;
   const unsigned long rate = frame_rate ? std::strtoul(frame_rate, nullptr, 10) : 0;
   if (rate <= kDefaultFrameRate || (enabled && std::strcmp(enabled, "0") == 0)) return;
@@ -96,7 +107,7 @@ void FM4InstallVblankRate(rex::Runtime* rt) {
 // TReference<CDynamicRenderSettings>*).
 REX_EXTERN(__imp__sub_82442600);
 REX_HOOK_RAW(sub_82442600) {
-  if (race_rate || trace) {
+  {
     const uint32_t settings = Load(base, ctx.r4.u32);
     const bool valid = settings && Load(base, settings) == kSettingsVtable;
     std::lock_guard lock(mutex);
@@ -109,7 +120,7 @@ REX_HOOK_RAW(sub_82442600) {
 // CRenderThreadLink::PopDynamicRenderSettings(this + 8).
 REX_EXTERN(__imp__sub_82438A38);
 REX_HOOK_RAW(sub_82438A38) {
-  if (race_rate || trace) {
+  {
     std::lock_guard lock(mutex);
     if (!frame_rates.empty()) frame_rates.pop_back();
     Apply("pop", "");

@@ -754,7 +754,33 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
     highlight menu memakai jarak piksel 720p). Race 202-206 fps GPU 4,1-4,2
     ms, photo mode 30 fps GPU 7,5 ms, muat foto lolos; replay karier 23,5 fps
     (1x: 30) karena command processor menunggu perintah guest sekitar 880
-    ms/s, belum diselidiki.
+    ms/s; penyebab dan perbaikannya di butir berikut.
+  - Replay 2x 23,5 fps (16 Oktober 2026): bukan beban skala 2x, melainkan
+    vblank_vrr. Replay mulai 30 fps di grid 60 Hz (CP menunggu flag swap
+    sekitar 920 ms/s), lalu satu frame panjang (hitch sekitar 200 ms
+    beberapa detik setelah replay dimulai) memindahkannya ke mode VRR yang
+    tidak pernah kembali: per detik vblank grid 0, late 23, forced 23, frame
+    sekitar 43 ms = dua interval + sekitar 10 ms sampai swap. Skenario 30 fps
+    memakai dua vblank per frame, dan render thread guest menunggu vblank itu
+    sendiri di CPU, tidak lewat PM4_WAIT_REG_MEM; thread vsync hanya melihat
+    CP menunggu, jadi setelah vblank late (swap tiba) vblank berikutnya
+    ditahan sampai dipaksa dua interval kemudian, sementara CP diam menunggu
+    guest (guest_idle 880 ms/s). Run 1x tidak terkena hitch itu, tetapi
+    perangkapnya tidak bergantung skala. Bukti: 2x dengan vblank_vrr=false
+    replay 30,0 fps, wait_reg_mem 831 ms/s, semua vblank di grid; GPU 8,3 ms
+    dan readback per frame sama seperti 1x. Perbaikan: GraphicsSystem::
+    SetVblankVrrPaused menahan VRR ke grid tetap, dan fm4-vblank-rate.cpp
+    (kini selalu mengikuti stack render scenario) memakainya selama frame
+    rate skenario di bawah 60 (countdown, post-race, replay, photo mode);
+    balapan dan menu tetap VRR. FM4_VRR_HALF_RATE=1 mengembalikan VRR di
+    skenario 30 fps untuk perbandingan. Repro 2x: hitch 207 ms yang sama
+    terjadi, replay langsung kembali ke grid, 30,0 fps (rata-rata 29,98),
+    wait_reg_mem 830 ms/s. Gate smoke 240 Hz: 1x (vrr30, banding sh) 3/3,
+    race 216-223 fps, photo mode 30 fps, replay 30,0 fps p99 34,0 ms; 2x
+    (vrr30x2, banding sh2x) 3/3, race 213-214 fps GPU 4,1-4,4 ms, photo mode
+    30 fps GPU 6,8 ms, replay 29,97 fps p99 33,9 ms GPU 8,6 ms. FAIL compare
+    vrr30-240-photo hanya pesan XAM app=FE yang sama persis di log baseline;
+    tanpa frame warna clear.
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 
