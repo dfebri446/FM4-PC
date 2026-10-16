@@ -99,7 +99,10 @@ while ($null -ne ($request = [Console]::In.ReadLine())) {
       [ordered]@{ text = $line.Text; x = $bx; y = $by; w = $bw; h = $bh
                   bg = [Fm4Ppm]::Mean($bx - 6, $by - 4, $bw + 12, $bh + 8)
                   red = [Fm4Ppm]::Red($bx - 70, $by - 14, $bw + 140, $bh + 34)
-                  red_text = [Fm4Ppm]::Red($bx, $by, $bw, $bh) }
+                  red_text = [Fm4Ppm]::Red($bx, $by, $bw, $bh)
+                  # A highlighted entry of a vertical menu has a red line above and below it.
+                  red_above = [Fm4Ppm]::Red($bx - 70, $by - 16, $bw + 140, 12)
+                  red_below = [Fm4Ppm]::Red($bx - 70, $by + $bh + 2, $bw + 140, 14) }
     }
     $bitmap.Dispose()
     [Console]::Out.WriteLine((ConvertTo-Json -InputObject @{ lines = @($lines) } -Compress -Depth 4))

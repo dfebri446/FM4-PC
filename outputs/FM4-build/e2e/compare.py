@@ -23,6 +23,9 @@ SCALARS = ["fps_mean", "fps_median", "fps_min", "frame_ms_p50", "frame_ms_p95", 
            "readbacks_per_s_median", "draws_per_s_median", "gpu_frame_ms_median",
            "gpu_resolve_ms_median", "gpu_span_ms_median"]
 CAPTURE_KEYS = ["luma_mean", "black_pct", "saturated_pct"]
+# Measured phases of a scenario (summary.json "phases", e.g. race, photo, replay). They last
+# 20-40 s, so their frame p99 only warns.
+PHASE_KEYS = ["fps_mean", "frame_ms_p99", "cp_busy_ms_per_s_median", "gpu_frame_ms_median"]
 
 
 def load(path):
@@ -94,6 +97,9 @@ def build_rows(b, c):
     l1 = hist_l1(bc.get("luma_hist16"), cc.get("luma_hist16"))
     rows.append({"metric": "capture.luma_hist16 L1 (pp)", "baseline": None, "candidate": None,
                  "delta": l1, "delta_pct": None})
+    bp, cp = b.get("phases") or {}, c.get("phases") or {}
+    for name in [n for n in bp if n in cp]:
+        rows += [row(f"phase.{name}.{k}", bp[name].get(k), cp[name].get(k)) for k in PHASE_KEYS]
     return rows
 
 
@@ -115,7 +121,9 @@ def check_fail(b, c):
     if c.get("crashed"):
         fail.append(f"candidate crashed: {c['crashed']}")
     if c.get("goal_reached") is False:
-        fail.append("candidate goal_reached is False")
+        steps = c.get("failed_steps") or [c.get("failed_step")]
+        fail.append("candidate goal_reached is False" +
+                    "".join(f"; {step}" for step in steps if step))
     key = "fps_mean" if pair(b, c, "fps_mean") else "fps_median"
     p = pair(b, c, key)
     if p and p[1] < p[0] * (1 - FPS_DROP_FAIL):
@@ -125,6 +133,14 @@ def check_fail(b, c):
         fail.append(f"frame_ms_p99 {p[1]:.2f} is more than 20% above baseline {p[0]:.2f}")
     for k in sorted(set(c["errors"]) - set(b["errors"])):
         fail.append(f"new error key in candidate: {k} (x{c['errors'][k]})")
+    bp, cp = b.get("phases") or {}, c.get("phases") or {}
+    for name in sorted(set(bp) - set(cp)):
+        fail.append(f"phase {name} missing in candidate")
+    for name in [n for n in bp if n in cp]:
+        p = pair(bp[name], cp[name], "fps_mean")
+        if p and p[1] < p[0] * (1 - FPS_DROP_FAIL):
+            fail.append(f"phase {name} fps_mean {p[1]:.2f} is more than {FPS_DROP_FAIL:.0%} "
+                        f"below baseline {p[0]:.2f}")
     return fail
 
 
@@ -149,6 +165,11 @@ def check_warn(b, c):
     if gray(c) > gray(b):
         warn.append(f"captures showing the clear color (missing geometry) {gray(b)} -> {gray(c)}; "
                     f"{CAPTURE_NOTE}")
+    bp, cp = b.get("phases") or {}, c.get("phases") or {}
+    for name in [n for n in bp if n in cp]:
+        p = pair(bp[name], cp[name], "frame_ms_p99")
+        if p and p[1] > p[0] * (1 + P99_RISE_FAIL):
+            warn.append(f"phase {name} frame_ms_p99 rose {p[0]:.2f} -> {p[1]:.2f} ms")
     l1 = hist_l1(bc.get("luma_hist16"), cc.get("luma_hist16"))
     if l1 is not None and l1 > HIST_L1_WARN:
         warn.append(f"capture luma_hist16 L1 distance {l1:.1f} pp (> {HIST_L1_WARN:g}); "

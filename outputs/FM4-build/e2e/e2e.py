@@ -1,7 +1,7 @@
 """End-to-end run of the FM4 build. Drives the diagnostic controller either from a fixed
 timeline or toward a goal with Jev (TypeSafe System One) judging OCR'd screen text, then
 collects GPU frame captures, the per-second perf trace and log error counts."""
-import argparse, json, os, re, statistics, struct, subprocess, sys, time, zlib
+import argparse, json, os, re, shutil, statistics, struct, subprocess, sys, time, zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -10,7 +10,18 @@ BUTTONS = {'up': 0x1, 'down': 0x2, 'left': 0x4, 'right': 0x8, 'start': 0x10, 'ba
            'lb': 0x100, 'rb': 0x200, 'a': 0x1000, 'b': 0x2000, 'x': 0x4000, 'y': 0x8000}
 
 # Each step: [seconds to wait before, action, hold seconds]. Actions are button names joined
-# with '+', or 'rt=<0..255>', 'lt=<0..255>', 'lx/ly/rx/ry=<-32768..32767>', or 'none'.
+# with '+', or 'rt=<0..255>', 'lt=<0..255>', 'lx/ly/rx/ry=<-32768..32767>', or 'none'; a
+# comma-separated sequence taps each in turn (released between). These change no input:
+#   'wait'             only waits (keeps a held throttle);
+#   'phase:<name>'     starts a measured phase ('phase:end' closes it) for summary.json phases;
+#   'select:<label>'   moves the menu highlight to the OCR'd label, for up to <seconds>.
+# [timeout, action, hold, text(, retry)] checks the screen: the action (comma-separated
+# presses, or 'wait') is repeated every retry (default RETRY_S) seconds until one of the
+# '|'-separated texts appears in a capture taken after it. The run fails (goal_reached false)
+# when it does not within the timeout. Some FM4 menus ignore the first press after they open,
+# so checked presses are the reliable way; give screens that load a retry longer than the load.
+# A '?' before the action skips it when the text already shows (in a capture taken after the
+# step starts). A text starting with '=' must be a whole OCR line; '!' checks that none shows.
 SCENARIOS = {
     'boot': [[90, 'none', 0]],
     # Main menu -> Free Play -> Quick Race with the default Abarth 131 on Bernese Alps
@@ -22,6 +33,70 @@ SCENARIOS = {
         [5, 'down', 0.12], [1.5, 'up', 0.12], [1.5, 'a', 0.12], [8, 'rt=255', 0],
     ],
 }
+# Title screen to the main menu, then into the career home menu (PLAY CAREER). The career menu
+# hides after a few idle seconds; the first press shows it again, and Up never wraps.
+_TO_CAREER = [
+    [30, 'wait', 0], [60, 'a', 0.12, 'PLAY CAREER'], [20, 'select:PLAY CAREER', 0],
+    [2, 'a', 0.12], [40, 'up', 0.12, 'MY PROFILE'],
+]
+# Career home menu > GO RACE > WORLD TOUR event screen. Both menus hide after a few idle
+# seconds and the first press only shows them again; Up on their top item does nothing else,
+# so 'up,a' activates the top item whether the menu shows or not.
+_TO_WORLD_TOUR = [
+    [30, 'up,a', 0.12, 'WORLD TOUR|EVENT LIST', 10], [60, 'up,a', 0.12, 'DRIVER LEVEL BONUS', 15],
+]
+SCENARIOS.update({
+    # Quick Race, 20 s of driving, then pause > PHOTO MODE, take a photo and save it as a new
+    # file (the harness answers the name prompt with its default, "Forza"). Use --profile copy.
+    'photo': SCENARIOS['quickrace'] + [
+        [2, 'phase:race', 0], [20, 'wait', 0], [12, 'start', 0.15, 'PHOTO MODE'],
+        [1, 'phase:end', 0],
+        # OCR often reads nothing in photo mode (a bright scene behind small hints), so entering
+        # it is checked by the pause menu closing, and the photo is taken with one A and a fixed
+        # wait: it renders for up to about 20 s (LOADING... PLEASE WAIT; no captures at 120 Hz),
+        # and a repeated A would open the save dialog. The dark save dialog reads reliably.
+        [45, 'select:PHOTO MODE', 0], [20, 'a', 0.12, '!PHOTO MODE|RESUME', 8],
+        [2, 'phase:photo', 0], [8, 'wait', 0], [0.2, 'a', 0.12], [25, 'wait', 0],
+        [60, '?a', 0.12, 'SAVE PHOTO', 20],
+        [30, 'a', 0.12, 'SAVING|SAVE SUCCESSFUL', 10], [30, 'wait', 0, 'SAVE SUCCESSFUL'],
+        [1, 'phase:end', 0],
+    ],
+    # A new process loads the photo saved by 'photo': --profile <photo run>\user-data. Career >
+    # MY PROFILE > MEDIA > MY PHOTOS > LOAD shows it full screen. OCR reads its watermark only
+    # sometimes, so the check is that no menu, loading text or error follows (and final.png).
+    'photo_view': _TO_CAREER + [
+        # The career menu hides again within one capture or two at 120 Hz (its idle timer counts
+        # frames), too fast for a select: Up shows it (or does nothing on GO RACE, where it
+        # opens), then four Downs reach MY PROFILE.
+        [20, 'up,down,down,down,down,a', 0.12, 'EDIT PLAYERCARD', 20],
+        [30, 'select:MEDIA', 0], [15, 'a', 0.12, 'MY PHOTOS'], [30, 'a', 0.12, 'VIEW PHOTOS', 10],
+        [15, 'a', 0.12, 'FILE OPTIONS'], [20, 'a', 0.12, '!FILE OPTIONS', 8], [5, 'wait', 0],
+        [20, 'wait', 0, '!VIEW PHOTOS|FILE OPTIONS|FAILED|LOADING'], [5, 'wait', 0],
+    ],
+    # Career > GO RACE > WORLD TOUR: the profile's next event (Tsukuba Short Circuit with the
+    # Ford Ka for the BuildRoot profile), 40 s of driving, QUIT RACE, 30 s of its replay, then
+    # CONTINUE back to the event. Use --profile copy: quitting changes no progress, but the
+    # BuildRoot profile stays untouched either way.
+    'career': _TO_CAREER + _TO_WORLD_TOUR + [
+        [20, 'a', 0.12, 'START RACE', 10], [20, 'select:START RACE', 0],
+        # A skips the intro; a later A may already start the race from the pre-race menu.
+        [150, 'a', 0.12, 'STARTING GRID|LAPS', 15], [40, '?down,up,a', 0.12, 'LAPS', 10],
+        [1, 'rt=255', 0],
+        [1, 'phase:race', 0], [40, 'wait', 0], [12, 'start', 0.15, 'QUIT RACE'],
+        [1, 'phase:end', 0],
+        # The pause menu sways with the camera (more at 120 Hz), so its highlight can be judged
+        # only in some captures: its selects (also PHOTO MODE above) get 45 s.
+        [45, 'select:QUIT RACE', 0], [10, 'a', 0.12, 'ARE YOU SURE'],
+        # The post-race menu starts the race replay by itself when left idle (sooner at 120 Hz),
+        # so it gets fixed presses as soon as it shows: CONTINUE is highlighted, VIEW REPLAY two
+        # below. B shows the replay's HUD (REWIND, CAMERA), a second B its menu again.
+        [30, 'a', 0.12, 'VIEW REPLAY', 10], [0.2, 'down,down,a', 0.12],
+        [5, 'phase:replay', 0], [30, 'wait', 0], [1, 'phase:end', 0],
+        [20, 'b', 0.12, 'REWIND|CAMERA', 10], [20, 'b', 0.12, 'CONTINUE'], [0.2, 'a', 0.12],
+        [60, 'wait', 0, 'START RACE'],
+    ],
+})
+RETRY_S = 5
 
 # Steps after a goal (--steps <name>): hold the throttle and press Back every 6 s, cycling
 # the race cameras (cockpit, hood, bumper, chase near, chase far, back to cockpit).
@@ -186,9 +261,22 @@ def annotate(lines):
     return sorted(items, key=lambda l: (l['y'] // 20, l['x']))
 
 
+def complete_ppm(path):
+    """Whether a capture has been written completely: OCR of a partly written one sees
+    a black image and no text."""
+    try:
+        with open(path, 'rb') as file:
+            head = file.read(32).split(b'\n', 3)
+        width, height = map(int, head[1].split())
+        return path.stat().st_size >= len(b'\n'.join(head[:3])) + 1 + width * height * 3
+    except (OSError, ValueError, IndexError):
+        return False
+
+
 def newest_capture(capture, after=0.0):
     frames = [p for p in capture.glob('frame-*.ppm') if p.stat().st_mtime > after]
     frames += [p for p in capture.glob('live-latest.ppm') if p.stat().st_mtime > after]
+    frames = [p for p in frames if complete_ppm(p)]
     return max(frames, key=lambda p: p.stat().st_mtime) if frames else None
 
 
@@ -323,6 +411,177 @@ def navigate(goal_name, process, input_file, capture, out, deadline, started):
         ocr.close()
 
 
+def press(input_file, sequence, hold):
+    """Taps each comma-separated action: press, hold, release, short pause."""
+    for action in sequence.split(','):
+        set_input(input_file, **parse_action(action))
+        time.sleep(hold or 0.12)
+        set_input(input_file)
+        time.sleep(0.5)
+
+
+class Screen:
+    """OCR of the newest capture for checked steps; starts the OCR server on first use.
+    steps.jsonl records what each check saw."""
+    def __init__(self, capture, process, log_path):
+        self.capture, self.process, self.ocr = capture, process, None
+        self.log_path, self.log_file = log_path, None
+        self.frame = None
+
+    def log(self, **record):
+        if not self.log_file:
+            self.log_file = open(self.log_path, 'w', encoding='utf-8')
+        self.log_file.write(json.dumps({'frame': self.frame, **record}) + '\n')
+        self.log_file.flush()
+
+    def read(self, after, until):
+        """(annotated lines, capture time) of the newest capture written after `after`, waiting
+        for one until `until` ((None, after) then); raises when the game exits."""
+        while time.time() < until:
+            if self.process.poll() is not None:
+                raise RuntimeError(f'exited with {self.process.returncode}')
+            frame = newest_capture(self.capture, after)
+            if frame:
+                if not self.ocr:
+                    self.ocr = Ocr()
+                try:
+                    self.frame = frame.name
+                    return annotate(self.ocr.read(frame)), frame.stat().st_mtime
+                except (RuntimeError, ValueError, OSError) as error:
+                    # Usually a capture still being written; a dead server is started again.
+                    self.log(ocr_error=repr(error)[:200])
+                    if self.ocr.process.poll() is not None:
+                        self.ocr = None
+            time.sleep(0.2)
+        return None, after
+
+    def close(self):
+        if self.ocr:
+            self.ocr.close()
+        if self.log_file:
+            self.log_file.close()
+
+
+def shows(lines, text):
+    """Whether any OCR line contains one of the '|'-separated texts (case-insensitive); a text
+    starting with '=' must be the whole line. A leading '!' inverts: none of them shows."""
+    if text.startswith('!'):
+        return not shows(lines, text[1:])
+    wanted = [t.strip().upper() for t in text.split('|')]
+    return any(w[1:] == l['text'].strip().upper() if w.startswith('=') else w in l['text'].upper()
+               for l in lines for w in wanted)
+
+
+def checked_step(screen, input_file, timeout, action, hold, text, retry=RETRY_S):
+    """Repeats the action every `retry` seconds until text shows in a capture taken after it."""
+    deadline = time.time() + timeout
+    if action.startswith('?'):
+        action = action[1:]
+        lines, _ = screen.read(time.time(), deadline)
+        if lines and shows(lines, text):
+            screen.log(check=text, seen=True, skipped=action)
+            return True
+    while time.time() < deadline:
+        if action != 'wait':
+            press(input_file, action, hold)
+        after = time.time() + 0.3
+        retry_until = deadline if action == 'wait' else min(deadline, after + retry)
+        while time.time() < retry_until:
+            lines, after = screen.read(after, retry_until)
+            if lines is not None:
+                screen.log(check=text, seen=shows(lines, text), text=[l['text'] for l in lines][:12])
+                if shows(lines, text):
+                    return True
+    return False
+
+
+def menu_peers(lines, target):
+    """Entries of the menu holding target, the ones that may be highlighted, and how to score
+    their highlight. In a column the highlighted entry is a dark band (bg about 65 against 110
+    and more) with red lines above and below it; the line between two entries belongs to both,
+    and a swaying menu can put a line next to a light entry, so only dark entries count (a dark
+    submenu header has no red lines). In a row (horizontal menu) tiles have red frames."""
+    lines = [l for l in lines if l['y'] < FOOTER_Y]
+    column = [l for l in lines if abs(l['x'] - target['x']) <= 40]
+    if len(column) >= 2:
+        median_bg = sorted(l['bg'] for l in column)[len(column) // 2]
+        dark = [l for l in column if l['bg'] <= 0.8 * median_bg]
+        return column, dark, lambda l: min(l.get('red_above', 0), l.get('red_below', 0))
+    row = [l for l in lines if abs(l['y'] - target['y']) <= 12]
+    return row, row, lambda l: max(l['red'], l['red_text'])
+
+
+def select_label(screen, input_file, timeout, label):
+    """Moves the highlight to label. Highlight detection as in annotate(), but only among the
+    target's menu, so red elsewhere (a logo, the player's row) does not count. It acts only
+    when two clear readings in a row (captures of a swaying menu in between give none) find
+    the same entry highlighted. Not for menus that hide when idle: a press would only show
+    them again."""
+    deadline = time.time() + timeout
+    after = time.time()
+    previous = None
+    while time.time() < deadline:
+        lines, after = screen.read(after, deadline)
+        if not lines:
+            continue
+        target = next((l for l in lines if l['text'].strip().upper() == label.upper()), None) or \
+            next((l for l in lines if label.upper() in l['text'].upper() and l['y'] < FOOTER_Y), None)
+        if not target:
+            screen.log(select=label, target=None, text=[l['text'] for l in lines][:12])
+            continue
+        peers, candidates, score = menu_peers(lines, target)
+        ranked = sorted(candidates, key=lambda l: -score(l))
+        screen.log(select=label, target=[target['x'], target['y']],
+                   peers=[[l['text'], l['x'], l['y'], l['bg'], score(l), l in candidates] for l in peers])
+        if not ranked or score(ranked[0]) < 15 or \
+                (len(ranked) > 1 and score(ranked[0]) < 1.3 * score(ranked[1])):
+            continue
+        current = ranked[0]
+        # While a menu slides in, its red lines can sit next to another entry for a capture.
+        steady, previous = previous == current['text'], current['text']
+        if not steady:
+            continue
+        if current is target:
+            return True
+        axis, (back, forward) = ('x', ('left', 'right')) if abs(current['y'] - target['y']) <= 12 \
+            else ('y', ('up', 'down'))
+        low, high = sorted((current[axis], target[axis]))
+        steps = 1 + sum(1 for l in peers if low < l[axis] < high)
+        press(input_file, ','.join([forward if target[axis] > current[axis] else back] * steps), 0.12)
+        after = time.time() + 0.3
+        previous = None
+    return False
+
+
+def perf_lines(path):
+    """Windows written to the perf trace so far: marks where a phase starts."""
+    try:
+        return path.read_bytes().count(b'\n')
+    except OSError:
+        return 0
+
+
+def prepare_profile(source, build_root, out):
+    """Copies a user-data root to <out>/user-data, so saves and progress of the run stay out of
+    the BuildRoot profile. The installed content packages (0000000000000000, gigabytes, never
+    written by the game) are linked from the BuildRoot instead of copied."""
+    content = '0000000000000000'
+    target = out / 'user-data'
+    if target.exists():
+        # rmdir removes only the link and refuses a real non-empty directory, so the BuildRoot
+        # packages are never deleted through it.
+        if os.path.lexists(target / content):
+            os.rmdir(target / content)
+        shutil.rmtree(target)
+    shutil.copytree(source, target, ignore=lambda directory, names:
+                    [content] if Path(directory) == Path(source) else [])
+    packages = build_root / 'user-data' / content
+    if packages.is_dir():
+        subprocess.run(['cmd', '/c', 'mklink', '/J', str(target / content), str(packages)],
+                       check=True, capture_output=True)
+    return target
+
+
 def summarize(perf, measure):
     """Per-run statistics over the steady part of the perf trace."""
     steady = perf[-measure:] if measure else (perf[len(perf) // 3:] if len(perf) > 6 else perf)
@@ -382,7 +641,8 @@ def run_once(options, out):
     out.mkdir(parents=True, exist_ok=True)
     capture = out / 'capture'
     capture.mkdir(exist_ok=True)
-    for old in list(capture.glob('*')) + [out / 'perf.jsonl', out / 'runtime.log', out / 'nav.jsonl']:
+    for old in list(capture.glob('*')) + [out / 'perf.jsonl', out / 'runtime.log', out / 'nav.jsonl',
+                                          out / 'steps.jsonl']:
         if old.is_file():
             old.unlink()
     state = json.loads((root / 'local.json').read_text())
@@ -393,6 +653,11 @@ def run_once(options, out):
     sys.path.insert(0, str(HERE.parent))
     import pipeline
     args = {k: str(v) for k, v in pipeline.launch_cvars(root, state['disc1'], out / 'runtime.log').items()}
+    # Nobody can type into the host keyboard dialog: XAM prompts answer with their defaults.
+    args['headless'] = 'true'
+    if options.profile:
+        source = root / 'user-data' if options.profile == 'copy' else Path(options.profile)
+        args['user_data_root'] = str(prepare_profile(source, root, out))
     for item in options.arg:
         key, value = item.lstrip('-').split('=', 1)
         args[key] = value
@@ -415,24 +680,47 @@ def run_once(options, out):
     timeline = []
     crashed = None
     goal_reached = None
+    failed_step = None
+    phases = []
+    screen = Screen(capture, process, out / 'steps.jsonl')
     try:
         if options.goal:
             goal_reached = navigate(options.goal, process, input_file, capture, out,
                                     started + options.goal_timeout, started)
             if goal_reached:
                 set_input(input_file, rt=255)
-        for wait, action, hold in steps:
-            deadline = time.time() + wait
-            while time.time() < deadline:
-                if process.poll() is not None:
-                    raise RuntimeError(f'exited with {process.returncode}')
-                time.sleep(0.1)
-            set_input(input_file, **parse_action(action))
-            timeline.append([round(time.time() - started, 1), action])
-            if hold:
-                time.sleep(hold)
-                set_input(input_file)
-        deadline = time.time() + options.tail
+        for index, (wait, action, hold, *text) in enumerate(steps):
+            if text:
+                done = checked_step(screen, input_file, wait, action, hold, *text)
+                timeline.append([round(time.time() - started, 1), action, text[0], done])
+            elif action.startswith('select:'):
+                done = select_label(screen, input_file, wait, action[7:])
+                timeline.append([round(time.time() - started, 1), action, done])
+            else:
+                deadline = time.time() + wait
+                while time.time() < deadline:
+                    if process.poll() is not None:
+                        raise RuntimeError(f'exited with {process.returncode}')
+                    time.sleep(0.1)
+                done = True
+                if action.startswith('phase:'):
+                    phases.append((action[6:], perf_lines(out / 'perf.jsonl')))
+                elif ',' in action:
+                    press(input_file, action, hold)
+                elif action != 'wait':
+                    set_input(input_file, **parse_action(action))
+                    if hold:
+                        time.sleep(hold)
+                        set_input(input_file)
+                timeline.append([round(time.time() - started, 1), action])
+            if not done:
+                failed_step = f'step {index}: {action}' + (f' -> {text[0]!r}' if text else '') + ' timed out'
+                break
+            if text or action.startswith('select:'):
+                goal_reached = True if goal_reached is None else goal_reached
+        if failed_step:
+            goal_reached = False
+        deadline = time.time() + (0 if failed_step else options.tail)
         while time.time() < deadline and process.poll() is None:
             time.sleep(0.1)
         if process.poll() is not None:
@@ -442,6 +730,7 @@ def run_once(options, out):
     except Exception as error:
         crashed = f'harness error: {error!r}'
     finally:
+        screen.close()
         if process.poll() is None:
             process.kill()
             process.wait()
@@ -473,11 +762,17 @@ def run_once(options, out):
             key = re.sub(r'^\S+\s+\S+\s+', '', line)[:90]
             key = re.sub(r'0x[0-9A-Fa-f]+|\d+', '#', key)
             errors[key] = errors.get(key, 0) + 1
+    # Each phase covers the perf windows from its mark to the next mark.
+    bounds = phases + [('end', len(perf))]
+    phase_stats = {name: summarize(perf[start:end], end - start)
+                   for (name, start), (_, end) in zip(bounds, bounds[1:]) if name != 'end' and end > start}
     summary = {
-        'crashed': crashed, 'goal': options.goal, 'goal_reached': goal_reached, 'args': options.arg,
+        'crashed': crashed, 'goal': options.goal, 'scenario': None if options.steps else options.scenario,
+        'goal_reached': goal_reached, 'failed_step': failed_step, 'args': options.arg, 'profile': options.profile,
         'seconds': round(time.time() - started, 1), 'timeline': timeline,
         'frames_captured': len(frames), 'perf_windows': len(perf),
         **summarize(perf, options.measure),
+        'phases': phase_stats,
         'final_capture': final_stats,
         'clear_gray_frames': clear_gray_frames,
         'errors': errors,
@@ -485,6 +780,10 @@ def run_once(options, out):
     }
     (out / 'summary.json').write_text(json.dumps(summary, indent=2))
     return summary
+
+
+PHASE_KEYS = ('fps_mean', 'fps_median', 'frame_ms_p50', 'frame_ms_p95', 'frame_ms_p99', 'hitch_50ms_per_min',
+              'cp_busy_ms_per_s_median', 'draws_per_s_median', 'gpu_frame_ms_median')
 
 
 def aggregate(runs):
@@ -502,7 +801,8 @@ def aggregate(runs):
         'runs': [dict(crashed=r['crashed'], goal_reached=r['goal_reached'], fps_median=r.get('fps_median'))
                  for r in runs],
         'crashed': next((r['crashed'] for r in runs if r['crashed']), None),
-        'goal': runs[0]['goal'], 'args': runs[0]['args'],
+        'goal': runs[0]['goal'], 'scenario': runs[0].get('scenario'), 'args': runs[0]['args'],
+        'failed_steps': [r.get('failed_step') for r in runs],
         'goal_reached': None if runs[0]['goal_reached'] is None else all(r['goal_reached'] for r in runs),
         'fps_median': median(pick('fps_median')),
         'fps_min': min(pick('fps_min'), default=None),
@@ -522,6 +822,11 @@ def aggregate(runs):
     for key in ('fps_mean', 'frame_ms_p50', 'frame_ms_p95', 'frame_ms_p99', 'hitch_50ms_per_min', 'hitch_100ms_per_min',
                 'gpu_frame_ms_median', 'gpu_resolve_ms_median', 'gpu_span_ms_median'):
         summary[key] = median(pick(key))
+    phase_names = list(dict.fromkeys(name for r in ok for name in (r.get('phases') or {})))
+    summary['phases'] = {name: {key: median([r['phases'][name][key] for r in ok
+                                             if r['phases'].get(name, {}).get(key) is not None])
+                                for key in PHASE_KEYS}
+                         for name in phase_names}
     return summary
 
 
@@ -547,7 +852,10 @@ def main():
     parser.add_argument('--game-build', default='game-build',
                         help='build directory under BuildRoot, e.g. game-build-thinlto (pipeline.py --flavor)')
     parser.add_argument('--out', required=True, help='result directory, outside the repository')
-    parser.add_argument('--scenario', default='boot')
+    parser.add_argument('--scenario', default='boot', choices=sorted(SCENARIOS),
+                        help='fixed timeline: boot, quickrace, photo, photo_view, career')
+    parser.add_argument('--profile', help="copy this user-data root to <out>/user-data for the run "
+                                          "('copy': the BuildRoot one); the BuildRoot profile stays as it is")
     parser.add_argument('--goal', choices=sorted(GOALS), help='navigate with Jev instead of a timeline')
     parser.add_argument('--goal-timeout', type=float, default=360)
     parser.add_argument('--env', action='append', default=[], help='extra NAME=value for the game process')

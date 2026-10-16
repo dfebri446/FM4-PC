@@ -505,12 +505,63 @@ PENGUKURAN PERFORMA (13 OKTOBER 2026)
   1,02 (1 = gambar normal). Quick Race 2x 58,6 fps, 3x 58,6 fps, tanpa frame
   warna clear.
 
+SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
+--------------------------------------
+- e2e.py punya tiga skenario baru dengan cek layar lewat OCR, tanpa jaringan
+  (e2e/README.txt):
+  photo       Quick Race, 20 detik balapan, pause > PHOTO MODE, ambil foto,
+              simpan sebagai file baru, cek SAVE SUCCESSFUL.
+  photo_view  proses baru: karier > MY PROFILE > MEDIA > MY PHOTOS > LOAD
+              memuat foto dari run photo.
+  career      GO RACE > WORLD TOUR, event berikutnya profil BuildRoot (Tsukuba
+              Short Circuit, Ford Ka), 40 detik balapan, QUIT RACE, 30 detik
+              replay, CONTINUE kembali ke event.
+  Run memakai salinan profil (--profile copy; paket konten Disc 2 ditautkan),
+  jadi profil BuildRoot tidak berubah. summary.json mencatat fase terukur
+  (race, photo, replay) dan langkah yang gagal; compare.py membandingkan fase.
+- Bug runtime ditemukan dan diperbaiki: dengan headless, XamShowKeyboardUI
+  mengembalikan teks bawaan dengan urutan byte terbalik (MappedPtr::value()
+  adalah string guest big-endian yang lalu ditukar lagi saat disalin). FM4
+  menamai folder foto dari teks itu, jadi "Forza" menjadi karakter CJK, lalu
+  "?????" (0x3F); NtCreateFile menolak path itu tanpa log dan game menampilkan
+  FILE OPEN FAILED. Kini teks dimuat dalam urutan host sebelum disalin, dan
+  NtCreateFile mencatat path yang ditolak. Dialog keyboard ImGui untuk pemain
+  sudah benar. e2e.py selalu memakai headless=true (prompt XAM menjawab
+  bawaan); rendering tidak terpengaruh.
+- Matriks regresi pada default launcher (RTV, readback fast, thread submit dan
+  publish readback), binary dari bce784d plus perbaikan di atas, 3 run per sel:
+              60 Hz                           120 Hz
+  quickrace   3/3, 60,0 fps, p99 17,2 ms      3/3, 119,9 fps, p99 8,8 ms
+  photo       3/3; race 59,8 fps p99 17,3;    3/3; race 118,0 fps p99 16,6;
+              photo mode 30,0 fps             photo mode 55,5 fps
+  photo_view  3/3, foto tampil berwarna       3/3
+  career      3/3; race 60,0 fps p99 17,1;    3/3; race 119,7 fps p99 9,0;
+              replay 30,0 fps                 replay 60,0 fps
+  Quick Race dibanding validasi B3 (v2-60, v2-120): PASS, FPS dan p99 setara.
+  cp_busy 60 Hz lebih tinggi hanya karena draw per run berbeda (mobil
+  menghadap dinding atau lintasan); biaya per draw sama. Fase race photo
+  dimulai saat start, jadi p99-nya mencakup hitch awal balapan. Tanpa crash,
+  tanpa frame warna clear, kunci error sama dengan baseline.
+- Perilaku di 120 Hz yang terlihat dari skenario: timer idle UI FM4 menghitung
+  frame, jadi menu karier dan GO RACE bersembunyi, dan menu pasca-balapan
+  memutar replay sendiri, dua kali lebih cepat. Photo mode berjalan sekitar
+  55 fps (FrameRate 120) dan replay sekitar 60 fps (30 di 60 Hz); selama render
+  foto di 120 Hz tidak ada capture baru lebih dari 15 detik (di 60 Hz layar
+  LOADING... PLEASE WAIT masih tertangkap).
+- Belum dicakup: menyelesaikan balapan karier sampai hadiah (harness hanya
+  menahan gas; butuh pengemudi otomatis), overwrite foto, foto dengan cache
+  shader kosong, Autovista, mobil Disc 2.
+
 VALIDASI BERIKUTNYA YANG DIPERLUKAN
 ----------------------------------
 1. Clone dan jalankan seluruh workflow pada komputer Windows kedua.
 2. Pada binary portable baru, selesaikan balapan karier sampai hadiah/Continue,
-   restart, lalu periksa progres; ulangi juga balapan mobil Disc 2.
-3. Ulangi simpan/overwrite/muat foto setelah restart dan dengan cache shader kosong.
+   restart, lalu periksa progres; ulangi juga balapan mobil Disc 2. (Menu
+   karier, balapan World Tour, QUIT RACE, replay dan CONTINUE sudah dicakup
+   e2e career; menyelesaikan balapan belum.)
+3. Ulangi overwrite foto dan simpan/muat foto dengan cache shader kosong.
+   (Simpan foto baru lalu muat setelah restart sudah dicakup e2e photo dan
+   photo_view, di 60 dan 120 Hz.)
 4. Perluas pengujian tampilan, input, mode, perangkat GPU dan sesi panjang;
    ukur performa serta selidiki cahaya berlebihan tanpa menganggapnya sudah beres.
 

@@ -27,6 +27,54 @@ default car and track, starts the race and holds the throttle. Add
 The run exits
 with code 1 when the game crashes or the goal is not reached in time.
 
+Gameplay scenarios (fixed timelines with screen checks, no network access):
+  photo       Quick Race, 20 s of driving, pause > PHOTO MODE, take a photo,
+              save it as a new file; checks SAVE SUCCESSFUL.
+  photo_view  a new process opens Career > MY PROFILE > MEDIA > MY PHOTOS and
+              loads the saved photo; checks that it replaces the menus without
+              an error (OCR reads its watermark only sometimes; see final.png).
+  career      Career > GO RACE > WORLD TOUR, the profile's next event (Tsukuba
+              Short Circuit with the Ford Ka for the BuildRoot profile), 40 s of
+              driving, QUIT RACE, 30 s of the replay, CONTINUE to the event.
+They write saves, so run them on a copy of the profile:
+  e2e.py ... --out <BuildRoot>\e2e\photo --scenario photo --profile copy
+  e2e.py ... --out <BuildRoot>\e2e\view --scenario photo_view --profile <BuildRoot>\e2e\photo\user-data
+  e2e.py ... --out <BuildRoot>\e2e\career --scenario career --profile copy
+--profile copies a user-data root ("copy": <BuildRoot>\user-data) to
+<out>\user-data and runs on it; the installed content packages
+(user-data\0000000000000000) are linked, not copied. With --repeat each run gets
+its own copy. The career race only holds the throttle (the Ford Ka ends up at a
+wall); finishing a race for its rewards needs a driver the harness does not have.
+
+A step [timeout, action, hold, text(, retry)] repeats the action until one of the
+'|'-separated texts shows in a capture taken after it, and fails the run
+(goal_reached false, failed_step in summary.json) otherwise; '?action' skips the
+action when the text already shows, '=TEXT' must be a whole OCR line and a
+leading '!' passes when none of the texts shows. Give a step whose screen loads
+(taking a photo, a race loading) a retry longer than the load: a repeated A
+would act on the next screen. 'select:<label>' moves the menu highlight to
+an OCR'd label. The highlighted entry of a vertical menu is the one with red
+lines above and below it (ocr-server.ps1 red_above/red_below) and a dark band
+(bg), of a horizontal menu the red-framed tile; it moves only when two clear
+readings in a row agree, since menus slide and sway (the pause menu at 120 Hz
+most of all). Menus that act on their own when idle are not selected but driven
+with fixed presses as soon as they show: the career and GO RACE menus hide (Up
+shows them again), the post-race menu starts the race replay. Their idle timers
+count frames, so at 120 Hz this happens twice as fast. 'wait' waits without
+touching the controller and
+'phase:<name>' ... 'phase:end' marks a measured phase. summary.json "phases" has
+the perf statistics per phase (photo: race, photo; career: race, replay), and
+compare.py fails a phase whose fps_mean drops more than 10%. steps.jsonl records
+what each check and select saw.
+
+FM4 menus ignore the first press after some screens open, and the career and GO
+RACE menus hide after a few idle seconds (the next press only shows them again),
+so the scenarios press until the expected screen shows rather than counting.
+
+e2e.py runs the game with headless=true: XAM prompts such as the keyboard for
+a photo name answer with their default text (nobody can type into the host
+dialog). Rendering is not affected.
+
 How goal mode works
 -------------------
 Code owns the workflow; Jev supplies judgments:
