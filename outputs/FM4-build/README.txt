@@ -81,14 +81,25 @@ Optional actions for performance work:
   3840x2160 instead of 1280x720 (draw_resolution_scale_x/y; CPU readbacks of
   resolves are downscaled). Quick Race: 59.7 fps with GPU about 3.7 ms a
   frame at 2, 59.9 fps with GPU about 6.8 ms at 3, sharp HUD and scene.
-  Tested in the menus and Quick Race only; photo mode, replays and
-  career have not been checked at these scales.
+  The smoke gate at 2 (240 Hz) passes: races 202-206 fps, photo mode 30 fps
+  (GPU 7.5 ms), saving and loading a photo, and a career race with its
+  replay. The replay runs at 23.5 fps instead of 30 there, held up by the
+  title's CPU side (the command processor waits for guest commands about
+  880 ms a second); not investigated yet. 3 has not been through the gates.
 - run -FullRateMirror renders the rear-view mirror every frame. By default
   every race renders it every other frame, as the title itself does for 12 and
   16 car races (HalfRateMirror in the race render scenarios; 1 and 8 car races
   render it every frame). Quick Race (12 cars) with the mirror every frame,
   measured before the upload fix below: 55.6 fps instead of 59.7, GPU 9.5 ms
   instead of 8.1 a frame; at -FrameRate 120 75 fps instead of 84.
+- run -ShadowWorkaround adds SkipShadowMapUnlessCockpit to the race render
+  scenarios (fm4-render-overrides.cpp, as the title's split screen does): the
+  shadow map (a depth pass of 70-160 draws resolved to 512x512 and a 16_16
+  4x MSAA pass) is rendered with the cockpit camera only. Without it the
+  hood, bumper and chase cameras get the shadow map too (sharp car shadows
+  with the wheels apart instead of soft ones) for about 0.2-0.4 ms of GPU a
+  frame. Xenia needed it against square shadows; captures of every race
+  camera on this runtime show none.
 - run -Rov uses the earlier pixel shader interlock render target path
   (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
   Quick Race 60.0 fps, GPU about 7.1 ms a frame (2.5 on the default path).
@@ -125,8 +136,13 @@ What happens
    and GPU DLLs, runs arithmetic instruction tests and writes build-result.json.
 4. run verifies the build artifacts and game revision, mounts Disc 1, imports
    Disc 2 packages if provided and starts the interactive game. Shader compilation
-   is synchronous; the existing shadow workaround is enabled, and every race
-   renders the rear-view mirror every other frame (see -FullRateMirror).
+   is synchronous, every race renders the rear-view mirror every other frame
+   (see -FullRateMirror), and every mipmapped linear texture is filtered with
+   16x anisotropic filtering (anisotropic_override=5; the title asks for none
+   on most and 2x-16x on a few, the runtime default is 4x). Races render the
+   title's shadow map with every camera; -ShadowWorkaround skips it outside
+   the cockpit (SkipShadowMapUnlessCockpit, as the title's split screen does),
+   the xenia-canary/game-patches#398 workaround this runtime no longer needs.
    Rendering uses the host render target path (render_target_path_d3d12=rtv with
    edram_single_rt_no_wrap=true): GPU about 2.5 ms a race frame instead of
    about 7 on the pixel shader interlock path, a stable 60 fps in Quick Race. Guest

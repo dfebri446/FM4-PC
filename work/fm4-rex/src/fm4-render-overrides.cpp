@@ -10,10 +10,13 @@
 #include <stdexcept>
 #include <string>
 
-// Optional visual workaround documented by xenia-canary/game-patches#398.
-// This suppresses the faulty shadow-map pass outside the cockpit; it is not
-// a renderer fix. Keep UI and global scenarios intact (the global variant
-// has been reported to hang career prize-car colour selection).
+// Optional visual workaround documented by xenia-canary/game-patches#398
+// (FM4_SHADOW_WORKAROUND=1, Build.ps1 -ShadowWorkaround; off by default).
+// This suppresses the shadow-map pass outside the cockpit, as the title's
+// split screen scenario does; Xenia rendered that pass as square shadows,
+// this runtime renders it correctly. Keep UI and global scenarios intact
+// (the global variant has been reported to hang career prize-car colour
+// selection).
 // FM4_TILING_SCENARIO=<digit> replaces the TilingScenario value 0 or 1 of the
 // race scenarios (the title uses 1, two predicated tiles with 2x MSAA, for
 // 8-16 car races and 0, more tiles, for pre-race, replays and 1-car races).

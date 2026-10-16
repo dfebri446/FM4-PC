@@ -271,10 +271,11 @@ renderer work; all write files outside the repository):
 Without network access (Jev unreachable), --scenario quickrace drives the same
 route on a fixed timeline; it reaches the race reliably with the copied profile.
 
-The harness uses the launcher environment (pipeline.launch_env): the shadow
-workaround and FM4_HALF_RATE_MIRROR=1 (the rear-view mirror every other frame in
-every race); --env FM4_HALF_RATE_MIRROR=0 renders it every frame, also in the 12
-car Quick Race.
+The harness uses the launcher environment (pipeline.launch_env):
+FM4_HALF_RATE_MIRROR=1 (the rear-view mirror every other frame in every race);
+--env FM4_HALF_RATE_MIRROR=0 renders it every frame, also in the 12 car Quick
+Race. --env FM4_SHADOW_WORKAROUND=1 skips the shadow map outside the cockpit in
+races (Build.ps1 -ShadowWorkaround).
 
 Frame rates above 60 (Build.ps1 -FrameRate <n> sets both of these):
 --arg=--video_mode_refresh_rate=<n> changes the refresh rate reported to the
@@ -326,7 +327,10 @@ run one at a time. Pick the tier by what a change can break:
 Cells go to <BuildRoot>\e2e\<name>-<hz>-<scenario>; with --baseline each is
 compared (compare.py) with the cell of the same Hz and scenario of that gate,
 and <BuildRoot>\e2e\<name>.log keeps one line per cell. --scenarios, --hz and
---repeat override the tier, --env and --arg pass to every cell. The photo race
+--repeat override the tier, --env and --arg pass to every cell (--arg
+draw_resolution_scale_x=2 --arg draw_resolution_scale_y=2 for a tier at 2x:
+ocr-server.ps1 averages captures above 720p down to 1280x720 first, so the
+menu highlight checks keep their 720p pixel distances). The photo race
 phase replaces the quickrace scenario in the gates; quickrace stays for
 comparisons with older results. In the gates an AI driver drives the player's
 car (engageaionstart below; --human for the harness throttle), so each race

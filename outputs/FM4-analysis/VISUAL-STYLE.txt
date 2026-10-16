@@ -90,10 +90,14 @@ RUNTIME: BAGIAN PORT YANG MENYENTUH VISUAL
 Bukan sumber gaya FM4, tetapi bisa membuat tampilan menyimpang dari Xbox asli:
 - Gamma ramp hardware ditiru saat present (apply_gamma_pwl / apply_gamma_table
   di work/runtime/src/graphics); nilai ramp diberikan game.
-- work/fm4-rex/src/fm4-render-overrides.cpp menyalin RenderScenarios dan
-  menambahkan SkipShadowMapUnlessCockpit (workaround bayangan,
-  FM4_SHADOW_WORKAROUND); opsi lain mengganti TilingScenario, FrameRate dan
-  HalfRateMirror.
+- work/fm4-rex/src/fm4-render-overrides.cpp menyalin RenderScenarios dan,
+  hanya dengan -ShadowWorkaround (FM4_SHADOW_WORKAROUND, bawaan mati sejak 16
+  Oktober 2026), menambahkan SkipShadowMapUnlessCockpit: shadow map hanya di
+  kamera kokpit, seperti split screen; opsi lain mengganti TilingScenario,
+  FrameRate dan HalfRateMirror.
+- Launcher memaksa anisotropic filtering 16x (anisotropic_override=5) untuk
+  tekstur ber-mip dengan filter linear; game sendiri tidak memintanya untuk
+  sebagian besar tekstur dan meminta 2x-16x untuk sebagian kecil.
 - rov_occlusion_awaited_report_divisor=2 (empiris) memengaruhi kuat silau
   matahari.
 - FXAA swap hanya pada mode single-tile; konversi format 7e3 di host; skala
@@ -106,3 +110,7 @@ ARAH PENGUBAHAN
   seperti fm4-render-overrides.cpp. Belum diimplementasikan.
 - Mengubah rumus efek (tonemap, AA, efek baru) butuh shader yang dapat
   dimodifikasi: tahap B4 di PLAN.txt.
+- Skenario render balapan memakai setelan lebih hemat daripada replay dan
+  photo mode: tanpa SoftParticles dan CollidableShadows, CarMinWheelLOD 1
+  (photo mode 0), CarLODTransDist near 15 / far 25 / veryfar 50. Menyamakannya
+  dengan replay lewat mekanisme override yang sama belum dicoba.

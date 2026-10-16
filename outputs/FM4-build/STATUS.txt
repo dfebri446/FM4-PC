@@ -1,7 +1,7 @@
 STATUS FM4 RECOMPILATION - 16 Oktober 2026
 ========================================
-Kode terakhir: 16e40bb (override shader B4, opt-in; default launcher terakhir
-diuji gate pada 34e737e). Verifikasi build bersih: d1fa29a (13 Oktober 2026,
+Kode terakhir: f322fc9 (mod tampilan B4, opt-in). Default launcher baru
+(tanpa workaround bayangan, anisotropic 16x) lolos gate smoke 16 Oktober 2026. Verifikasi build bersih: d1fa29a (13 Oktober 2026,
 verification.json) dan runtime milik proyek (14 Oktober 2026, di bawah).
 
 Tahap saat ini: build eksperimental yang menjalankan Quick Race, mode foto dan
@@ -99,9 +99,10 @@ KETERBATASAN DAN MASALAH YANG MASIH ADA
   host) silau belum dikalibrasi.
 - Noise warna, refleksi, tepi objek, seluruh kombinasi MSAA/skala resolusi dan
   kesesuaian dengan Xbox asli belum seluruhnya terverifikasi.
-- Launcher portable masih mengaktifkan workaround bayangan. Uji historis yang
-  berhasil menampilkan bayangan asli tidak berarti workaround ini sudah
-  dilepas atau seluruh masalah bayangan telah selesai.
+- Workaround bayangan tidak lagi bawaan launcher sejak 16 Oktober 2026 (lihat
+  "Bayangan dan anisotropic filtering" di SKENARIO E2E GAMEPLAY). Shadow map
+  dirender di semua kamera balapan tanpa bayangan kotak pada capture yang
+  diperiksa; kesetaraan dengan Xbox asli belum dibandingkan.
 - Shader sinkron menjadi bawaan untuk menghindari draw terlewat yang pernah
   menyebabkan foto hitam. Dengan cache kosong ia hanya menambah hitch saat
   memuat, tanpa menurunkan fps balapan (PENGUKURAN PERFORMA). Uji foto dengan
@@ -726,6 +727,34 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   sharpen 0,6, bloom 0,7, contrast 0,25, saturation 1,1, vignette 0,3 dan
   motion blur 0,3, aspal dan mobil lebih tajam, pendaran bloom lebih kecil dan
   motion blur di kerb berkurang. Nilai preset belum dipilih.
+- Bayangan dan anisotropic filtering (16 Oktober 2026), default launcher baru:
+  - Workaround bayangan (SkipShadowMapUnlessCockpit di skenario balapan,
+    xenia-canary/game-patches#398) tidak lagi bawaan; Build.ps1
+    -ShadowWorkaround menyalakannya. Game sendiri hanya memakainya di split
+    screen. Frame graph Quick Race dengan siklus kamera: dengan workaround,
+    shadow map (pass depth pitch 560, 70-160 draw, resolve 512x512, lalu pass
+    16_16 MSAA 4x ke 512x512) hanya ada di kamera kokpit; tanpa workaround di
+    semua kamera, GPU sekitar 0,2-0,4 ms per frame lebih. Capture kamera kokpit,
+    hood, bumper dan chase tanpa bayangan kotak (gejala Xenia yang menjadi
+    alasan workaround); mobil kini mendapat self-shadow dan bayangan tegas di
+    aspal, juga antar-mobil. Flag dibaca saat skenario di-push (objek
+    CDynamicRenderSettings: bit 4 mask kedua di +40, nilai byte di +380), jadi
+    tidak bisa di-A/B di tengah balapan; photo mode menampilkan buffer adegan,
+    jadi perubahan tingkat adegan tidak terlihat di A/B photo mode.
+  - anisotropic_override=5 (16x). Bawaan runtime 3 memaksa 4x. Sensus sampler
+    (skenario photo): sekitar 19 dari 31 juta bind sampler adalah tekstur
+    ber-mip dengan filter linear yang terkena override; game sendiri tidak
+    meminta anisotropic untuk sebagian besar dan 2x-16x untuk sebagian kecil.
+    GPU frame balapan 2,28 vs 2,29 ms.
+  - Gate smoke 240 Hz (sh, banding b4o): 3/3; race 230 fps p99 5,3 ms, karier
+    225 fps, replay 30 fps, tanpa frame warna clear. FAIL compare hanya pesan
+    XAM app=FE yang juga ada di baseline dengan alamat argumen lain.
+  - Skala 2x (sh2x, tier smoke dengan draw_resolution_scale 2): 3/3 setelah
+    ocr-server.ps1 meratakan capture di atas 720p ke 1280x720 (deteksi
+    highlight menu memakai jarak piksel 720p). Race 202-206 fps GPU 4,1-4,2
+    ms, photo mode 30 fps GPU 7,5 ms, muat foto lolos; replay karier 23,5 fps
+    (1x: 30) karena command processor menunggu perintah guest sekitar 880
+    ms/s, belum diselidiki.
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 

@@ -28,7 +28,9 @@ public static class Fm4Ppm {
     return count == 0 ? 0 : (int)(sum / count);
   }
   // Grayscale, upscaled copy of a binary PPM (P6) as BGRA8 bytes. Small white
-  // UI text on dark backgrounds recognizes far better at 2x.
+  // UI text on dark backgrounds recognizes far better at 2x. Captures of a
+  // resolution scaled run (2560x1440, 3840x2160) are first averaged down to
+  // 1280x720, so boxes and the rectangles below stay in 720p pixels.
   public static byte[] Load(string path, int scale, out int width, out int height) {
     byte[] data = File.ReadAllBytes(path);
     int pos = 0;
@@ -39,9 +41,11 @@ public static class Fm4Ppm {
       return System.Text.Encoding.ASCII.GetString(data, start, pos - start);
     };
     if (token() != "P6") throw new InvalidDataException("not P6");
-    int w = int.Parse(token()), h = int.Parse(token());
+    int sw = int.Parse(token()), sh = int.Parse(token());
     token();
     pos++;
+    int k = Math.Max(1, sh / 720);
+    int w = sw / k, h = sh / k;
     width = w * scale;
     height = h * scale;
     byte[] output = new byte[width * height * 4];
@@ -51,10 +55,16 @@ public static class Fm4Ppm {
     grayHeight_ = h;
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < w; x++) {
-        int s = pos + (y * w + x) * 3;
-        byte g = (byte)((data[s] * 77 + data[s + 1] * 150 + data[s + 2] * 29) >> 8);
+        int r = 0, gr = 0, b = 0;
+        for (int ky = 0; ky < k; ky++)
+          for (int kx = 0; kx < k; kx++) {
+            int s = pos + ((y * k + ky) * sw + x * k + kx) * 3;
+            r += data[s]; gr += data[s + 1]; b += data[s + 2];
+          }
+        r /= k * k; gr /= k * k; b /= k * k;
+        byte g = (byte)((r * 77 + gr * 150 + b * 29) >> 8);
         gray_[y * w + x] = g;
-        red_[y * w + x] = (byte)(data[s] > 150 && data[s + 1] < 80 && data[s + 2] < 80 ? 1 : 0);
+        red_[y * w + x] = (byte)(r > 150 && gr < 80 && b < 80 ? 1 : 0);
         for (int dy = 0; dy < scale; dy++) {
           int d = ((y * scale + dy) * width + x * scale) * 4;
           for (int dx = 0; dx < scale; dx++, d += 4) {

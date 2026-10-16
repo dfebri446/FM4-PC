@@ -114,18 +114,19 @@ Gunakan `BuildRoot` yang sama untuk seluruh tahap. Setelah mengubah source integ
 
 Jika membuka PowerShell baru, definisikan kembali `$common` seperti contoh sebelumnya. Aksi `run` membaca lokasi disc yang disimpan saat `generate`.
 
-Launcher memeriksa artifact build dan versi executable, menggunakan profil lokal baru, serta mengimpor empat paket Disc 2 jika path-nya diberikan. Impor pertama memerlukan waktu dan ruang tambahan. Shader sinkron dan workaround bayangan saat ini aktif secara bawaan. Rendering memakai jalur host render target (RTV): Quick Race stabil 60 fps dengan GPU sekitar 2,5 ms per frame balapan pada komputer pengembangan.
+Launcher memeriksa artifact build dan versi executable, menggunakan profil lokal baru, serta mengimpor empat paket Disc 2 jika path-nya diberikan. Impor pertama memerlukan waktu dan ruang tambahan. Shader sinkron aktif secara bawaan. Balapan memakai shadow map game di semua kamera (workaround bayangan Xenia lama hanya dengan `-ShadowWorkaround`), dan tekstur memakai anisotropic filtering 16x. Rendering memakai jalur host render target (RTV): Quick Race stabil 60 fps dengan GPU sekitar 2,5 ms per frame balapan pada komputer pengembangan.
 
 Opsi tambahan untuk `run` (rincian dan angka ukur ada di [panduan build lengkap](outputs/FM4-build/README.txt)):
 
 | Opsi | Fungsi |
 | --- | --- |
 | `-FrameRate 120` (30-240) | Frame rate balapan di atas 60. Menu, replay, dan photo mode tetap memakai waktunya sendiri (vblank guest 60 Hz di luar balapan). Diukur: 118-120 fps pada 120, 220-235 fps pada 240. |
-| `-ResolutionScale 2` / `3` | Render 2560x1440 atau 3840x2160. |
+| `-ResolutionScale 2` / `3` | Render 2560x1440 atau 3840x2160. Skala 2 lolos gate smoke (balapan, foto, karier dengan replay); replay di 2 berjalan sekitar 23 fps, bukan 30. |
 | `-Rov` | Jalur render target lama (pixel shader interlock) untuk perbandingan. |
 | `-SingleTile` | Balapan satu tile 720p tanpa MSAA, dengan FXAA. |
 | `-FixedVblank` | Grid vblank 60 Hz tetap (tanpa vblank_vrr). |
 | `-FullRateMirror` | Spion digambar setiap frame. |
+| `-ShadowWorkaround` | Tanpa shadow map di luar kamera kokpit (workaround Xenia lama, seperti split screen). |
 
 `-Action warmcache` mengisi cache shader dengan menjalankan timeline Quick Race sekali.
 
@@ -201,7 +202,7 @@ Hasil historis ini belum seluruhnya diuji ulang pada build portable terbaru. Det
 ## Keterbatasan saat ini
 
 - **Kompatibilitas terbatas:** Windows x64 dan revisi Japan/Asia yang diperiksa hash-nya. Belum mendukung setiap region atau title update.
-- **Grafis belum sepenuhnya akurat:** koreksi empiris pada query occlusion matahari (faktor 2) hanya berlaku di jalur ROV (`-Rov`); di jalur bawaan RTV silau matahari belum dikalibrasi. Noise, refleksi, tepi objek, kombinasi MSAA dan skala resolusi perlu pengujian lebih luas. Workaround bayangan masih aktif di launcher.
+- **Grafis belum sepenuhnya akurat:** koreksi empiris pada query occlusion matahari (faktor 2) hanya berlaku di jalur ROV (`-Rov`); di jalur bawaan RTV silau matahari belum dikalibrasi. Noise, refleksi, tepi objek, kombinasi MSAA dan skala resolusi perlu pengujian lebih luas.
 - **Shader sinkron:** dipakai untuk menghindari draw terlewat yang pernah menyebabkan foto hitam. Dengan cache shader kosong hanya menambah hitch saat memuat, tanpa menurunkan fps balapan; foto dengan cache kosong belum diuji ulang.
 - **Alat pengujian:** pengemudi otomatis di harness memakai AI FM4 sendiri (opsi developer `engageaionstart` yang dibangun ulang), bukan fitur untuk pemain. Menu FM4 mengabaikan tekanan pertama di beberapa layar dan menu karier bersembunyi setelah sekitar 9 detik tanpa input, jadi skenario e2e menekan sampai layar yang diharapkan terbaca.
 - **Runtime belum lengkap:** masih ada layanan Xbox berupa stub. Tes instruksi tidak membuktikan seluruh kernel, audio, timing atau sinkronisasi benar.

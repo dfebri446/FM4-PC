@@ -328,7 +328,7 @@ def look_cvars(root,look):
     return {'shader_mod_path':directory,'shader_mod_defines':';'.join(defines)}
 
 def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,resolution_scale=1,
-           full_rate_mirror=False,look=None):
+           full_rate_mirror=False,look=None,shadow_workaround=False):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -339,6 +339,10 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
     env.update(launch_env())
     if full_rate_mirror:
         env['FM4_HALF_RATE_MIRROR']='0'
+    if shadow_workaround:
+        # Skips the shadow map pass outside the cockpit in races, as split screen does: the
+        # xenia-canary/game-patches#398 workaround, no longer needed on this runtime.
+        env['FM4_SHADOW_WORKAROUND']='1'
     cvars=launch_cvars(root,disc1,root/'logs/runtime.log')
     if single_tile:
         # Races render 720p in one tile without MSAA (the title's UI tiling
@@ -382,9 +386,9 @@ def warm_cache(root):
     print(f'Shader cache warmed; run details in {out}.')
 
 def launch_env():
-    """Launcher environment, shared with e2e/e2e.py: the shadow workaround, and the rear-view
-    mirror rendered every other frame in every race (the title does that for 12 and 16 cars)."""
-    return {'FM4_SHADOW_WORKAROUND':'1','FM4_HALF_RATE_MIRROR':'1'}
+    """Launcher environment, shared with e2e/e2e.py: the rear-view mirror rendered every other
+    frame in every race (the title does that for 12 and 16 cars)."""
+    return {'FM4_HALF_RATE_MIRROR':'1'}
 
 def launch_cvars(root,disc1,log_file):
     """Launcher cvars, shared with e2e/e2e.py. New performance defaults go here once they pass e2e."""
@@ -393,6 +397,9 @@ def launch_cvars(root,disc1,log_file):
             'render_target_path_d3d12':'rtv','edram_single_rt_no_wrap':'true','readback_resolve':'fast',
             'gpu_allow_invalid_fetch_constants':'true','async_shader_compilation':'false',
             'rov_occlusion_awaited_report_divisor':'2','rov_occlusion_async':'previous','vblank_vrr':'true',
+            # 16x anisotropic filtering for every mipmapped linear texture: the title asks for
+            # none on most and 2x-16x on a few, and the runtime default forces 4x.
+            'anisotropic_override':'5',
             # FM4 writes guest memory only through watched pages (REX_STALE_PAGE_TRACE finds no
             # stale data), so CPU-uploaded pages need not be re-uploaded every frame; command lists
             # are recorded and executed, and resolve readbacks copied into guest memory, off the
@@ -426,6 +433,8 @@ def main():
                         help='run: render at 2x (2560x1440) or 3x (3840x2160) of 1280x720')
     parser.add_argument('--full-rate-mirror',action='store_true',
                         help='run: render the rear-view mirror every frame in every race')
+    parser.add_argument('--shadow-workaround',action='store_true',
+                        help='run: no shadow map outside the cockpit in races (the old Xenia workaround)')
     parser.add_argument('--rov',action='store_true',
                         help='run: the slower pixel shader interlock render target path instead of RTV')
     parser.add_argument('--look',
@@ -453,7 +462,8 @@ def main():
     if args.action in ('generate','all'): generate(root,*discs,args.jobs)
     if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
     if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,
-                                     args.resolution_scale,args.full_rate_mirror,args.look)
+                                     args.resolution_scale,args.full_rate_mirror,args.look,
+                                     args.shadow_workaround)
     if args.action=='warmcache': warm_cache(root)
     if args.action=='profbuild': build_profiling(root,fxc,args.jobs)
 
