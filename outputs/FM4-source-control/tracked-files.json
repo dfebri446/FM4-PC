@@ -53,6 +53,10 @@
       "provenance": "Project documentation; research notes on the B4 shader path (summarized observations, no game content)"
     },
     {
+      "path": "outputs/FM4-analysis/MATERIAL-ATLAS.txt",
+      "provenance": "Project documentation; summary of the material atlas (names and registers of the game's constant tables, no game code)"
+    },
+    {
       "path": "outputs/FM4-build/Build.ps1",
       "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
     },
@@ -106,6 +110,10 @@
     },
     {
       "path": "outputs/FM4-build/e2e/override_fxc.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
+      "path": "outputs/FM4-build/e2e/material_atlas.py",
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
