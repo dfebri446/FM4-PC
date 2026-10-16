@@ -93,6 +93,10 @@
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
+      "path": "outputs/FM4-build/e2e/matrix.py",
+      "provenance": "Original test tooling for this project; no game content or original game function bodies"
+    },
+    {
       "path": "outputs/FM4-build/e2e/ocr-server.ps1",
       "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
@@ -243,6 +247,10 @@
     {
       "path": "work/fm4-rex/src/fm4-ui-diagnostics.cpp",
       "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
+    },
+    {
+      "path": "work/fm4-rex/src/fm4-vblank-rate.cpp",
+      "provenance": "Original compatibility integration source; guest function addresses and structure offsets only, no game function bodies"
     },
     {
       "path": "work/fm4-rex/src/fm4-vector-fixes.h",

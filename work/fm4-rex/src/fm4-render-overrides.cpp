@@ -19,9 +19,9 @@
 // 8-16 car races and 0, more tiles, for pre-race, replays and 1-car races).
 // 2 is the title's UI value: one 720p tile without MSAA. Split screen (4) and
 // photo mode keep their own values.
-// FM4_FRAME_RATE=<frames per second> replaces every FrameRate value of the
-// scenarios (races use 60; countdown, post-race, replays and photo mode 30),
-// for frame rate experiments.
+// FM4_FRAME_RATE=<frames per second> replaces the FrameRate value 60 of the race
+// scenarios; countdown, post-race, replays and photo mode keep 30
+// (fm4-vblank-rate.cpp raises the guest vblank rate only for races).
 // FM4_HALF_RATE_MIRROR=0 or 1 sets HalfRateMirror in the race scenarios: the
 // title renders the rear-view mirror every other frame with 1, which it uses
 // for 12 and 16 car races only (1 and 8 car races render it every frame).
@@ -68,6 +68,7 @@ void FM4MountRenderOverrides(rex::Runtime* runtime) {
         const size_t value = at + sizeof(kFrameRate) - 1;
         const size_t end = xml.find('"', value);
         if (end == std::string::npos) break;
+        if (xml.compare(value, end - value, "60") != 0) continue;
         xml.replace(value, end - value, frame_rate);
         ++changed;
       }

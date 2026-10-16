@@ -28,8 +28,9 @@ The run exits
 with code 1 when the game crashes or the goal is not reached in time.
 
 Gameplay scenarios (fixed timelines with screen checks, no network access):
-  photo       Quick Race, 20 s of driving, pause > PHOTO MODE, take a photo,
-              save it as a new file; checks SAVE SUCCESSFUL.
+  photo       Quick Race, 10 s of driving, then a 30 s measured race phase,
+              pause > PHOTO MODE, take a photo, save it as a new file; checks
+              SAVE SUCCESSFUL.
   photo_view  a new process opens Career > MY PROFILE > MEDIA > MY PHOTOS and
               loads the saved photo; checks that it replaces the menus without
               an error (OCR reads its watermark only sometimes; see final.png).
@@ -45,6 +46,10 @@ They write saves, so run them on a copy of the profile:
 (user-data\0000000000000000) are linked, not copied. With --repeat each run gets
 its own copy. The career race only holds the throttle (the Ford Ka ends up at a
 wall); finishing a race for its rewards needs a driver the harness does not have.
+quickrace, photo, photo_view and career boot with one A per splash video read on
+screen (Microsoft Studios, Dolby), which skips it: the main menu shows after
+about 30 s instead of 47. A at a fixed rate is not used, because it also skips
+the short title screen and selects PLAY CAREER in the main menu.
 
 A step [timeout, action, hold, text(, retry)] repeats the action until one of the
 '|'-separated texts shows in a capture taken after it, and fails the run
@@ -59,9 +64,10 @@ lines above and below it (ocr-server.ps1 red_above/red_below) and a dark band
 readings in a row agree, since menus slide and sway (the pause menu at 120 Hz
 most of all). Menus that act on their own when idle are not selected but driven
 with fixed presses as soon as they show: the career and GO RACE menus hide (Up
-shows them again), the post-race menu starts the race replay. Menus render one
-frame per vblank, and at 120 Hz this happens sooner (probably timers counting
-frames; not measured, see STATUS.txt). 'wait' waits without
+shows them again), the post-race menu starts the race replay. The career menu hides about
+9 s after the last press at 60, 120 and 240 Hz alike (a wall-clock timer, see
+STATUS.txt), so a capture every 2 s can miss a menu that shows only briefly.
+'wait' waits without
 touching the controller and
 'phase:<name>' ... 'phase:end' marks a measured phase. summary.json "phases" has
 the perf statistics per phase (photo: race, photo; career: race, replay), and
@@ -252,10 +258,15 @@ workaround and FM4_HALF_RATE_MIRROR=1 (the rear-view mirror every other frame in
 every race); --env FM4_HALF_RATE_MIRROR=0 renders it every frame, also in the 12
 car Quick Race.
 
-Frame rate experiments: FM4_FRAME_RATE=<n> replaces the FrameRate value of the
-render scenarios (races 60, countdown/replays/photo mode 30), and
---arg=--video_mode_refresh_rate=<hz> changes the refresh rate reported to the
-game and the vblank rate. race_clock.py reads the race timer of the captures
+Frame rates above 60 (Build.ps1 -FrameRate <n> sets both of these):
+--arg=--video_mode_refresh_rate=<n> changes the refresh rate reported to the
+game, and --env FM4_FRAME_RATE=<n> replaces the FrameRate 60 of the race render
+scenarios (countdown, post-race, replays and photo mode keep 30). The guest
+vblank then runs at 60 Hz and at <n> Hz only while a race scenario sets the frame
+rate (fm4-vblank-rate.cpp); --env FM4_VBLANK_TRACE=1 prints each render
+scenario push and pop with the vblank rate, --env FM4_VBLANK_SWITCH=0 keeps the
+vblank at the reported refresh rate, and --arg=--vblank_rate=<hz> sets a fixed
+startup vblank rate (without FM4_FRAME_RATE). race_clock.py reads the race timer of the captures
 (run with --keep-ppm) and prints its rate against wall time (1.0: real time):
 
   python outputs\FM4-build\e2e\race_clock.py <BuildRoot>\e2e\<run>
@@ -284,6 +295,28 @@ compare.py prints the differences and a verdict and exits 1 on FAIL: crash,
 goal not reached, median FPS down > 5%, frame p99 up > 20%, or an error key
 that the baseline does not have. A wait cause up > 20% or different capture
 statistics only WARN; races are not deterministic, so check captures by eye.
+
+Gates
+-----
+matrix.py runs a set of cells on a snapshot of the game build
+(<BuildRoot>\snapshots\<name>, checked against build-result.json), so
+Build.ps1 -Action build can rebuild game-build while a gate runs; cells still
+run one at a time. Pick the tier by what a change can break:
+  smoke  photo, photo_view, career at 240 Hz, one run each (about 10 min):
+         every change, before measuring anything
+  perf   photo at 240 Hz, three runs: its race phase (12 cars, 30 s) and photo
+         mode; for performance work, against a baseline gate of the same tier
+  full   photo, photo_view, career at 60 and 240 Hz, three runs each (about
+         1 hour): before committing a stage; --hz 60,120,240 adds 120 Hz
+
+  python outputs\FM4-build\e2e\matrix.py --build-root <BuildRoot> --name <name> --tier smoke --baseline <older name>
+
+Cells go to <BuildRoot>\e2e\<name>-<hz>-<scenario>; with --baseline each is
+compared (compare.py) with the cell of the same Hz and scenario of that gate,
+and <BuildRoot>\e2e\<name>.log keeps one line per cell. --scenarios, --hz and
+--repeat override the tier, --env and --arg pass to every cell. The photo race
+phase replaces the quickrace scenario in the gates; quickrace stays for
+comparisons with older results.
 
 Runtime development loop
 ------------------------

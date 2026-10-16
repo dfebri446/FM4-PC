@@ -22,12 +22,24 @@ BUTTONS = {'up': 0x1, 'down': 0x2, 'left': 0x4, 'right': 0x8, 'start': 0x10, 'ba
 # so checked presses are the reliable way; give screens that load a retry longer than the load.
 # A '?' before the action skips it when the text already shows (in a capture taken after the
 # step starts). A text starting with '=' must be a whole OCR line; '!' checks that none shows.
+
+# Boot to the main menu. A skips the Microsoft Studios and Dolby splash videos (the main menu
+# shows after about 30 s instead of 47), one press per screen read: presses at a fixed rate
+# also skip the short title screen and select PLAY CAREER in the main menu. The last step
+# presses A on the title with a retry longer than the main menu load.
+_TITLE = 'start the game|SAVING CONTENT|FORZA MOTORSPORT'
+_TO_MAIN_MENU = [
+    # Whole lines: the legal notice before the videos also names Microsoft and Studios.
+    [45, 'wait', 0, '=Microsoft|=Studios|DOLBY|' + _TITLE], [0.5, 'a', 0.12],
+    [20, 'wait', 0, 'DOLBY|' + _TITLE], [0.5, 'a', 0.12],
+    [30, '?a', 0.12, 'PLAY CAREER', 8],
+]
 SCENARIOS = {
     'boot': [[90, 'none', 0]],
     # Main menu -> Free Play -> Quick Race with the default Abarth 131 on Bernese Alps
     # Festival Circuit. The pre-race menu ignores A until its focus has moved once.
-    'quickrace': [
-        [35, 'a', 0.12], [12, 'right', 0.12], [1.2, 'right', 0.12], [1.2, 'right', 0.12],
+    'quickrace': _TO_MAIN_MENU + [
+        [4, 'right', 0.12], [1.2, 'right', 0.12], [1.2, 'right', 0.12],
         [2, 'a', 0.12], [6, 'a', 0.12], [8, 'a', 0.12], [5, 'a', 0.12], [6, 'a', 0.12],
         [6, 'a', 0.12], [6, 'a', 0.12], [5, 'a', 0.12], [40, 'a', 0.12],
         [5, 'down', 0.12], [1.5, 'up', 0.12], [1.5, 'a', 0.12], [8, 'rt=255', 0],
@@ -35,8 +47,8 @@ SCENARIOS = {
 }
 # Title screen to the main menu, then into the career home menu (PLAY CAREER). The career menu
 # hides after a few idle seconds; the first press shows it again, and Up never wraps.
-_TO_CAREER = [
-    [30, 'wait', 0], [60, 'a', 0.12, 'PLAY CAREER'], [20, 'select:PLAY CAREER', 0],
+_TO_CAREER = _TO_MAIN_MENU + [
+    [20, 'select:PLAY CAREER', 0],
     [2, 'a', 0.12], [40, 'up', 0.12, 'MY PROFILE'],
 ]
 # Career home menu > GO RACE > WORLD TOUR event screen. Both menus hide after a few idle
@@ -46,10 +58,12 @@ _TO_WORLD_TOUR = [
     [30, 'up,a', 0.12, 'WORLD TOUR|EVENT LIST', 10], [60, 'up,a', 0.12, 'DRIVER LEVEL BONUS', 15],
 ]
 SCENARIOS.update({
-    # Quick Race, 20 s of driving, then pause > PHOTO MODE, take a photo and save it as a new
-    # file (the harness answers the name prompt with its default, "Forza"). Use --profile copy.
+    # Quick Race, 10 s of driving, then 30 s measured (the race phase that the gates use
+    # instead of the quickrace scenario), then pause > PHOTO MODE, take a photo and save it as
+    # a new file (the harness answers the name prompt with its default, "Forza"). Use
+    # --profile copy.
     'photo': SCENARIOS['quickrace'] + [
-        [2, 'phase:race', 0], [20, 'wait', 0], [12, 'start', 0.15, 'PHOTO MODE'],
+        [10, 'wait', 0], [1, 'phase:race', 0], [30, 'wait', 0], [12, 'start', 0.15, 'PHOTO MODE'],
         [1, 'phase:end', 0],
         # OCR often reads nothing in photo mode (a bright scene behind small hints), so entering
         # it is checked by the pause menu closing, and the photo is taken with one A and a fixed

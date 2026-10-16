@@ -67,13 +67,15 @@ Optional actions for performance work:
   instead of 33, GPU 13 ms instead of 17.5. Edges are visibly more jagged
   than with 2x MSAA (thin cables break up); photo mode and split screen keep
   their own settings.
-- run -FrameRate 120 lifts the title's 30/60 fps limits: the refresh rate it
-  sees and its render scenario FrameRate become 120, and the title scales its
-  time step (race clock against wall time 1.001). Quick Race, three runs:
-  119.9 fps, frame p99 8.8-9.8 ms, 120 fps on the open track at 2,000-3,200
-  draws a frame; every frame is fully rendered. The command processor thread
-  needs about 4-5 ms a race frame, the GPU about 2.2 ms. At 240 the race runs
-  at 191-201 fps, set by the command processor. 30-240 accepted.
+- run -FrameRate 120 lifts the 60 fps limit of races: the title sees a 120 Hz
+  display and the FrameRate of its race render scenarios becomes 120, and the
+  title scales its time step (race clock against wall time 1.001). The guest
+  vblank stays at 60 Hz in menus, countdown, post-race, replays and photo mode
+  (30 fps as on the Xbox 360) and runs at 120 Hz only while a race scenario
+  sets the frame rate (fm4-vblank-rate.cpp). Quick Race, three runs: 118-120
+  fps, frame p99 8.8-9.8 ms; every frame is fully rendered. At 240 races run
+  at 220-235 fps (p99 5.3-6.2 ms), set by the command processor (about 4.3 ms
+  a race frame; GPU about 2.2 ms). 30-240 accepted.
 - run -ResolutionScale 2 renders at 2560x1440 and -ResolutionScale 3 at
   3840x2160 instead of 1280x720 (draw_resolution_scale_x/y; CPU readbacks of
   resolves are downscaled). Quick Race: 59.7 fps with GPU about 3.7 ms a

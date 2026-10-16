@@ -561,32 +561,74 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   naik dari sekitar 0,23 ke 0,39 ms (submit 0,10 -> 0,18, swap 0,13 -> 0,21),
   dan CP masih menunggu wait_reg_mem 128 ms/s. Validasi B3 mencatat 213 fps
   dari satu run Quick Race 240 Hz.
-- Efek samping mode 120 Hz (opt-in; default 60 Hz sama dengan Xbox 360):
-  - Menu dirender satu frame per vblank: skenario UI (UI_Car, UI_Homespace,
-    UI_NoCar, UI_Showroom) tidak punya FrameRate di media\RenderScenarios,
-    hanya balapan (60) dan countdown, pasca-balapan, replay, photo mode (30).
-    Terukur pada photo_view: menu 60 fps di 60 Hz, 120 fps di 120 Hz.
-  - Di 120 Hz menu karier dan GO RACE lebih cepat bersembunyi saat diam, dan
-    menu pasca-balapan lebih cepat memutar replay sendiri. Dugaan: timer idle
-    UI menghitung frame atau vblank. Belum diukur berapa kali lebih cepat.
-  - FM4_FRAME_RATE mengganti semua nilai FrameRate, jadi photo mode (sekitar
-    55 fps), replay (sekitar 60 fps) dan pasca-balapan tidak lagi 30 fps
-    seperti aslinya. Selama render foto di 120 Hz tidak ada capture baru
-    lebih dari 15 detik (di 60 Hz layar LOADING... PLEASE WAIT tertangkap).
-  - Bukan bug runtime atau emulasi: game mengasumsikan layar 60 Hz. Dampaknya
-    kenyamanan saja (tanpa crash atau kerusakan data).
-  - Rencana perbaikan (belum dikerjakan): laju vblank dinamis. Runtime memberi
-    vblank 60 Hz di luar balapan dan 120 Hz hanya saat skenario balapan
-    aktif; FM4_FRAME_RATE hanya untuk skenario *_Race, skenario 30 fps tetap
-    30. Langkah awal: ukur waktu sembunyi menu di 60 vs 120 Hz untuk memastikan
-    penyebab, lalu cari sinyal "sedang balapan" (apakah game membuka file
-    RenderScenarios setiap ganti skenario; kalau tidak, cari fungsi pemilih
-    skenario). Risiko: game membaca refresh rate dari kernel, jadi bila UI
-    menghitung waktu dari refresh yang dilaporkan, menu bisa menjadi lambat.
-    Titik kode: thread vsync di work/runtime/src/graphics/graphics_system.cpp
-    (vsync_interval_ticks dari VdQueryVideoMode), override skenario di
-    work/fm4-rex/src/fm4-render-overrides.cpp. Alternatif: patch timer UI di
-    kode game (lebih banyak kerja), atau tetap opt-in seperti sekarang.
+- Sebelum perbaikan di bawah, refresh di atas 60 Hz mengubah mode lain juga:
+  menu dirender satu frame per vblank (skenario UI tidak punya FrameRate;
+  photo_view 120 fps di 120 Hz, 229 di 240 Hz), dan FM4_FRAME_RATE mengganti
+  semua FrameRate, jadi photo mode (55 / 90-112 fps), replay (60 / 112) dan
+  pasca-balapan tidak lagi 30 fps. Dugaan bahwa menu bersembunyi lebih cepat
+  karena timer menghitung frame tidak terbukti (lihat di bawah).
+- Laju vblank dinamis (16 Oktober 2026): dengan -FrameRate N (N > 60) game
+  tetap melihat refresh N Hz (video_mode_refresh_rate), tetapi vblank guest
+  60 Hz, dan N Hz hanya selama skenario balapan menentukan frame rate.
+  FM4_FRAME_RATE kini hanya mengganti FrameRate 60 (skenario balapan);
+  countdown, pasca-balapan, replay dan photo mode tetap 30.
+  - Sinyal: game memegang tumpukan skenario render dan meneruskan setiap
+    perubahan ke render thread lewat CRenderThreadLink Push (sub_82442600,
+    TReference<CDynamicRenderSettings>) dan Pop (sub_82438A38), LIFO.
+    CDynamicRenderSettings: nama (std::string MSVC) di +8, kontrol FrameRate
+    di +44 dengan nilai di +48 (default 60 bila skenario tidak menyetelnya).
+    fm4-vblank-rate.cpp mencerminkan tumpukan itu; frame rate tumpukan =
+    skenario teratas yang menyetel FrameRate. Fase balapan disusun
+    sub_826D9508 (race+372: 0 PreRace, 1/3 321_and_PostRace, 2 Race,
+    4 Replay, 5 PhotoMode di atas balapan). Semua file RenderScenarios dibaca
+    sekali saat boot (REX_FILE_READ_TRACE), jadi bukan sinyal.
+  - Runtime: cvar vblank_rate dan GraphicsSystem::SetVblankRate (thread vsync
+    memakai laju baru seketika; runtime.log "Guest vblank rate").
+  - Diukur: menu karier bersembunyi sekitar 9 detik setelah tekanan terakhir
+    di 60 Hz (9,0), 240 Hz dinamis (9,1) dan 240 Hz tetap (9,1): timer waktu
+    nyata, bukan hitungan frame.
+  - Matriks binary ini (240 dan 120 Hz 3 run per sel; 60 Hz smoke 1 run):
+                 240 Hz                    120 Hz                60 Hz
+    quickrace    3/3, 224-235 fps,         3/3, 118-120 fps,     60,0 fps,
+                 p99 5,3-6,2 ms            p99 8,8-9,8 ms        p99 17,1
+    photo        3/3; race 220-228 fps     3/3; race 117-118     race 58,8;
+                 p99 5,4-5,8; photo 30,0   p99 9,6-10,1; 30,0    photo 30,0
+    photo_view   3/3, menu 57 fps          3/3, menu 57 fps      lolos
+    career       3/3; race 232 fps p99     3/3; race 118-120;    race 60,0;
+                 5,4; replay 30,0          replay 30,0           replay 30,0
+    Career 240 Hz kini 3/3 (sebelumnya 2/3: menu 240 fps bersembunyi di
+    antara capture). Tanpa crash, tanpa frame warna clear, kunci error sama
+    (log baseline photo_view terpotong rotasi sehingga tampak tanpa error).
+    compare.py FAIL hanya pada fps total, photo mode dan replay yang kembali
+    ke 30/60 fps seperti aslinya. Fase balapan setara atau lebih baik
+    (240 Hz Quick Race 223,6 -> 231 fps).
+  - Pacing di 120 Hz punya dua pola antar run, baik baseline maupun binary
+    ini: CP menunggu guest sekitar 450 ms/s dengan vblank telat, atau
+    menunggu vblank (wait_reg_mem) dengan guest_idle sekitar 17 ms/s; fps sama.
+- Gate e2e lebih cepat (16 Oktober 2026): e2e/matrix.py menjalankan tier smoke
+  (photo, photo_view, career 240 Hz, 1 run, sekitar 10 menit), perf (photo
+  3 run) dan full (60 dan 240 Hz, 3 run, sekitar 1 jam) pada salinan build
+  (<BuildRoot>\snapshots\<nama>), jadi game-build dapat dibangun ulang selama
+  gate berjalan. Fase race photo (30 detik setelah 10 detik berkendara)
+  menggantikan skenario quickrace di gate. Boot menekan A sekali per video
+  splash yang terbaca (Microsoft Studios, Dolby): menu utama sekitar detik 30,
+  bukan 47. Matriks 3 Hz x 4 skenario x 3 run sebelumnya sekitar 113 menit.
+- Opsi developer FM4 (16 Oktober 2026): image masih memuat
+  CForzaCommandLineParameters (singleton sub_8237D468, data 0x82DC4420) dan
+  parsernya (vtable 0x8200ED8C slot 2-5; name=value, switch tanpa nilai
+  dibalik) dengan opsi seperti launch, track, car, numaicars, engageaionstart,
+  launchcarexperience, launchcareerphotomode, disablesplashintro, showframerate,
+  forceEnableDebugMenus, camoverride, runperfpredautomation. Build retail tidak
+  pernah mengisinya: pemuat GAME:\cmdline.txt dikompilasi keluar (tidak ada
+  pembacaan file) dan ExLoadedCommandLine tidak diimpor, jadi cvar cl tidak
+  sampai. Opsi dapat disuntikkan lewat hook konstruktor sub_823E2338
+  (terverifikasi: nilai masuk ke objek), tetapi kode yang membaca track, car,
+  numaicars, engageaionstart, showframerate, forceEnableDebugMenus, camoverride
+  dan unlockframerate tidak ada; launch, launchcarexperience, disablesplashintro,
+  noattractvideo, nohud dan skiptutorials hanya dibaca sebagai penjaga yang
+  melewati layar tertentu. Uji launch, launchcarexperience, disablesplashintro
+  dan noattractvideo: boot, video dan layar judul tidak berubah. Peluncuran
+  langsung atau balapan otomatis tidak tersedia dari opsi ini.
 - Belum dicakup: menyelesaikan balapan karier sampai hadiah (harness hanya
   menahan gas; butuh pengemudi otomatis), overwrite foto, foto dengan cache
   shader kosong, Autovista, mobil Disc 2.

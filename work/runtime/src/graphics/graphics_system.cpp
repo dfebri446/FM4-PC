@@ -47,6 +47,11 @@ REXCVAR_DEFINE_BOOL(vblank_vrr, false, "GPU",
                     "two intervals. A frame that takes slightly longer than one interval is "
                     "then not held to the next grid vblank")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+REXCVAR_DEFINE_DOUBLE(vblank_rate, 0.0, "GPU",
+                      "Guest vblank rate in Hz at startup; 0 uses the refresh rate reported to the "
+                      "title (video_mode_refresh_rate). The title integration may change it while "
+                      "running (GraphicsSystem::SetVblankRate)")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_STRING(swap_post_effect, "none", "GPU", "Swap post effect: none, fxaa, fxaa_extreme")
     .allowed({"none", "fxaa", "fxaa_extreme"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
@@ -162,7 +167,9 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
                                  reinterpret_cast<runtime::MMIOReadCallback>(ReadRegisterThunk),
                                  reinterpret_cast<runtime::MMIOWriteCallback>(WriteRegisterThunk));
 
-  // Guest vblank timer based on the configured guest video mode.
+  // Guest vblank timer based on the configured guest video mode, or on
+  // vblank_rate / SetVblankRate when set.
+  vblank_rate_hz_ = std::max(0.0, REXCVAR_GET(vblank_rate));
   vsync_worker_running_ = true;
   vsync_wake_event_ = rex::thread::Event::CreateAutoResetEvent(false);
   vsync_worker_thread_ = system::object_ref<system::XHostThread>(
@@ -179,15 +186,26 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
 #endif  // REX_PLATFORM_WIN32
         system::X_VIDEO_MODE video_mode;
         kernel::xboxkrnl::VdQueryVideoMode(&video_mode);
-        double refresh_rate_hz = std::max(1.0, double(float(video_mode.refresh_rate)));
+        const double reported_rate_hz = std::max(1.0, double(float(video_mode.refresh_rate)));
         uint64_t guest_tick_frequency = chrono::Clock::guest_tick_frequency();
-        uint64_t vsync_interval_ticks =
-            std::max(uint64_t(1), uint64_t(double(guest_tick_frequency) / refresh_rate_hz));
+        double vblank_rate_hz = 0.0;
+        uint64_t vsync_interval_ticks = 1;
         uint64_t no_vsync_interval_ticks = std::max(uint64_t(1), guest_tick_frequency / 1000);
         uint64_t last_frame_time = chrono::Clock::QueryGuestTickCount();
         bool vblank_late = false;  // vblank_vrr: grid vblank passed without a wait.
         while (vsync_worker_running_) {
           uint64_t current_time = chrono::Clock::QueryGuestTickCount();
+          const double requested_rate_hz = vblank_rate_hz_.load(std::memory_order_relaxed);
+          const double rate_hz = requested_rate_hz > 0.0 ? requested_rate_hz : reported_rate_hz;
+          if (rate_hz != vblank_rate_hz) {
+            // The next vblank is due one new interval after the last one (at
+            // once when that has passed already).
+            REXGPU_INFO("Guest vblank rate {} Hz (reported refresh rate {} Hz)", rate_hz,
+                        reported_rate_hz);
+            vblank_rate_hz = rate_hz;
+            vsync_interval_ticks =
+                std::max(uint64_t(1), uint64_t(double(guest_tick_frequency) / rate_hz));
+          }
           uint64_t interval_ticks =
               REXCVAR_GET(vsync) ? vsync_interval_ticks : no_vsync_interval_ticks;
           if (REXCVAR_GET(vblank_vrr) && REXCVAR_GET(vsync)) {

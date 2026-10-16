@@ -33,6 +33,7 @@
 !/outputs/FM4-build/e2e/compare.py
 !/outputs/FM4-build/e2e/cp_profile.py
 !/outputs/FM4-build/e2e/inventory.py
+!/outputs/FM4-build/e2e/matrix.py
 !/outputs/FM4-build/e2e/frame_graph.py
 !/outputs/FM4-build/e2e/race_clock.py
 !/outputs/FM4-build/e2e/pm4_writers.py
@@ -74,6 +75,7 @@
 !/work/fm4-rex/src/fm4-d3d-trace.cpp
 !/work/fm4-rex/src/fm4-stream-trace.cpp
 !/work/fm4-rex/src/fm4-streaming-fixes.cpp
+!/work/fm4-rex/src/fm4-vblank-rate.cpp
 !/work/fm4-rex/src/fm4-vector-fixes.h
 !/work/fm4-rex/src/fm4_rex_app.h
 !/work/fm4-rex/src/instruction-tests.cpp

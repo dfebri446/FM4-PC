@@ -336,8 +336,10 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
         # CPU readbacks of resolves are downscaled.
         cvars['draw_resolution_scale_x']=cvars['draw_resolution_scale_y']=str(resolution_scale)
     if frame_rate:
-        # The display refresh the title sees (and the guest vblank rate), and the
-        # FrameRate of its render scenarios (races 60, replays and photo mode 30).
+        # The display refresh the title sees and the FrameRate of its race scenarios
+        # (60). The guest vblank runs at 60 Hz, and at this rate only while a race
+        # scenario sets the frame rate (fm4-vblank-rate.cpp): menus, countdown,
+        # post-race, replays and photo mode keep their 60 Hz timing.
         # The title scales its time step, so the race clock stays real time.
         cvars['video_mode_refresh_rate']=str(frame_rate)
         env['FM4_FRAME_RATE']=str(frame_rate)
