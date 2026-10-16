@@ -275,7 +275,10 @@ The harness uses the launcher environment (pipeline.launch_env):
 FM4_HALF_RATE_MIRROR=1 (the rear-view mirror every other frame in every race);
 --env FM4_HALF_RATE_MIRROR=0 renders it every frame, also in the 12 car Quick
 Race. --env FM4_SHADOW_WORKAROUND=1 skips the shadow map outside the cockpit in
-races (Build.ps1 -ShadowWorkaround).
+races (Build.ps1 -ShadowWorkaround). The race render quality is the
+launcher's (pipeline.py QUALITY_PRESETS, high by default, through
+FM4_RACE_SETTINGS); --quality xbox|high|ultra picks another, and with --env
+FM4_TILING_SCENARIO=<n> the preset keeps that tiling scenario.
 
 Frame rates above 60 (Build.ps1 -FrameRate <n> sets both of these):
 --arg=--video_mode_refresh_rate=<n> changes the refresh rate reported to the

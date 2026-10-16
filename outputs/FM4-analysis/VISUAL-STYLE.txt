@@ -111,6 +111,12 @@ ARAH PENGUBAHAN
 - Mengubah rumus efek (tonemap, AA, efek baru) butuh shader yang dapat
   dimodifikasi: tahap B4 di PLAN.txt.
 - Skenario render balapan memakai setelan lebih hemat daripada replay dan
-  photo mode: tanpa SoftParticles dan CollidableShadows, CarMinWheelLOD 1
-  (photo mode 0), CarLODTransDist near 15 / far 25 / veryfar 50. Menyamakannya
-  dengan replay lewat mekanisme override yang sama belum dicoba.
+  photo mode: TilingScenario 1 (2xMSAA, dua tile; replay, photo mode, menu dan
+  balapan 1 mobil 0 = 4xMSAA, tiga tile), tanpa SoftParticles dan
+  CollidableShadows, CarMinWheelLOD 1 (photo mode 0), CarLODTransDist near 15
+  / far 25 / veryfar 50; balapan 16 mobil juga memakai shaders_16car, tanpa
+  kerusakan, EnvMapFrequencyScale 0 dan HalfRateBloom. Nama skenario tiling
+  di image: FPS_30, FPS_60, 4xMSAA, 2xMSAA, NonTiling, Small2xMSAA,
+  SplitScreen_NonTiling2xMSAA. -Quality high (bawaan sejak 16 Oktober 2026)
+  menyamakan balapan dengan replay; ultra menambah CarKeepLOD0 dan spion
+  penuh (FM4_RACE_SETTINGS di fm4-render-overrides.cpp).

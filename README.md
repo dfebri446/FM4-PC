@@ -114,7 +114,7 @@ Gunakan `BuildRoot` yang sama untuk seluruh tahap. Setelah mengubah source integ
 
 Jika membuka PowerShell baru, definisikan kembali `$common` seperti contoh sebelumnya. Aksi `run` membaca lokasi disc yang disimpan saat `generate`.
 
-Launcher memeriksa artifact build dan versi executable, menggunakan profil lokal baru, serta mengimpor empat paket Disc 2 jika path-nya diberikan. Impor pertama memerlukan waktu dan ruang tambahan. Shader sinkron aktif secara bawaan. Balapan memakai shadow map game di semua kamera (workaround bayangan Xenia lama hanya dengan `-ShadowWorkaround`), dan tekstur memakai anisotropic filtering 16x. Tampilan memakai preset `pc`: mod post-processing buatan proyek pada shader game (kurva tonemap ACES, saturasi 1,1, bloom 0,7, penajaman 0,4); `-Look original` mengembalikan tampilan asli FM4. Rendering memakai jalur host render target (RTV): Quick Race stabil 60 fps dengan GPU sekitar 2,5 ms per frame balapan pada komputer pengembangan.
+Launcher memeriksa artifact build dan versi executable, menggunakan profil lokal baru, serta mengimpor empat paket Disc 2 jika path-nya diberikan. Impor pertama memerlukan waktu dan ruang tambahan. Shader sinkron aktif secara bawaan. Balapan memakai shadow map game di semua kamera (workaround bayangan Xenia lama hanya dengan `-ShadowWorkaround`), dan tekstur memakai anisotropic filtering 16x. Balapan memakai kualitas `high` (MSAA 4x dan setelan replay/photo mode, lihat `-Quality`). Tampilan memakai preset `pc`: mod post-processing buatan proyek pada shader game (kurva tonemap ACES, saturasi 1,1, bloom 0,7, penajaman 0,4); `-Look original` mengembalikan tampilan asli FM4. Rendering memakai jalur host render target (RTV): Quick Race stabil 60 fps dengan GPU sekitar 2,5 ms per frame balapan pada komputer pengembangan.
 
 Opsi tambahan untuk `run` (rincian dan angka ukur ada di [panduan build lengkap](outputs/FM4-build/README.txt)):
 
@@ -122,6 +122,7 @@ Opsi tambahan untuk `run` (rincian dan angka ukur ada di [panduan build lengkap]
 | --- | --- |
 | `-FrameRate 120` (30-240) | Frame rate balapan di atas 60. Menu, replay, dan photo mode tetap memakai waktunya sendiri (vblank guest 60 Hz di luar balapan). Diukur: 118-120 fps pada 120, 220-235 fps pada 240. |
 | `-ResolutionScale 2` / `3` | Render 2560x1440 atau 3840x2160. Skala 2 lolos gate smoke (balapan, foto, karier dengan replay 30 fps). |
+| `-Quality xbox\|high\|ultra` | Kualitas render balapan. `high` (bawaan): MSAA 4x, soft particles, bayangan objek collidable, roda detail penuh, jarak LOD mobil 2x, tanpa pemangkasan balapan 16 mobil (seperti replay dan photo mode). `ultra`: semua mobil di LOD tertinggi dan spion setiap frame. `xbox`: setelan asli. Pada 240 Hz: xbox sekitar 220 fps, high 178-225 fps (rata-rata 201), ultra sekitar 145 fps; ketiganya stabil 60 fps. |
 | `-Look <preset/kenop>` | Tampilan: preset `pc` (bawaan), `aces`, `gt`, `neutral`, `original` (tanpa mod), dapat digabung dengan kenop, misalnya `"pc,sharpen=0.6"`. Kenop: `tonemap` (filmic/gt/aces/neutral), `sharpen`, `bloom`, `exposure`, `contrast`, `saturation`, `vignette`, `motion_blur`. |
 | `-Rov` | Jalur render target lama (pixel shader interlock) untuk perbandingan. |
 | `-SingleTile` | Balapan satu tile 720p tanpa MSAA, dengan FXAA. |

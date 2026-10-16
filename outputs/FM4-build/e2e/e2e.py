@@ -717,6 +717,11 @@ def run_once(options, out):
     env.update(pipeline.launch_env())
     env.update(FM4_CAPTURE_DIR=str(capture),
                FM4_TEST_INPUT_FILE=str(input_file), REX_PERF_TRACE_FILE=str(out / 'perf.jsonl'))
+    # The launcher's race render quality; --env FM4_TILING_SCENARIO keeps its tiling scenario.
+    settings = pipeline.race_settings(options.quality or pipeline.DEFAULT_QUALITY,
+                                      any(item.startswith('FM4_TILING_SCENARIO=') for item in options.env))
+    if settings:
+        env['FM4_RACE_SETTINGS'] = settings
     # Diagnostic variables, e.g. REX_RESOLVE_PUBLICATION_TRACE=<path>.
     env.update(item.split('=', 1) for item in options.env)
     # With --goal, --steps run after the goal is reached (e.g. looking around in the race).
@@ -919,6 +924,8 @@ def main():
     parser.add_argument('--arg', action='append', default=[], help='extra/override --cvar=value')
     parser.add_argument('--look', help='look like Build.ps1 -Look (default: the launcher\'s, pc), '
                                        'e.g. "original" or "pc,sharpen=0.6"')
+    parser.add_argument('--quality', help='race render quality like Build.ps1 -Quality '
+                                          '(default: the launcher\'s), e.g. xbox')
     parser.add_argument('--tail', type=float, default=10, help='seconds to keep running after the last step')
     parser.add_argument('--keep-ppm', action='store_true', help='keep full-resolution captures')
     parser.add_argument('--measure', type=int, default=0, help='summarize only the last N perf seconds')

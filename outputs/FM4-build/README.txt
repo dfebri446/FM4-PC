@@ -103,6 +103,26 @@ Optional actions for performance work:
   with the wheels apart instead of soft ones) for about 0.2-0.4 ms of GPU a
   frame. Xenia needed it against square shadows; captures of every race
   camera on this runtime show none.
+- run -Quality xbox|high|ultra sets the render quality of races through
+  their render scenarios (FM4_RACE_SETTINGS, fm4-render-overrides.cpp; the
+  N-Car, Autocross and Bowling scenarios, not split screen). xbox keeps the
+  title's settings. high, the default, gives races what the title gives its
+  replays and photo mode: 4x MSAA in three predicated tiles (TilingScenario
+  0, the title's 4xMSAA scenario, instead of 1, 2xMSAA in two), soft
+  particles, shadows of collidable objects, full detail wheels and car LOD
+  transitions twice as far (30/50/100 m). It also undoes the 16 car race
+  cuts: the cheaper car shader, no damage, an environment map never
+  updated, half rate bloom and no collidables in the mirror. ultra also
+  keeps every car at its top LOD (CarKeepLOD0, as 1 car races do) and
+  renders the mirror every frame with up to 11 cars. At 240 Hz (12 car race
+  phase of the photo scenario) the command processor sets the frame rate:
+  xbox 219-224 fps in three runs (GPU 2.3 ms a frame); high 178-225 fps in
+  four, 201 on average (GPU 2.8 ms), as the three tiles execute 4,500-8,300
+  draws a frame depending on where the cars are (xbox about 5,200); ultra
+  144.8 fps (median of three, GPU 3.1 ms, command processor busy 974 ms a
+  second). All three hold 60 fps with room to spare; high, at 178 fps at
+  worst, leaves room for 120 (not measured at 120 Hz), and ultra is meant
+  for 60-120 Hz.
 - run -Look <presets and knobs> sets the look mods (work/fm4-rex/look,
   original code hooked into the HLSL that the runtime generates from the
   game's post-processing shaders; e2e/README.txt, "Shader overrides"). The
@@ -156,7 +176,8 @@ What happens
    title's shadow map with every camera; -ShadowWorkaround skips it outside
    the cockpit (SkipShadowMapUnlessCockpit, as the title's split screen does),
    the xenia-canary/game-patches#398 workaround this runtime no longer needs.
-   The post-processing uses the pc look (see -Look).
+   Races render at the high quality (see -Quality) and the post-processing
+   uses the pc look (see -Look).
    Rendering uses the host render target path (render_target_path_d3d12=rtv with
    edram_single_rt_no_wrap=true): GPU about 2.5 ms a race frame instead of
    about 7 on the pixel shader interlock path, a stable 60 fps in Quick Race. Guest

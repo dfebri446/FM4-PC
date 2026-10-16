@@ -800,6 +800,26 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   Hz dengan pc (lookpc, banding vrr30): 3/3, race 227-228 fps p99 5,6-5,9
   ms, photo mode 30 fps, replay 30 fps; kelima mod dikompilasi di setiap sel,
   tanpa frame warna clear; compare hanya WARN statistik capture.
+- Preset kualitas balapan (16 Oktober 2026): Build.ps1 -Quality xbox|high|
+  ultra (bawaan high) lewat FM4_RACE_SETTINGS, override kontrol skenario
+  render N-Car, Autocross dan Bowling (bukan split screen) di
+  fm4-render-overrides.cpp. high menyamakan balapan dengan replay dan photo
+  mode: TilingScenario 0 (skenario tiling 4xMSAA game, tiga tile) alih-alih
+  1 (2xMSAA, dua tile), SoftParticles, CollidableShadows, CarMinWheelLOD 0,
+  CarLODTransDist 30/50/100 m (asli 15/25/50), dan membatalkan pemangkasan
+  balapan 16 mobil (shaders_16car, tanpa kerusakan, EnvMapFrequencyScale 0,
+  HalfRateBloom, CollidablesInMirror 0). ultra menambah CarKeepLOD0, spion
+  setiap frame dan MaxCarsInMirror 11. Frame graph high: pass scene MSAA 4x
+  di offset 0/-256/-512 (xbox: 2x di 0/-512); kabel gondola dari kokpit
+  tidak lagi bergerigi seperti tangga. Fase balapan photo 240 Hz (tanpa
+  proses GPU lain): xbox 224 / 220 / 219 fps, p99 5,9-6,4 ms, GPU 2,3 ms,
+  predicated_run sekitar 5.200 per frame; high 214 / 187 / 225 fps dan 178
+  di gate smoke (rata-rata 201), GPU 2,8 ms, predicated_run 4.500-8.300 per
+  frame sesuai posisi mobil (tiga tile); ultra median 144,8 fps (-34%) p99
+  8,58 ms GPU 3,09 ms, CP sibuk 974 ms/s. Siklus kamera 60 Hz: ketiganya
+  60,0 fps, GPU 2,4 / 2,7 / 3,1 ms. Gate smoke dengan high (qhigh, banding
+  lookpc): 3/3, karier race 216 fps, replay 30 fps, photo mode 30 fps, muat
+  foto lolos, tanpa frame warna clear.
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 

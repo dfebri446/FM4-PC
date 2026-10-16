@@ -28,6 +28,63 @@
 // FM4_HALF_RATE_MIRROR=0 or 1 sets HalfRateMirror in the race scenarios: the
 // title renders the rear-view mirror every other frame with 1, which it uses
 // for 12 and 16 car races only (1 and 8 car races render it every frame).
+// FM4_RACE_SETTINGS="Name=value;Name=attribute:value,attribute:value;Name=-"
+// sets controls of the N-Car, Autocross and Bowling race scenarios (pre-race,
+// countdown and post-race, race, replay; not split screen): each replaces the
+// scenario's own element of that name or is added, and "-" removes it
+// (pipeline.py -Quality). Applied after the variables above.
+
+namespace {
+// Applies FM4_RACE_SETTINGS to one scenario; returns the number of changes.
+unsigned ApplyRaceSettings(std::string& xml, const std::string& settings) {
+  unsigned changed = 0;
+  for (size_t start = 0; start < settings.size();) {
+    size_t end = settings.find(';', start);
+    if (end == std::string::npos) end = settings.size();
+    const std::string item = settings.substr(start, end - start);
+    start = end + 1;
+    const size_t equals = item.find('=');
+    if (item.empty()) continue;
+    if (equals == std::string::npos || equals == 0)
+      throw std::runtime_error("FM4_RACE_SETTINGS items are Name=value");
+    const std::string name = item.substr(0, equals), spec = item.substr(equals + 1);
+    std::string element;
+    if (spec != "-") {
+      element = "<" + name;
+      if (spec.find(':') == std::string::npos) {
+        element += " value=\"" + spec + "\"";
+      } else {
+        for (size_t at = 0; at < spec.size();) {
+          size_t next = spec.find(',', at);
+          if (next == std::string::npos) next = spec.size();
+          const std::string pair = spec.substr(at, next - at);
+          const size_t colon = pair.find(':');
+          if (colon == std::string::npos)
+            throw std::runtime_error("FM4_RACE_SETTINGS attributes are name:value");
+          element += " " + pair.substr(0, colon) + "=\"" + pair.substr(colon + 1) + "\"";
+          at = next + 1;
+        }
+      }
+      element += "/>";
+    }
+    const size_t at = xml.find("<" + name + " ");
+    if (at != std::string::npos) {
+      const size_t close = xml.find("/>", at);
+      if (close == std::string::npos) throw std::runtime_error("Unexpected render scenario format");
+      xml.replace(at, close + 2 - at, element);
+      ++changed;
+    } else if (!element.empty()) {
+      const size_t root_end = xml.find("</DynamicRenderSettings>");
+      if (root_end == std::string::npos)
+        throw std::runtime_error("Unexpected render scenario format");
+      xml.insert(root_end, "  " + element + "\r\n");
+      ++changed;
+    }
+  }
+  return changed;
+}
+}  // namespace
+
 void FM4MountRenderOverrides(rex::Runtime* runtime) {
   const char* enabled = std::getenv("FM4_SHADOW_WORKAROUND");
   const bool shadow_workaround = enabled && std::string(enabled) == "1";
@@ -41,7 +98,11 @@ void FM4MountRenderOverrides(rex::Runtime* runtime) {
   const bool mirror_override = half_rate_mirror &&
                                (half_rate_mirror[0] == '0' || half_rate_mirror[0] == '1') &&
                                !half_rate_mirror[1];
-  if (!shadow_workaround && !tiling_override && !frame_rate_override && !mirror_override) return;
+  const char* race_settings_env = std::getenv("FM4_RACE_SETTINGS");
+  const std::string race_settings = race_settings_env ? race_settings_env : "";
+  if (!shadow_workaround && !tiling_override && !frame_rate_override && !mirror_override &&
+      race_settings.empty())
+    return;
   const auto source = runtime->game_data_root() / "media" / "RenderScenarios";
   const auto destination = runtime->cache_root() / "fm4-render-overrides";
   std::filesystem::create_directories(destination);
@@ -91,6 +152,11 @@ void FM4MountRenderOverrides(rex::Runtime* runtime) {
       }
       ++changed;
     }
+    if (!race_settings.empty() &&
+        (name.find("-Car_") != std::string::npos || name.starts_with("Autocross_") ||
+         name.starts_with("Bowling_"))) {
+      changed += ApplyRaceSettings(xml, race_settings);
+    }
     if (shadow_workaround && race && xml.find("SkipShadowMapUnlessCockpit") == std::string::npos) {
       const auto end = xml.find("</DynamicRenderSettings>");
       if (end == std::string::npos) throw std::runtime_error("Unexpected render scenario format");
@@ -122,8 +188,10 @@ void FM4MountRenderOverrides(rex::Runtime* runtime) {
     throw std::runtime_error("Render scenario override path validation failed");
   std::fprintf(stderr,
                "FM4 render scenario overrides (shadow workaround %d, tiling %s, frame rate %s, "
-               "half rate mirror %s): %u changes; UI/global unchanged; source=%s\n",
+               "half rate mirror %s, race settings %s): %u changes; UI/global unchanged; "
+               "source=%s\n",
                int(shadow_workaround), tiling_override ? tiling : "-",
                frame_rate_override ? frame_rate : "-", mirror_override ? half_rate_mirror : "-",
-               changed, source_device_path.c_str());
+               race_settings.empty() ? "-" : race_settings.c_str(), changed,
+               source_device_path.c_str());
 }

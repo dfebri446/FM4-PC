@@ -318,6 +318,27 @@ LOOK_PRESETS={'pc':'tonemap=aces,saturation=1.1,bloom=0.7,sharpen=0.4',
               'aces':'tonemap=aces','gt':'tonemap=gt','neutral':'tonemap=neutral','original':''}
 DEFAULT_LOOK='pc'
 
+# Render quality of races (FM4_RACE_SETTINGS, fm4-render-overrides.cpp: controls of the race
+# render scenarios). xbox keeps the title's own. high gives races what its replays and photo
+# mode have: 4x MSAA (TilingScenario 0 instead of 1, 2x), soft particles, shadows of
+# collidable objects, full detail wheels, car LOD transitions twice as far, and undoes the
+# 16 car cuts (a cheaper car shader, no damage, environment map never updated, half rate bloom,
+# no collidables in the mirror). ultra also keeps every car at its top LOD and renders the
+# mirror every frame with every car.
+_HIGH=['TilingScenario=0','SoftParticles=1','CollidableShadows=1','CarMinWheelLOD=0',
+       'CarLODTransDist=near:30.0,far:50.0,veryfar:100.0','CarShader=-','CarDamage=1',
+       'CarDamageTextures=1','EnvMapFrequencyScale=1.0','HalfRateBloom=-','CollidablesInMirror=-']
+QUALITY_PRESETS={'xbox':[],'high':_HIGH,
+                 'ultra':_HIGH+['CarKeepLOD0=1','HalfRateMirror=0','MaxCarsInMirror=11']}
+DEFAULT_QUALITY='high'
+
+def race_settings(quality,single_tile=False):
+    """FM4_RACE_SETTINGS of a quality preset; -SingleTile keeps its own tiling scenario."""
+    if quality not in QUALITY_PRESETS:
+        raise RuntimeError(f'Unknown quality {quality!r}; use {", ".join(QUALITY_PRESETS)}.')
+    return ';'.join(s for s in QUALITY_PRESETS[quality]
+                    if not (single_tile and s.startswith('TilingScenario=')))
+
 def look_cvars(root,look):
     """Cvars of the look mods (work/fm4-rex/look/fm4-look.hlsli): copies them to BuildRoot/look
     and passes the knobs of 'pc', 'sharpen=0.5,bloom=0.8,tonemap=aces' or both (knobs left out
@@ -354,7 +375,7 @@ def look_cvars(root,look):
     return {'shader_mod_path':directory,'shader_mod_defines':';'.join(defines)}
 
 def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,resolution_scale=1,
-           full_rate_mirror=False,look=None,shadow_workaround=False):
+           full_rate_mirror=False,look=None,shadow_workaround=False,quality=None):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -369,6 +390,9 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
         # Skips the shadow map pass outside the cockpit in races, as split screen does: the
         # xenia-canary/game-patches#398 workaround, no longer needed on this runtime.
         env['FM4_SHADOW_WORKAROUND']='1'
+    settings=race_settings(DEFAULT_QUALITY if quality is None else quality,single_tile)
+    if settings:
+        env['FM4_RACE_SETTINGS']=settings
     cvars=launch_cvars(root,disc1,root/'logs/runtime.log')
     if single_tile:
         # Races render 720p in one tile without MSAA (the title's UI tiling
@@ -458,6 +482,9 @@ def main():
                         help='run: render at 2x (2560x1440) or 3x (3840x2160) of 1280x720')
     parser.add_argument('--full-rate-mirror',action='store_true',
                         help='run: render the rear-view mirror every frame in every race')
+    parser.add_argument('--quality',choices=list(QUALITY_PRESETS),
+                        help='run: render quality of races (default '+DEFAULT_QUALITY+'; xbox: the '
+                             "title's own)")
     parser.add_argument('--shadow-workaround',action='store_true',
                         help='run: no shadow map outside the cockpit in races (the old Xenia workaround)')
     parser.add_argument('--rov',action='store_true',
@@ -490,7 +517,7 @@ def main():
     if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
     if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,
                                      args.resolution_scale,args.full_rate_mirror,args.look,
-                                     args.shadow_workaround)
+                                     args.shadow_workaround,args.quality)
     if args.action=='warmcache': warm_cache(root)
     if args.action=='profbuild': build_profiling(root,fxc,args.jobs)
 
