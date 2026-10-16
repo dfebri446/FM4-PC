@@ -317,9 +317,10 @@ LOOK_KNOBS={'sharpen':'FM4_LOOK_SHARPEN','bloom':'FM4_LOOK_BLOOM','exposure':'FM
 # Knobs that take a name instead of a number.
 LOOK_NAMES={'tonemap':{'filmic':0,'gt':1,'aces':2,'neutral':3}}
 # Named looks; a -Look value may mix them with knobs ('pc,sharpen=0.6': later items win).
-# original runs without any shader mod.
-LOOK_PRESETS={'pc':'tonemap=aces,saturation=1.1,bloom=0.7,sharpen=0.4,clearcoat=1,flakes=0.5',
-              'aces':'tonemap=aces','gt':'tonemap=gt','neutral':'tonemap=neutral','original':''}
+# Every look but original has the car paint clear coat; original runs without any shader mod.
+LOOK_PRESETS={'pc':'tonemap=aces,saturation=1.1,bloom=0.7,sharpen=0.4,clearcoat=1',
+              'aces':'tonemap=aces,clearcoat=1','gt':'tonemap=gt,clearcoat=1',
+              'neutral':'tonemap=neutral,clearcoat=1','original':''}
 DEFAULT_LOOK='pc'
 
 # Render quality of races (FM4_RACE_SETTINGS, fm4-render-overrides.cpp: controls of the race

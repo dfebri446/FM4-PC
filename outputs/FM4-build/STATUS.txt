@@ -826,12 +826,18 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   lunak, pantulan cube lingkungan di sudut miring (Schlick, F0 0,04) dan
   flake metalik, dalam bayangan cat itu sendiri dan sebelum kabut game.
   Kenop -Look clearcoat, clearcoat_roughness, clearcoat_glint, flakes,
-  flake_scale; preset pc memakai setelan A (roughness 0,3, glint 4, flakes
-  0,5), dipilih dari tiga run A/B balapan (B: roughness 0,25, glint 8 memberi
-  gumpalan putih di atap; C: 0,35, glint 2 hampir tidak terlihat). Scene
-  dibekukan dengan rewind (Y) untuk A/B di frame yang sama: kilap pantulan
-  langit di atap dan bagasi (kamera chase) dan di tepi fender (kamera hood);
-  flake tidak terlihat di 720p pada dua posisi itu. Mod dikompilasi di game
+  flake_scale; preset pc, aces, gt dan neutral memakai setelan A
+  (clearcoat=1, roughness 0,3, glint 4; original tetap tanpa mod), dipilih
+  dari tiga run A/B balapan (B: roughness 0,25, glint 8
+  memberi gumpalan putih di atap; C: 0,35, glint 2 hampir tidak terlihat).
+  Scene dibekukan dengan rewind (Y) untuk A/B di frame yang sama: kilap
+  pantulan langit di atap dan bagasi (kamera chase) dan di tepi fender
+  (kamera hood). Flake tidak dipakai preset mana pun: run debug (fade, sel
+  dan kilau sebagai warna) menunjukkan sel flake lebih kecil dari piksel di
+  kamera chase (dipudarkan habis) dan 3-5 piksel di kap kamera hood tanpa
+  satu pun flake masuk lobe sempitnya (roughness 0,1, miring maks. 19
+  derajat). Model flake perlu LOD sel menurut footprint dan banyak flake
+  per sel sebelum berguna. Mod dikompilasi di game
   dalam 2,4 detik (peringatan FXC X4000 dari xe_cube). Gate smoke 240 Hz
   (paintpc, banding qhigh): 3/3, race photo 214 fps dan karier 213 fps, GPU
   fase race 2,72-2,79 ms (qhigh 2,83-2,88), replay dan photo mode 30 fps,

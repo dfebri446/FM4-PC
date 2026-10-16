@@ -127,9 +127,10 @@ Optional actions for performance work:
   original code hooked into the HLSL that the runtime generates from the
   game's post-processing and car body paint shaders; e2e/README.txt, "Shader
   overrides"). The default is the pc preset: tonemap=aces, saturation=1.1,
-  bloom=0.7, sharpen=0.4, clearcoat=1, flakes=0.5. aces, gt and neutral set
-  the tone curve alone, original runs without mods (the game's own look),
-  and knobs after a preset change it, for example -Look "pc,sharpen=0.6".
+  bloom=0.7, sharpen=0.4, clearcoat=1. aces, gt and neutral set the tone
+  curve alone with the clear coat, original runs without mods (the game's
+  own look), and knobs after a preset change it, for example -Look
+  "pc,sharpen=0.6" or "aces,clearcoat=0".
   Knobs: tonemap (filmic, gt, aces, neutral), sharpen, bloom, exposure,
   contrast, saturation, vignette, motion_blur; car paint (fm4-paint.hlsli):
   clearcoat, clearcoat_roughness (0.3), clearcoat_glint (4), flakes,

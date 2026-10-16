@@ -415,10 +415,11 @@ gets a clear coat from fm4-paint.hlsli: clearcoat=1 adds a GGX highlight of
 the sun, soft limited by clearcoat_glint (in units of the sun's diffuse
 light; default 4, roughness 0.3), and the environment cube at grazing
 angles, in the paint's own shadow; flakes=0...1 adds metallic flakes
-(flake_scale cells per unit of the paint UV). Presets name sets of knobs and
-mix with them, later items winning: pc (tonemap=aces, saturation=1.1,
-bloom=0.7, sharpen=0.4, clearcoat=1, flakes=0.5), aces, gt, neutral, and
-original, which runs without mods. The launcher and e2e.py use pc unless
+(flake_scale cells per unit of the paint UV; no preset uses them, as in races
+they do not show, see fm4-paint.hlsli). Presets name sets of knobs and mix
+with them, later items winning: pc (tonemap=aces, saturation=1.1,
+bloom=0.7, sharpen=0.4, clearcoat=1), aces, gt and neutral (the tone curve
+and clearcoat=1), and original, which runs without mods. The launcher and e2e.py use pc unless
 -Look/--look says otherwise, so the gates run with it; --look original
 compares with the game's own look.
 

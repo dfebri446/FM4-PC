@@ -98,7 +98,10 @@ float3 fm4_random3(uint3 v) {
 // each with its normal tilted at random, glinting where it mirrors the sun.
 // Cells smaller than a pixel fade out, so distant paint does not sparkle in
 // noise (flakes show from up close, as on a real car). The result is in units
-// of the sun's diffuse light, like the clear coat highlight.
+// of the sun's diffuse light, like the clear coat highlight. In races they do
+// not show: from the chase camera the cells are smaller than a pixel (faded
+// out), and on the hood (cells of 3-5 pixels) no flake met the narrow lobe,
+// which only the paint near the sun's mirror direction can.
 float fm4_flakes(float3 n, float3 v, float3 l, float2 uv) {
   float2 cell = uv * FM4_LOOK_FLAKE_SCALE;
   float2 footprint = fwidth(cell);
