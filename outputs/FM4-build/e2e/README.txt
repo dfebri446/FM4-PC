@@ -410,9 +410,15 @@ motion_blur=0.5,exposure=0,tonemap=aces" (pipeline.py and e2e.py --look) copies
 them to <BuildRoot>\look and sets the knobs; knobs left out keep the original
 look. tonemap=gt|aces|neutral replaces the game's filmic curve before its
 color grading LUT, with middle gray where the game puts it (filmic: the
-original). Presets name sets of knobs and mix with them, later items winning:
-pc (tonemap=aces, saturation=1.1, bloom=0.7, sharpen=0.4), aces, gt, neutral,
-and original, which runs without mods. The launcher and e2e.py use pc unless
+original). The car body paint shader (B85EF04779ABD438, MATERIAL-ATLAS.txt)
+gets a clear coat from fm4-paint.hlsli: clearcoat=1 adds a GGX highlight of
+the sun, soft limited by clearcoat_glint (in units of the sun's diffuse
+light; default 4, roughness 0.3), and the environment cube at grazing
+angles, in the paint's own shadow; flakes=0...1 adds metallic flakes
+(flake_scale cells per unit of the paint UV). Presets name sets of knobs and
+mix with them, later items winning: pc (tonemap=aces, saturation=1.1,
+bloom=0.7, sharpen=0.4, clearcoat=1, flakes=0.5), aces, gt, neutral, and
+original, which runs without mods. The launcher and e2e.py use pc unless
 -Look/--look says otherwise, so the gates run with it; --look original
 compares with the game's own look.
 
@@ -426,7 +432,13 @@ are identical if the override renders exactly like the translation.
   python outputs\FM4-build\e2e\override_ab.py <dir> --period-ms 5000 --diff <dir>\ab-diff.png
 
 With 5000 ms and captures every 2 s, each phase has same-phase pairs; photo mode
-after the photo is taken (the SAVE/EXIT screen) is static for about 30 s.
+after the photo is taken (the SAVE/EXIT screen) is static for about 30 s, but
+it shows the scene it rendered once, so only post-processing changes there.
+For the scene shaders (car paint, track) freeze a race with Y (rewind) on the
+camera to compare: the title keeps rendering the frozen scene every frame
+(GPU 2.4 ms a frame at 60 fps) under only a small hint bar, until A resumes;
+same-phase captures are identical. The pause menu (Start) also keeps
+rendering, but blurs and covers the scene.
 
 Runtime development loop
 ------------------------

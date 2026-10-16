@@ -309,12 +309,16 @@ def build_profiling(root,fxc,jobs):
 LOOK_KNOBS={'sharpen':'FM4_LOOK_SHARPEN','bloom':'FM4_LOOK_BLOOM','exposure':'FM4_LOOK_EXPOSURE',
             'contrast':'FM4_LOOK_CONTRAST','saturation':'FM4_LOOK_SATURATION',
             'vignette':'FM4_LOOK_VIGNETTE','motion_blur':'FM4_LOOK_MOTION_BLUR',
-            'tonemap':'FM4_LOOK_TONEMAP'}
+            'tonemap':'FM4_LOOK_TONEMAP',
+            # Car paint (work/fm4-rex/look/fm4-paint.hlsli).
+            'clearcoat':'FM4_LOOK_CLEARCOAT','clearcoat_roughness':'FM4_LOOK_CLEARCOAT_ROUGHNESS',
+            'clearcoat_glint':'FM4_LOOK_CLEARCOAT_GLINT','flakes':'FM4_LOOK_FLAKES',
+            'flake_scale':'FM4_LOOK_FLAKE_SCALE'}
 # Knobs that take a name instead of a number.
 LOOK_NAMES={'tonemap':{'filmic':0,'gt':1,'aces':2,'neutral':3}}
 # Named looks; a -Look value may mix them with knobs ('pc,sharpen=0.6': later items win).
 # original runs without any shader mod.
-LOOK_PRESETS={'pc':'tonemap=aces,saturation=1.1,bloom=0.7,sharpen=0.4',
+LOOK_PRESETS={'pc':'tonemap=aces,saturation=1.1,bloom=0.7,sharpen=0.4,clearcoat=1,flakes=0.5',
               'aces':'tonemap=aces','gt':'tonemap=gt','neutral':'tonemap=neutral','original':''}
 DEFAULT_LOOK='pc'
 

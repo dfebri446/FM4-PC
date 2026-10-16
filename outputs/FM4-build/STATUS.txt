@@ -820,6 +820,22 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   60,0 fps, GPU 2,4 / 2,7 / 3,1 ms. Gate smoke dengan high (qhigh, banding
   lookpc): 3/3, karier race 216 fps, replay 30 fps, photo mode 30 fps, muat
   foto lolos, tanpa frame warna clear.
+- Clearcoat cat mobil (17 Oktober 2026): mod shader cat bodi B85EF04779ABD438
+  (MATERIAL-ATLAS.txt, diverifikasi dengan run warna palsu) di
+  work/fm4-rex/look/fm4-paint.hlsli menambah kilau matahari GGX dengan batas
+  lunak, pantulan cube lingkungan di sudut miring (Schlick, F0 0,04) dan
+  flake metalik, dalam bayangan cat itu sendiri dan sebelum kabut game.
+  Kenop -Look clearcoat, clearcoat_roughness, clearcoat_glint, flakes,
+  flake_scale; preset pc memakai setelan A (roughness 0,3, glint 4, flakes
+  0,5), dipilih dari tiga run A/B balapan (B: roughness 0,25, glint 8 memberi
+  gumpalan putih di atap; C: 0,35, glint 2 hampir tidak terlihat). Scene
+  dibekukan dengan rewind (Y) untuk A/B di frame yang sama: kilap pantulan
+  langit di atap dan bagasi (kamera chase) dan di tepi fender (kamera hood);
+  flake tidak terlihat di 720p pada dua posisi itu. Mod dikompilasi di game
+  dalam 2,4 detik (peringatan FXC X4000 dari xe_cube). Gate smoke 240 Hz
+  (paintpc, banding qhigh): 3/3, race photo 214 fps dan karier 213 fps, GPU
+  fase race 2,72-2,79 ms (qhigh 2,83-2,88), replay dan photo mode 30 fps,
+  tanpa frame warna clear; compare hanya WARN statistik capture.
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 

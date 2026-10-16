@@ -66,10 +66,12 @@
 !/outputs/FM4-source-control/tracked-files.json
 !/work/fm4-rex/CMakeLists.txt
 !/work/fm4-rex/look/fm4-look.hlsli
+!/work/fm4-rex/look/fm4-paint.hlsli
 !/work/fm4-rex/look/shader_30B67D8B86C37587.mod.hlsli
 !/work/fm4-rex/look/shader_4746CAD32EF168CF.mod.hlsli
 !/work/fm4-rex/look/shader_9CDA139F232A8A73.mod.hlsli
 !/work/fm4-rex/look/shader_AE3B2E36FCA4958D.mod.hlsli
+!/work/fm4-rex/look/shader_B85EF04779ABD438.mod.hlsli
 !/work/fm4-rex/look/shader_E97AA211B556A9B3.mod.hlsli
 !/work/fm4-rex/observe-frame.py
 !/work/fm4-rex/send-input.py

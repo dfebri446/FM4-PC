@@ -125,14 +125,16 @@ Optional actions for performance work:
   for 60-120 Hz.
 - run -Look <presets and knobs> sets the look mods (work/fm4-rex/look,
   original code hooked into the HLSL that the runtime generates from the
-  game's post-processing shaders; e2e/README.txt, "Shader overrides"). The
-  default is the pc preset: tonemap=aces, saturation=1.1, bloom=0.7,
-  sharpen=0.4. aces, gt and neutral set the tone curve alone, original runs
-  without mods (the game's own look), and knobs after a preset change it,
-  for example -Look "pc,sharpen=0.6". Knobs: tonemap (filmic, gt, aces,
-  neutral), sharpen, bloom, exposure, contrast, saturation, vignette,
-  motion_blur. The five shaders compile with FXC when first drawn (80-940
-  ms each).
+  game's post-processing and car body paint shaders; e2e/README.txt, "Shader
+  overrides"). The default is the pc preset: tonemap=aces, saturation=1.1,
+  bloom=0.7, sharpen=0.4, clearcoat=1, flakes=0.5. aces, gt and neutral set
+  the tone curve alone, original runs without mods (the game's own look),
+  and knobs after a preset change it, for example -Look "pc,sharpen=0.6".
+  Knobs: tonemap (filmic, gt, aces, neutral), sharpen, bloom, exposure,
+  contrast, saturation, vignette, motion_blur; car paint (fm4-paint.hlsli):
+  clearcoat, clearcoat_roughness (0.3), clearcoat_glint (4), flakes,
+  flake_scale (1200). The six shaders compile with FXC when first drawn
+  (80-940 ms each, the paint 2.4 s).
 - run -Rov uses the earlier pixel shader interlock render target path
   (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
   Quick Race 60.0 fps, GPU about 7.1 ms a frame (2.5 on the default path).

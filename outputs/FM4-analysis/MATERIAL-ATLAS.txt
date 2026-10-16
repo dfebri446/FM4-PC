@@ -77,13 +77,26 @@ tanpa env cube, 46CB671D893E6709, AB9B5568DBC34C8F, 74FE953B234A69E6) dan
 velg memakai blok register yang mirip (c80 ke atas per material, c40-c60
 bersama).
 
+VERIFIKASI WARNA PALSU (16 Oktober 2026)
+---------------------------------------
+Mod yang mewarnai keluaran tiap hash kandidat dengan warna berbeda, di Quick
+Race dengan siklus kamera (photo mode menampilkan buffer adegan yang sudah
+dirender):
+- Mobil: B85EF04779ABD438 menutup bodi semua mobil (di depan dan di spion),
+  E62CFDF09D758B6C jendela, AF6AA26032BC613D ujung knalpot dan spion.
+  46CB671D893E6709 hanya trim kecil di bumper. E5B1A71249D0CA9A (jumlah
+  draw hampir sama dengan B85E, tanpa env cube) tidak pernah terlihat di
+  layar: kemungkinan cat di render peta pantulan. AB9B5568DBC34C8F dan
+  74FE953B234A69E6 tidak terlihat.
+- Lintasan: aspal, marka, run-off, tepi jalan, langit, pohon, gunung salju,
+  tribun dan pembatas cocok dengan kelasnya.
+Mod clearcoat untuk B85E ada di work/fm4-rex/look (fm4-paint.hlsli; -Look
+clearcoat=..., bawaan preset pc).
+
 BELUM DIVERIFIKASI
 ------------------
-- Kelas mobil dari nama konstanta adalah dugaan; perlu run "warna palsu"
-  (mod yang mewarnai keluaran tiap hash kandidat dengan warna berbeda, di
-  balapan karena photo mode menampilkan buffer adegan yang sudah dirender).
-  Terutama 248CBDF02EEBD66F (10% draw, TrackGeoShadow*, dari shaders_16car)
-  dan A4A965C189287B99 (tanpa sumber, point/rect).
+- 248CBDF02EEBD66F (10% draw, TrackGeoShadow*, dari shaders_16car) dan
+  A4A965C189287B99 (tanpa sumber, point/rect).
 - Nama teknik efek mobil (body, chrome, glass, window, carbon_fiber,
   cockpit_*, ...) ada di .fxobj, tetapi pemetaan teknik -> container belum
   dibaca (format efek belum diurai).
