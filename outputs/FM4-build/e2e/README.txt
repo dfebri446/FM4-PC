@@ -407,7 +407,11 @@ motion_blur=0.5,exposure=0,tonemap=aces" (pipeline.py and e2e.py --look) copies
 them to <BuildRoot>\look and sets the knobs; knobs left out keep the original
 look. tonemap=gt|aces|neutral replaces the game's filmic curve before its
 color grading LUT, with middle gray where the game puts it (filmic: the
-original).
+original). Presets name sets of knobs and mix with them, later items winning:
+pc (tonemap=aces, saturation=1.1, bloom=0.7, sharpen=0.4), aces, gt, neutral,
+and original, which runs without mods. The launcher and e2e.py use pc unless
+-Look/--look says otherwise, so the gates run with it; --look original
+compares with the game's own look.
 
 --arg shader_override_ab_ms=<N> draws with the DXBC translations instead of the
 overrides in every other period of N ms of the steady clock, so one static scene

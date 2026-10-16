@@ -103,6 +103,16 @@ Optional actions for performance work:
   with the wheels apart instead of soft ones) for about 0.2-0.4 ms of GPU a
   frame. Xenia needed it against square shadows; captures of every race
   camera on this runtime show none.
+- run -Look <presets and knobs> sets the look mods (work/fm4-rex/look,
+  original code hooked into the HLSL that the runtime generates from the
+  game's post-processing shaders; e2e/README.txt, "Shader overrides"). The
+  default is the pc preset: tonemap=aces, saturation=1.1, bloom=0.7,
+  sharpen=0.4. aces, gt and neutral set the tone curve alone, original runs
+  without mods (the game's own look), and knobs after a preset change it,
+  for example -Look "pc,sharpen=0.6". Knobs: tonemap (filmic, gt, aces,
+  neutral), sharpen, bloom, exposure, contrast, saturation, vignette,
+  motion_blur. The five shaders compile with FXC when first drawn (80-940
+  ms each).
 - run -Rov uses the earlier pixel shader interlock render target path
   (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
   Quick Race 60.0 fps, GPU about 7.1 ms a frame (2.5 on the default path).
@@ -146,6 +156,7 @@ What happens
    title's shadow map with every camera; -ShadowWorkaround skips it outside
    the cockpit (SkipShadowMapUnlessCockpit, as the title's split screen does),
    the xenia-canary/game-patches#398 workaround this runtime no longer needs.
+   The post-processing uses the pc look (see -Look).
    Rendering uses the host render target path (render_target_path_d3d12=rtv with
    edram_single_rt_no_wrap=true): GPU about 2.5 ms a race frame instead of
    about 7 on the pixel shader interlock path, a stable 60 fps in Quick Race. Guest

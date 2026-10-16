@@ -312,14 +312,31 @@ LOOK_KNOBS={'sharpen':'FM4_LOOK_SHARPEN','bloom':'FM4_LOOK_BLOOM','exposure':'FM
             'tonemap':'FM4_LOOK_TONEMAP'}
 # Knobs that take a name instead of a number.
 LOOK_NAMES={'tonemap':{'filmic':0,'gt':1,'aces':2,'neutral':3}}
+# Named looks; a -Look value may mix them with knobs ('pc,sharpen=0.6': later items win).
+# original runs without any shader mod.
+LOOK_PRESETS={'pc':'tonemap=aces,saturation=1.1,bloom=0.7,sharpen=0.4',
+              'aces':'tonemap=aces','gt':'tonemap=gt','neutral':'tonemap=neutral','original':''}
+DEFAULT_LOOK='pc'
 
 def look_cvars(root,look):
     """Cvars of the look mods (work/fm4-rex/look/fm4-look.hlsli): copies them to BuildRoot/look
-    and passes the knobs, 'sharpen=0.5,bloom=0.8,tonemap=aces' (unnamed knobs keep the original
-    look)."""
-    defines=[]
+    and passes the knobs of 'pc', 'sharpen=0.5,bloom=0.8,tonemap=aces' or both (knobs left out
+    keep the original look). None of them ('original'): no mods at all."""
+    knobs={}
     for item in filter(None,(part.strip() for part in look.split(','))):
+        if '=' not in item:
+            if item not in LOOK_PRESETS:
+                raise RuntimeError(f'Unknown look {item!r}; use {", ".join(LOOK_PRESETS)} or knobs.')
+            if item=='original':
+                knobs.clear()
+            knobs.update(part.split('=',1) for part in filter(None,LOOK_PRESETS[item].split(',')))
+            continue
         name,_,value=item.partition('=')
+        knobs[name]=value
+    if not knobs:
+        return {}
+    defines=[]
+    for name,value in knobs.items():
         if name not in LOOK_KNOBS:
             raise RuntimeError(f'Unknown look knob {name!r}; use {", ".join(LOOK_KNOBS)}.')
         names=LOOK_NAMES.get(name,{})
@@ -377,10 +394,9 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
         # The title scales its time step, so the race clock stays real time.
         cvars['video_mode_refresh_rate']=str(frame_rate)
         env['FM4_FRAME_RATE']=str(frame_rate)
-    if look:
-        # Shader mods on the game's post-processing (sharpening, bloom, exposure,
-        # contrast, saturation, vignette, motion blur).
-        cvars.update(look_cvars(root,look))
+    # Shader mods on the game's post-processing (tone curve, sharpening, bloom, exposure,
+    # contrast, saturation, vignette, motion blur): the pc look unless -Look says otherwise.
+    cvars.update(look_cvars(root,DEFAULT_LOOK if look is None else look))
     if disc2:
         env['FM4_DISC2_ROOT']=str(disc2)
     args=[root/'game-build/fm4_rex.exe']+[f'--{k}={v}' for k,v in cvars.items()]
@@ -447,8 +463,10 @@ def main():
     parser.add_argument('--rov',action='store_true',
                         help='run: the slower pixel shader interlock render target path instead of RTV')
     parser.add_argument('--look',
-                        help='run: post-processing changes, for example "sharpen=0.5,bloom=0.8" '
-                             '(knobs: '+', '.join(LOOK_KNOBS)+'; work/fm4-rex/look/fm4-look.hlsli)')
+                        help='run: post-processing look, a preset ('+', '.join(LOOK_PRESETS)+
+                             '; default '+DEFAULT_LOOK+') and/or knobs, for example '
+                             '"pc,sharpen=0.6" (knobs: '+', '.join(LOOK_KNOBS)+
+                             '; work/fm4-rex/look/fm4-look.hlsli)')
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
     args=parser.parse_args()
     root=args.build_root.resolve()

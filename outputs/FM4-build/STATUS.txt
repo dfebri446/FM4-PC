@@ -1,8 +1,9 @@
 STATUS FM4 RECOMPILATION - 16 Oktober 2026
 ========================================
-Kode terakhir: f322fc9 (mod tampilan B4, opt-in). Default launcher baru
-(tanpa workaround bayangan, anisotropic 16x) lolos gate smoke 16 Oktober 2026. Verifikasi build bersih: d1fa29a (13 Oktober 2026,
-verification.json) dan runtime milik proyek (14 Oktober 2026, di bawah).
+Kode terakhir: 06ddcd6 (kurva tonemap B4). Default launcher baru (tanpa
+workaround bayangan, anisotropic 16x, look pc) lolos gate smoke 16 Oktober
+2026. Verifikasi build bersih: d1fa29a (13 Oktober 2026, verification.json)
+dan runtime milik proyek (14 Oktober 2026, di bawah).
 
 Tahap saat ini: build eksperimental yang menjalankan Quick Race, mode foto dan
 balapan karier sampai hadiah pada binary terbaru (diuji otomatis lewat e2e).
@@ -791,7 +792,14 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   6,4 untuk ACES dengan saturation 1,1, bloom 0,7 dan sharpen 0,4. ACES
   menggelapkan bayangan (pohon, ban, aspal) dan menyisakan gradasi di salju;
   GT dan neutral lebih dekat ke asli. Perubahannya halus karena kurva game
-  sudah filmic; preset belum dipilih.
+  sudah filmic.
+- Look bawaan (16 Oktober 2026): launcher dan e2e.py memakai preset pc
+  (tonemap=aces, saturation=1.1, bloom=0.7, sharpen=0.4); preset aces, gt,
+  neutral dan original (tanpa mod, tampilan asli FM4) tetap tersedia, dan
+  kenop setelah preset mengubahnya (-Look "pc,sharpen=0.6"). Gate smoke 240
+  Hz dengan pc (lookpc, banding vrr30): 3/3, race 227-228 fps p99 5,6-5,9
+  ms, photo mode 30 fps, replay 30 fps; kelima mod dikompilasi di setiap sel,
+  tanpa frame warna clear; compare hanya WARN statistik capture.
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 
