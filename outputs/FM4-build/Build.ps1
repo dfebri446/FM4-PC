@@ -12,7 +12,11 @@ param(
     [switch]$Rov,
     [switch]$FullRateMirror,
     [switch]$ShadowWorkaround,
-    [ValidateRange(1,3)][int]$ResolutionScale = 1,
+    [ValidateSet('native','720p','1080p','1440p','4k')][string]$Display,
+    [switch]$Fullscreen,
+    [switch]$Supersample,
+    [switch]$Info,
+    [ValidateRange(1,4)][int]$ResolutionScale,
     [ValidateRange(30,240)][int]$FrameRate,
     [string]$Look,
     [ValidateSet('xbox','high','ultra')][string]$Quality
@@ -36,7 +40,11 @@ if ($FixedVblank) { $arguments += @('--fixed-vblank') }
 if ($Rov) { $arguments += @('--rov') }
 if ($FullRateMirror) { $arguments += @('--full-rate-mirror') }
 if ($ShadowWorkaround) { $arguments += @('--shadow-workaround') }
-if ($ResolutionScale -gt 1) { $arguments += @('--resolution-scale', "$ResolutionScale") }
+if ($Display) { $arguments += @('--display', $Display) }
+if ($Fullscreen) { $arguments += @('--fullscreen') }
+if ($Supersample) { $arguments += @('--supersample') }
+if ($Info) { $arguments += @('--info') }
+if ($ResolutionScale) { $arguments += @('--resolution-scale', "$ResolutionScale") }
 if ($FrameRate) { $arguments += @('--frame-rate', "$FrameRate") }
 if ($Look) { $arguments += @('--look', $Look) }
 if ($Quality) { $arguments += @('--quality', $Quality) }

@@ -81,6 +81,25 @@ Optional actions for performance work:
   fps, frame p99 8.8-9.8 ms; every frame is fully rendered. At 240 races run
   at 220-235 fps (p99 5.3-6.2 ms), set by the command processor (about 4.3 ms
   a race frame; GPU about 2.2 ms). 30-240 accepted.
+- run -Display native|720p|1080p|1440p|4k sets the screen and the render
+  scale. native, the default, is borderless fullscreen on the primary
+  monitor; the sizes are a window of that many pixels (fullscreen with
+  -Fullscreen, or when it does not fit the monitor; window sizes account for
+  the Windows display scale). The render scale is the smallest whole
+  multiple of 1280x720 that covers the 16:9 picture of that screen: 720p 1x,
+  1080p, 1440p and 2560x1600 2x, 4k 3x. -Supersample renders one scale above
+  (up to 4x) and -ResolutionScale 1-4 sets it. When the render is larger
+  than the window, the presenter averages it over each screen pixel in
+  linear light (work/runtime/src/ui/shaders/guest_output_area.ps.hlsl,
+  present_area_downscale=false for the earlier single bilinear tap), so 2x
+  on a 1080p screen is supersampling rather than a shrink that skips
+  texels. -Display 720p is the earlier default (1x in a 1280x720 window).
+- run -Info shows the settings overlay at start (F2 toggles it in any run):
+  the display and render scale, race quality, look and its knobs, shadows,
+  anisotropic filtering, race frame rate and pacing, mirror rate, render
+  target path, window size and present rate, as the launcher set them up
+  (pipeline.py info_overlay, FM4_INFO; work/fm4-rex/src/fm4-info-overlay.h).
+  The presenter draws it over the guest output, so captures never show it.
 - run -ResolutionScale 2 renders at 2560x1440 and -ResolutionScale 3 at
   3840x2160 instead of 1280x720 (draw_resolution_scale_x/y; CPU readbacks of
   resolves are downscaled). Quick Race: 59.7 fps with GPU about 3.7 ms a
@@ -88,7 +107,8 @@ Optional actions for performance work:
   The smoke gate at 2 (240 Hz) passes: races 202-206 fps, photo mode 30 fps
   (GPU 7.5 ms), saving and loading a photo, and a career race with its
   replay at 30 fps (GPU 8.2 ms). The replay used to drop to 23.5 fps after a
-  long frame: see -FixedVblank. 3 has not been through the gates.
+  long frame: see -FixedVblank. These numbers predate -Quality high and the
+  clear coat.
 - run -FullRateMirror renders the rear-view mirror every frame. By default
   every race renders it every other frame, as the title itself does for 12 and
   16 car races (HalfRateMirror in the race render scenarios; 1 and 8 car races

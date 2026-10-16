@@ -724,6 +724,10 @@ def run_once(options, out):
         env['FM4_RACE_SETTINGS'] = settings
     # Diagnostic variables, e.g. REX_RESOLVE_PUBLICATION_TRACE=<path>.
     env.update(item.split('=', 1) for item in options.env)
+    # The settings overlay at start (the presenter draws it: never in the captures); --env
+    # FM4_INFO_SHOW=0 hides it.
+    env['FM4_INFO'] = pipeline.info_overlay(args, env, look, options.quality or pipeline.DEFAULT_QUALITY)
+    env.setdefault('FM4_INFO_SHOW', '1')
     # With --goal, --steps run after the goal is reached (e.g. looking around in the race).
     if options.steps in STEP_PRESETS:
         steps = STEP_PRESETS[options.steps]

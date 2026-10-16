@@ -7,9 +7,11 @@
 #include <rex/rex_app.h>
 #include <cstdlib>
 #include "fm4-frame-capture.h"
+#include "fm4-info-overlay.h"
 #include "fm4-test-input.h"
 #include <rex/input/input_system.h>
 #include <rex/cvar.h>
+#include <rex/ui/keybinds.h>
 
 void FM4InstallCrashDiagnostics();
 void FM4InstallDisc2(rex::Runtime*);
@@ -65,7 +67,40 @@ class Fm4RexApp : public rex::ReXApp {
     }
   }
 
+  void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
+    // The settings overlay (fm4-info-overlay.h): F2, shown at start with FM4_INFO_SHOW=1.
+    info_lines_ = FM4InfoLines();
+    if (info_lines_.empty()) return;
+    const char* show = std::getenv("FM4_INFO_SHOW");
+    if (show && *show == '1') {
+      info_overlay_ =
+          std::make_unique<FM4InfoOverlay>(drawer, window(), guest_frames(), info_lines_);
+    }
+    rex::ui::RegisterBind("bind_fm4_info", "F2", "Toggle the FM4 settings overlay",
+                          [this, drawer] {
+                            if (info_overlay_) {
+                              info_overlay_.reset();
+                            } else {
+                              info_overlay_ =
+                                  std::make_unique<FM4InfoOverlay>(drawer, window(), guest_frames(),
+                                                                 info_lines_);
+                            }
+                          });
+  }
+
+  // The guest frames so far, for the settings overlay's frame rate (0 before the presenter).
+  std::function<uint64_t()> guest_frames() const {
+    return [this]() -> uint64_t {
+      auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
+      auto* presenter = graphics ? graphics->presenter() : nullptr;
+      return presenter ? presenter->GetGuestOutputRefreshCount() : 0;
+    };
+  }
+
   void OnShutdown() override {
+    // Before the runtime destroys the ImGui drawer.
+    if (!info_lines_.empty()) rex::ui::UnregisterBind("bind_fm4_info");
+    info_overlay_.reset();
     capture_thread_.request_stop();
     if (capture_thread_.joinable()) capture_thread_.join();
   }
@@ -84,4 +119,6 @@ class Fm4RexApp : public rex::ReXApp {
   // void OnConfigurePaths(rex::PathConfig& paths) override {}
  private:
   std::jthread capture_thread_;
+  std::vector<std::string> info_lines_;
+  std::unique_ptr<FM4InfoOverlay> info_overlay_;
 };

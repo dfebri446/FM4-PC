@@ -83,6 +83,7 @@
 !/work/fm4-rex/src/fm4-fiber-hooks.cpp
 !/work/fm4-rex/src/fm4-frame-capture.h
 !/work/fm4-rex/src/fm4-gpu-probe.cpp
+!/work/fm4-rex/src/fm4-info-overlay.h
 !/work/fm4-rex/src/fm4-instruction-fixes.h
 !/work/fm4-rex/src/fm4-jpeg-diagnostics.cpp
 !/work/fm4-rex/src/fm4-render-overrides.cpp

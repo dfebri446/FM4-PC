@@ -281,6 +281,10 @@
       "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
     },
     {
+      "path": "work/fm4-rex/src/fm4-info-overlay.h",
+      "provenance": "Original integration source; ImGui settings overlay, no game function bodies"
+    },
+    {
       "path": "work/fm4-rex/src/fm4-instruction-fixes.h",
       "provenance": "Reviewed integration/helper source; SDK-derived portions retain upstream notice"
     },
@@ -3543,6 +3547,10 @@
     },
     {
       "path": "work/runtime/src/ui/shaders/bytecode/d3d12_5_1/immediate_vs.h",
+      "provenance": "runtime-fork"
+    },
+    {
+      "path": "work/runtime/src/ui/shaders/guest_output_area.ps.hlsl",
       "provenance": "runtime-fork"
     },
     {

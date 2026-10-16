@@ -33,10 +33,18 @@
 REXCVAR_DEFINE_BOOL(d3d12_allow_variable_refresh_rate_and_tearing, true, "UI/D3D12",
                     "Allow variable refresh rate and tearing");
 
+// FM4 PC: guest output shrunk to the window (a render scale above the window
+// size) is averaged over each pixel's footprint instead of one bilinear tap.
+REXCVAR_DEFINE_BOOL(present_area_downscale, true, "UI/D3D12",
+                    "Average the guest output over each pixel's footprint when it is shrunk")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 namespace rex::ui::d3d12 {
 
 // Generated with `xb buildshaders`.
 namespace shaders {
+// FM4 PC: compiled from ui/shaders/guest_output_area.ps.hlsl by the build.
+#include "ui/shaders/bytecode/d3d12_5_1/guest_output_area_ps.h"
 #include "ui/shaders/bytecode/d3d12_5_1/guest_output_bilinear_dither_ps.h"
 #include "ui/shaders/bytecode/d3d12_5_1/guest_output_bilinear_ps.h"
 #if defined(REX_HAS_FIDELITYFX_SDK)
@@ -1353,9 +1361,15 @@ bool D3D12Presenter::InitializeSurfaceIndependent() {
     GuestOutputPaintEffect guest_output_paint_effect = GuestOutputPaintEffect(i);
     switch (guest_output_paint_effect) {
       case GuestOutputPaintEffect::kBilinear:
-        guest_output_paint_pipeline_desc.PS.pShaderBytecode = shaders::guest_output_bilinear_ps;
-        guest_output_paint_pipeline_desc.PS.BytecodeLength =
-            sizeof(shaders::guest_output_bilinear_ps);
+        if (REXCVAR_GET(present_area_downscale)) {
+          guest_output_paint_pipeline_desc.PS.pShaderBytecode = shaders::guest_output_area_ps;
+          guest_output_paint_pipeline_desc.PS.BytecodeLength =
+              sizeof(shaders::guest_output_area_ps);
+        } else {
+          guest_output_paint_pipeline_desc.PS.pShaderBytecode = shaders::guest_output_bilinear_ps;
+          guest_output_paint_pipeline_desc.PS.BytecodeLength =
+              sizeof(shaders::guest_output_bilinear_ps);
+        }
         break;
       case GuestOutputPaintEffect::kBilinearDither:
         guest_output_paint_pipeline_desc.PS.pShaderBytecode =

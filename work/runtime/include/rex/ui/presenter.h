@@ -362,6 +362,10 @@ class Presenter {
   // multiple at the same time, and it should acquire the latest guest output
   // image via ConsumeGuestOutput.
   virtual bool CaptureGuestOutput(RawImage& image_out) = 0;
+  // FM4 PC: guest output images refreshed so far (guest frames), for frame rate displays.
+  uint64_t GetGuestOutputRefreshCount() const {
+    return guest_output_refresh_count_.load(std::memory_order_relaxed);
+  }
   const GuestOutputPaintConfig& GetGuestOutputPaintConfigFromUIThread() const {
     return guest_output_paint_config_;
   }
@@ -976,6 +980,7 @@ class Presenter {
   // Accessible only by refreshing, whether the last refresh contained an image
   // rather than being blank.
   bool guest_output_active_last_refresh_ = false;
+  std::atomic<uint64_t> guest_output_refresh_count_{0};
 
   // Ordered by the Z order, and then by the time of addition.
   // Note: All the iteration logic involving this Z ordering must be the same as

@@ -567,6 +567,7 @@ bool Presenter::RefreshGuestOutput(
       return false;
     }
     guest_output_active_last_refresh_ = true;
+    guest_output_refresh_count_.fetch_add(1, std::memory_order_relaxed);
   } else {
     // Request presenting a blank image if there was a true image previously,
     // but not now.

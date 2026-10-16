@@ -842,6 +842,35 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   (paintpc, banding qhigh): 3/3, race photo 214 fps dan karier 213 fps, GPU
   fase race 2,72-2,79 ms (qhigh 2,83-2,88), replay dan photo mode 30 fps,
   tanpa frame warna clear; compare hanya WARN statistik capture.
+- Layar dan resolusi render (17 Oktober 2026): Build.ps1 -Display
+  native|720p|1080p|1440p|4k (bawaan native: layar penuh borderless di
+  monitor utama), -Fullscreen, -Supersample, -ResolutionScale 1-4. Skala
+  render = kelipatan bulat 1280x720 terkecil yang menutup gambar 16:9 di
+  layar itu (720p 1x, 1080p/1440p/2560x1600 2x, 4k 3x), satu tingkat lebih
+  dengan -Supersample; ukuran jendela memperhitungkan skala tampilan
+  Windows. Bila render lebih besar dari jendela, presenter memakai shader
+  baru guest_output_area.ps.hlsl (present_area_downscale, bawaan aktif):
+  rata-rata semua texel per piksel layar dalam cahaya linear (gamma 2,2)
+  alih-alih satu tap bilinear. Diverifikasi dengan potret jendela 1920x1080
+  pada render 2x di scene beku rewind: cocok dengan simulasi area (selisih
+  rata-rata 0,12-0,13 dari 255) dan bukan bilinear (0,71-4,02); batang
+  pagar jembatan tetap rata tebalnya, bilinear membuatnya putus-putus.
+  Layar penuh 2560x1600 pada 2x: gambar 2560x1440 1:1 dengan bar 80 piksel
+  di atas dan bawah. Gate smoke 240 Hz dengan high dan clearcoat (banding
+  vrr30x2, yang memakai kualitas xbox, sehingga compare FAIL hanya karena
+  fps): semua sel lolos, replay dan photo mode 30 fps, tanpa frame warna
+  clear; race 1x 213 fps (GPU 2,7 ms), 2x 177 fps (5,4 ms), 3x 109 fps
+  (8,9 ms), 4x 63-65 fps (15 ms, p99 21 ms; replay GPU 25,6 ms). 4x hanya
+  layak untuk 60 fps dengan cadangan GPU lebih besar dari komputer ini.
+- Overlay setelan (17 Oktober 2026): panel kecil di pojok kiri atas berisi
+  layar dan skala render, kualitas, look dan kenopnya, bayangan,
+  anisotropic, frame rate dan pacing balapan, spion, jalur render target,
+  A/B shader bila aktif, ukuran jendela dan fps game (jumlah refresh guest
+  output dari presenter, GetGuestOutputRefreshCount). Disusun pipeline.py
+  (info_overlay, FM4_INFO) dari cvar dan environment yang benar-benar
+  dikirim; digambar presenter (ImGui, fm4-info-overlay.h), jadi tidak masuk
+  capture e2e. e2e.py menampilkannya sejak awal, launcher dengan -Info; F2
+  menampilkan atau menyembunyikannya.
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 

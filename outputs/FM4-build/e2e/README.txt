@@ -8,6 +8,10 @@ Build.ps1 -Action run, drives the application-local diagnostic controller
 - a per-second performance trace (REX_PERF_TRACE_FILE, see below);
 - crash status and error counts from the runtime log;
 - summary.json with median FPS and GPU-thread stall times.
+The game window shows the settings overlay of the run (render scale, quality,
+look, shadows, frame rate, shader A/B, ...; pipeline.py info_overlay) from the
+start; the presenter draws it over the guest output, so the captures, OCR and
+compare.py never see it. --env FM4_INFO_SHOW=0 hides it, F2 toggles it.
 
 Results go to --out, which must be outside this repository: captures and logs
 show game content. Use a directory under the BuildRoot, for example
@@ -334,7 +338,11 @@ and <BuildRoot>\e2e\<name>.log keeps one line per cell. --scenarios, --hz and
 --repeat override the tier, --env and --arg pass to every cell (--arg
 draw_resolution_scale_x=2 --arg draw_resolution_scale_y=2 for a tier at 2x:
 ocr-server.ps1 averages captures above 720p down to 1280x720 first, so the
-menu highlight checks keep their 720p pixel distances). The photo race
+menu highlight checks keep their 720p pixel distances). Unlike the look and
+the race quality, e2e.py does not follow the launcher's -Display: it renders
+at 1x in a 1280x720 window unless --arg says otherwise, so the gates keep
+comparing with their baselines; the launcher's native resolution is 2x on
+1080p, 1440p and 2560x1600 monitors and 3x on 4K ones. The photo race
 phase replaces the quickrace scenario in the gates; quickrace stays for
 comparisons with older results. In the gates an AI driver drives the player's
 car (engageaionstart below; --human for the harness throttle), so each race

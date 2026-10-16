@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -133,25 +134,31 @@ def fetch_thirdparty(root):
     marker.write_text(json.dumps(wanted))
 
 def compile_resolve_shaders(root, fxc):
-    """FM4 resolve shaders and the scaled readback downscale shader -> DXBC headers; only
-    when their sources changed."""
+    """FM4 resolve shaders, the scaled readback downscale shader and the presenter's area
+    downscale shader -> DXBC headers; only when their sources changed."""
     source = root/'runtime-source'
     shaders = source/'src/graphics/shaders'
     shader_source = shaders/'fm4-resolve'
     downscale = shaders/'resolve_downscale.cs.hlsl'
+    area = source/'src/ui/shaders/guest_output_area.ps.hlsl'
     inputs = hashlib.sha256(b''.join(path.read_bytes() for path in
-                                     sorted(shader_source.glob('*.xesl*'))+[downscale]))
+                                     sorted(shader_source.glob('*.xesl*'))+[downscale,area]))
     marker = source/'.fm4-resolve-shaders'
     bytecode = shaders/'bytecode/d3d12_5_1'
+    area_output = source/'src/ui/shaders/bytecode/d3d12_5_1/guest_output_area_ps.h'
     outputs = [bytecode/f'{name}_cs.h' for name in RESOLVE_SHADERS]+[bytecode/'resolve_downscale_cs.h']
-    if marker.is_file() and marker.read_text() == inputs.hexdigest() and all(path.is_file() for path in outputs):
+    if (marker.is_file() and marker.read_text() == inputs.hexdigest() and
+            all(path.is_file() for path in outputs+[area_output])):
         return
-    flags = ['/T','cs_5_1','/O3','/Qstrip_reflect','/Qstrip_debug','/Qstrip_priv','/Gfp','/nologo']
+    strip = ['/O3','/Qstrip_reflect','/Qstrip_debug','/Qstrip_priv','/Gfp','/nologo']
+    flags = ['/T','cs_5_1',*strip]
     for name,output in zip(RESOLVE_SHADERS,outputs):
         run([fxc,'/D','SHADING_LANGUAGE_HLSL_XE=1',*flags,
              '/Fh',output,'/Vn',name+'_cs',shader_source/(name+'.cs.xesl')],log=root/f'logs/{name}.log')
     run([fxc,*flags,'/Fh',outputs[-1],'/Vn','resolve_downscale_cs',downscale],
         log=root/'logs/resolve_downscale.log')
+    run([fxc,'/T','ps_5_1',*strip,'/Fh',area_output,'/Vn','guest_output_area_ps',area],
+        log=root/'logs/guest_output_area.log')
     marker.write_text(inputs.hexdigest())
 
 def build_runtime(root, fxc, jobs):
@@ -379,8 +386,90 @@ def look_cvars(root,look):
         shutil.copyfile(path,directory/path.name)
     return {'shader_mod_path':directory,'shader_mod_defines':';'.join(defines)}
 
-def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,resolution_scale=1,
-           full_rate_mirror=False,look=None,shadow_workaround=False,quality=None):
+# Screens of -Display (16:9, as FM4's 1280x720); native is the primary monitor.
+DISPLAYS={'720p':(1280,720),'1080p':(1920,1080),'1440p':(2560,1440),'4k':(3840,2160)}
+DEFAULT_DISPLAY='native'
+MAX_RESOLUTION_SCALE=4
+
+def primary_monitor():
+    """Width and height in pixels and the DPI scale of the primary monitor."""
+    import ctypes
+    from ctypes import wintypes
+    user32,shcore=ctypes.windll.user32,ctypes.windll.shcore
+    # Per monitor DPI aware, so the sizes are in pixels rather than scaled ones.
+    shcore.SetProcessDpiAwareness(2)
+    width,height=user32.GetSystemMetrics(0),user32.GetSystemMetrics(1)
+    monitor=user32.MonitorFromPoint(wintypes.POINT(0,0),1)
+    dpi_x,dpi_y=wintypes.UINT(),wintypes.UINT()
+    if shcore.GetDpiForMonitor(monitor,0,ctypes.byref(dpi_x),ctypes.byref(dpi_y)):
+        return width,height,1.0
+    return width,height,dpi_x.value/96
+
+def display_settings(display=DEFAULT_DISPLAY,fullscreen=False,supersample=False,
+                     resolution_scale=None):
+    """Cvars of -Display and a description. native: borderless fullscreen on the primary
+    monitor; 720p, 1080p, 1440p, 4k: a window of that many pixels, or fullscreen with
+    -Fullscreen or when it does not fit the monitor. The render scale is the smallest whole
+    multiple of 1280x720 that covers the 16:9 picture of that screen (720p 1x, 1080p and 1440p
+    2x, 4k 3x; a 2560x1600 monitor 2x), one more with -Supersample (up to 4x), or
+    -ResolutionScale. The presenter fits the picture to the window, averaging the render
+    over each screen pixel when it is larger (present_area_downscale)."""
+    monitor_width,monitor_height,dpi=primary_monitor()
+    if display=='native':
+        width,height,fullscreen=monitor_width,monitor_height,True
+    else:
+        width,height=DISPLAYS[display]
+        # A window of the monitor's size or more does not fit beside its frame and the taskbar.
+        fullscreen=fullscreen or width>=monitor_width or height>=monitor_height
+    scale=resolution_scale or min(MAX_RESOLUTION_SCALE,
+                                  math.ceil(min(width/1280,height/720)-1e-6)+int(supersample))
+    cvars={'fullscreen':'true' if fullscreen else 'false'}
+    if not fullscreen:
+        # Window sizes are logical pixels: the runtime multiplies them by the DPI scale.
+        cvars.update(window_width=str(round(width/dpi)),window_height=str(round(height/dpi)))
+    if scale>1:
+        # Render targets and resolved textures at N times 1280x720 on both axes;
+        # CPU readbacks of resolves are downscaled.
+        cvars['draw_resolution_scale_x']=cvars['draw_resolution_scale_y']=str(scale)
+    screen=(f'fullscreen {monitor_width}x{monitor_height}' if fullscreen
+            else f'window {width}x{height}')
+    return cvars,f'Display {display}: {screen}, render {scale}x ({1280*scale}x{720*scale})'
+
+def info_overlay(cvars,env,look,quality,display=None):
+    """FM4_INFO, the lines of the settings overlay (work/fm4-rex/src/fm4-info-overlay.h): what
+    the cvars and environment of this run set up. display: the -Display description."""
+    scale=int(cvars.get('draw_resolution_scale_x','1'))
+    downscale='area' if cvars.get('present_area_downscale','true')=='true' else 'bilinear'
+    lines=[(display or f'Render {scale}x ({1280*scale}x{720*scale})')+f', {downscale} downscale']
+    tiling=', single tile with FXAA' if env.get('FM4_TILING_SCENARIO')=='2' else ''
+    lines.append(f'Quality: {quality}'+(" (the game's own)" if quality=='xbox' else '')+tiling)
+    knobs={value:name for name,value in LOOK_KNOBS.items()}
+    tonemaps={str(float(number)):name for name,number in LOOK_NAMES['tonemap'].items()}
+    defines=[part.split('=',1) for part in filter(None,cvars.get('shader_mod_defines','').split(';'))]
+    settings=', '.join(f'{knobs.get(name,name)} '+(tonemaps.get(value,value) if name=='FM4_LOOK_TONEMAP'
+                                                    else f'{float(value):g}') for name,value in defines)
+    if 'shader_mod_path' not in cvars:
+        lines.append('Look: original (no shader mods)')
+    elif Path(cvars['shader_mod_path']).name=='look':
+        lines.append(f'Look: {look}'+(f' ({settings})' if settings else ''))
+    else:
+        lines.append(f'Shader mods: {cvars["shader_mod_path"]}'+(f' ({settings})' if settings else ''))
+    shadows=('cockpit only (workaround)' if env.get('FM4_SHADOW_WORKAROUND')=='1'
+             else 'shadow map on every camera')
+    anisotropy={'5':'16x','4':'8x','3':'4x','2':'2x'}.get(cvars.get('anisotropic_override',''),'game')
+    lines.append(f'Shadows: {shadows}; textures: {anisotropy} anisotropic')
+    rate=env.get('FM4_FRAME_RATE','60')
+    pacing='VRR pacing' if cvars.get('vblank_vrr')=='true' else 'fixed vblank grid'
+    mirror='half rate' if env.get('FM4_HALF_RATE_MIRROR')=='1' else 'every frame'
+    path=cvars.get('render_target_path_d3d12','rtv').upper()
+    lines.append(f'Races: {rate} fps, {pacing}; mirror {mirror}; {path} render targets')
+    if cvars.get('shader_override_ab_ms','0') not in ('','0'):
+        lines.append(f'Shader A/B: game shaders every other {cvars["shader_override_ab_ms"]} ms')
+    return '|'.join(lines)
+
+def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,
+           resolution_scale=None,full_rate_mirror=False,look=None,shadow_workaround=False,
+           quality=None,display=DEFAULT_DISPLAY,fullscreen=False,supersample=False,info=False):
     state = json.loads((root/'local.json').read_text())
     disc1,disc2 = validate_discs(state['disc1'],state['disc2'])
     report=json.loads((root/'build-result.json').read_text())
@@ -411,10 +500,9 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
         # instead of 2.5, for comparisons when the host render target path misbehaves.
         cvars.pop('edram_single_rt_no_wrap')
         cvars.update({'render_target_path_d3d12':'rov','rov_occlusion_async':'all'})
-    if resolution_scale>1:
-        # Render targets and resolved textures at N times 1280x720 on both axes;
-        # CPU readbacks of resolves are downscaled.
-        cvars['draw_resolution_scale_x']=cvars['draw_resolution_scale_y']=str(resolution_scale)
+    screen,description=display_settings(display,fullscreen,supersample,resolution_scale)
+    cvars.update(screen)
+    print(description)
     if frame_rate:
         # The display refresh the title sees and the FrameRate of its race scenarios
         # (60). The guest vblank runs at 60 Hz, and at this rate only while a race
@@ -425,9 +513,15 @@ def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,r
         env['FM4_FRAME_RATE']=str(frame_rate)
     # Shader mods on the game's post-processing (tone curve, sharpening, bloom, exposure,
     # contrast, saturation, vignette, motion blur): the pc look unless -Look says otherwise.
-    cvars.update(look_cvars(root,DEFAULT_LOOK if look is None else look))
+    look=DEFAULT_LOOK if look is None else look
+    cvars.update(look_cvars(root,look))
     if disc2:
         env['FM4_DISC2_ROOT']=str(disc2)
+    # The settings overlay: F2 in game, shown at start with -Info.
+    env['FM4_INFO']=info_overlay(cvars,env,look,DEFAULT_QUALITY if quality is None else quality,
+                                 description)
+    if info:
+        env['FM4_INFO_SHOW']='1'
     args=[root/'game-build/fm4_rex.exe']+[f'--{k}={v}' for k,v in cvars.items()]
     run(args,cwd=root,env=env,log=root/'logs/play.log')
 
@@ -483,8 +577,19 @@ def main():
     parser.add_argument('--frame-rate',type=int,choices=range(30,241),metavar='30-240',
                         help='run: race frame rate above 60 (for example 120 or 240); menus, '
                              'replays and photo mode keep their own')
-    parser.add_argument('--resolution-scale',type=int,choices=range(1,4),default=1,metavar='1-3',
-                        help='run: render at 2x (2560x1440) or 3x (3840x2160) of 1280x720')
+    parser.add_argument('--display',choices=['native',*DISPLAYS],default=DEFAULT_DISPLAY,
+                        help='run: screen (default native: fullscreen on the primary monitor; '
+                             'the others a window of that size) and the render scale that covers it')
+    parser.add_argument('--fullscreen',action='store_true',
+                        help='run: fullscreen with a --display size (its render scale)')
+    parser.add_argument('--supersample',action='store_true',
+                        help='run: render one scale above the screen (up to 4x) and average it down')
+    parser.add_argument('--info',action='store_true',
+                        help='run: show the settings overlay (display, quality, look, ...) at start; '
+                             'F2 toggles it in any run')
+    parser.add_argument('--resolution-scale',type=int,choices=range(1,MAX_RESOLUTION_SCALE+1),
+                        metavar=f'1-{MAX_RESOLUTION_SCALE}',
+                        help='run: render at this multiple of 1280x720 instead of the --display one')
     parser.add_argument('--full-rate-mirror',action='store_true',
                         help='run: render the rear-view mirror every frame in every race')
     parser.add_argument('--quality',choices=list(QUALITY_PRESETS),
@@ -522,7 +627,8 @@ def main():
     if args.action in ('build','all'): build_game(root,fxc,args.jobs,flavor)
     if args.action=='run': launch(root,args.single_tile,args.fixed_vblank,args.frame_rate,args.rov,
                                      args.resolution_scale,args.full_rate_mirror,args.look,
-                                     args.shadow_workaround,args.quality)
+                                     args.shadow_workaround,args.quality,args.display,
+                                     args.fullscreen,args.supersample,args.info)
     if args.action=='warmcache': warm_cache(root)
     if args.action=='profbuild': build_profiling(root,fxc,args.jobs)
 
