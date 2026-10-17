@@ -1065,11 +1065,17 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
       base_offset_y_tiles * surface_pitch_tiles + base_offset_x_tiles;
 
   // Write the color/depth EDRAM info.
+  // Not for MSAA surfaces: they hold 3D scenes, whose geometry runs past the
+  // region edges, so there is no gap to fill, and the first row and column of a
+  // region are real content. FM4 renders its scene rotated by 180 degrees in
+  // predicated tiles: the fill duplicated the row at the start of every tile
+  // (host rows 415, 927 and 1439 of 1440 at 2x) and the right column.
   bool fill_half_pixel_offset =
       (draw_resolution_scale_x > 1 || draw_resolution_scale_y > 1) &&
       REXCVAR_GET(resolve_resolution_scale_fill_half_pixel_offset) &&
       REXCVAR_GET(half_pixel_offset) &&
-      regs.Get<reg::PA_SU_VTX_CNTL>().pix_center == xenos::PixelCenter::kD3DZero;
+      regs.Get<reg::PA_SU_VTX_CNTL>().pix_center == xenos::PixelCenter::kD3DZero &&
+      rb_surface_info.msaa_samples == xenos::MsaaSamples::k1X;
   int32_t exp_bias = is_depth ? 0 : rb_copy_dest_info.copy_dest_exp_bias;
   ResolveEdramInfo depth_edram_info;
   depth_edram_info.packed = 0;
