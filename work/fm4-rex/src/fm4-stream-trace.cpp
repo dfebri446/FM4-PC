@@ -1,5 +1,5 @@
 // Optional trace of the title's resource loader (FM4_STREAM_TRACE=<path>), to find
-// why a track data item can stop streaming after its first chunks (STATUS.txt,
+// why a track data item can stop streaming after its first chunks (docs/status/current.md,
 // RTV missing road). One line per call of the loader step and of the checks that
 // set its failure flags: "<steady ms> <host thread> <kind> <request> ...", where
 // kinds are "step" (entry and exit: the flag words at +84 and +88 of the

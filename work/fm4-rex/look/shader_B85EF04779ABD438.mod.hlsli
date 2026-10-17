@@ -1,4 +1,4 @@
-// Car body paint (MATERIAL-ATLAS.txt): interpolator 1 the world normal, 2 the
+// Car body paint (docs/analysis/material-atlas.md): interpolator 1 the world normal, 2 the
 // world position, 3 the shadow map coordinate, 4 the track lightmap UV;
 // c42 the sun color, c43 the direction to the sun, c47 the fog color and
 // amount, c59 the eye position, c60 the lightmap shadow range, c80 the shadow

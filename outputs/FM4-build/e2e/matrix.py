@@ -4,7 +4,7 @@ The snapshot (<BuildRoot>/snapshots/<name>) is the build that build-result.json 
 Build.ps1 -Action build can rebuild game-build while the gate runs. Cells run one at a time
 (performance numbers need the machine to themselves) into <BuildRoot>/e2e/<name>-<hz>-<scenario>.
 
-Tiers (README.txt, "Gates"):
+Tiers (docs/e2e/README.md, "Gates"):
   smoke  one run per scenario at 240 Hz: does it still work (about 10 minutes)
   perf   three runs of photo at 240 Hz: its race phase (12 cars, 30 s) and photo mode
   full   three runs of every scenario at 60 and 240 Hz: before committing a stage (about 1 hour)

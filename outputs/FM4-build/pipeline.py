@@ -60,7 +60,7 @@ def doctor():
         raise RuntimeError('Requires Windows x64 and Python 3.11 or newer (64-bit).')
     for name in ('git', 'cmake', 'ninja', 'clang', 'clang++', 'link'):
         if not shutil.which(name):
-            raise RuntimeError(f'Missing {name}. See README.txt and use Build.ps1 from a VS C++ environment.')
+            raise RuntimeError(f'Missing {name}. See docs/setup.md and use Build.ps1 from a VS C++ environment.')
     version = subprocess.check_output(['clang++', '--version'], text=True)
     if not re.search(r'clang version 20\.', version):
         raise RuntimeError('Use LLVM 20.x (validated: 20.1.8); pass -LLVMRoot to Build.ps1.')
@@ -273,7 +273,7 @@ def build_game(root,fxc,jobs,flavor=()):
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
 def post_ao_tests(root,jobs):
-    """CPU tests of the runtime's post_ao pass (GTAO-DESIGN.txt) and of the shader mods, no GPU:
+    """CPU tests of the runtime's post_ao pass (docs/analysis/gtao-design.md) and of the shader mods, no GPU:
     the camera math, the compute shaders on WARP (Direct3D 12 on the CPU), and FXC compiles of
     the override library and the look mods with and without XE_POST_AO_VIEW (the library's
     post_ao code is only compiled with it). work/fm4-rex/tests, synced here like the runtime,
@@ -298,7 +298,7 @@ def post_ao_tests(root,jobs):
 
 def build_profiling(root,fxc,jobs):
     """game-build-prof: game-build with a runtime that has line tables and PDBs, for the
-    command processor sampling profiler (REX_CP_PROFILE, e2e/README.txt). The runtime writes its
+    command processor sampling profiler (REX_CP_PROFILE, docs/e2e/traces.md). The runtime writes its
     outputs into <source>/out, so this compiles a mirror of runtime-source (runtime-source-prof)
     and leaves the default build alone."""
     game=root/'game-build'
@@ -506,7 +506,7 @@ def info_overlay(cvars,env,look,quality,display=None):
     return '|'.join(lines)
 
 # Screen-space ambient occlusion of the scene depth (the runtime's post_ao pass,
-# outputs/FM4-analysis/GTAO-DESIGN.txt): the vertex shaders that carry the scene camera, the car
+# docs/analysis/gtao-design.md): the vertex shaders that carry the scene camera, the car
 # body paint (WVP and WV rows from c0 and c4) and the road (WVP from c128, world c140, view
 # inverse c243), and the radius in meters picked with the user from a 2x variant grid. The look
 # knob ao applies it in the final combine shaders (xe_post_ao); --ao alone only runs the pass.

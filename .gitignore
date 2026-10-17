@@ -18,6 +18,10 @@
 !/.gitattributes
 !/.gitignore
 !/README.md
+!/AGENTS.md
+!/CLAUDE.md
+!/docs/
+!/docs/**
 !/outputs/FM4-analysis/gpu-integer-formats.patch
 !/outputs/FM4-analysis/gpu-resolve-diagnostics.patch
 !/outputs/FM4-analysis/gpu-rov-full-counters.patch
@@ -25,15 +29,8 @@
 !/outputs/FM4-analysis/input-packet-merge.patch
 !/outputs/FM4-analysis/runtime-delete-on-close.patch
 !/outputs/FM4-analysis/runtime-module-lifecycle.patch
-!/outputs/FM4-analysis/VISUAL-STYLE.txt
-!/outputs/FM4-analysis/B4-SHADER-RESEARCH.txt
-!/outputs/FM4-analysis/GTAO-DESIGN.txt
-!/outputs/FM4-analysis/MATERIAL-ATLAS.txt
 !/outputs/FM4-build/Build.ps1
-!/outputs/FM4-build/README.txt
-!/outputs/FM4-build/STATUS.txt
 !/outputs/FM4-build/dump-image.cpp
-!/outputs/FM4-build/e2e/README.txt
 !/outputs/FM4-build/e2e/compare.py
 !/outputs/FM4-build/e2e/cp_profile.py
 !/outputs/FM4-build/e2e/inventory.py
@@ -61,7 +58,6 @@
 !/outputs/FM4-build/test_pipeline.py
 !/outputs/FM4-build/verification.json
 !/outputs/FM4-build/xmedia_bounds.toml
-!/outputs/FM4-source-control/README.txt
 !/outputs/FM4-source-control/check-staged-content.py
 !/outputs/FM4-source-control/third-party-notices/ReXGlue-LICENSE.txt
 !/outputs/FM4-source-control/tracked-files.json

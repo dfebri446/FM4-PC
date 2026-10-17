@@ -1,6 +1,6 @@
 // FM4 car paint mods: a clear coat over the game's car body shading. Original
 // code of this project, like fm4-look.hlsli: it reads the game's shader inputs
-// (outputs/FM4-analysis/MATERIAL-ATLAS.txt) and adds to its output.
+// (docs/analysis/material-atlas.md) and adds to its output.
 //   FM4_LOOK_CLEARCOAT            0...1  clear coat strength (0: the game's paint)
 //   FM4_LOOK_CLEARCOAT_ROUGHNESS  > 0    clear coat roughness (GGX alpha is its square)
 //   FM4_LOOK_CLEARCOAT_GLINT      > 0    soft limit of the sun highlight, in units of the

@@ -9,7 +9,7 @@
  * occlusion texture, bound in the bindless heap at
  * SystemBindlessView::kPostAoOcclusion for shader mods (xe_post_ao in
  * shader_override.hlsli). The swap clears it, so frames without a scene depth
- * get no occlusion. Off unless post_ao is set; see GTAO-DESIGN.txt.
+ * get no occlusion. Off unless post_ao is set; see docs/analysis/gtao-design.md.
  */
 
 #pragma once

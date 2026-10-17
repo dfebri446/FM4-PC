@@ -17,6 +17,66 @@
       "provenance": "Project documentation; setup instructions and verified status summary"
     },
     {
+      "path": "AGENTS.md",
+      "provenance": "Project documentation; agent instructions (language rules, documentation layout, repository rules)"
+    },
+    {
+      "path": "CLAUDE.md",
+      "provenance": "Project documentation; imports AGENTS.md for Claude Code"
+    },
+    {
+      "path": "docs/setup.md",
+      "provenance": "Project documentation; setup, generate and build guide, prerequisites and troubleshooting"
+    },
+    {
+      "path": "docs/running.md",
+      "provenance": "Project documentation; launcher usage, options, look knobs and controls"
+    },
+    {
+      "path": "docs/sources-and-licensing.md",
+      "provenance": "Project documentation; source inventory, third-party notices and review rules"
+    },
+    {
+      "path": "docs/status/current.md",
+      "provenance": "Project documentation; current verification status, open gaps and next validation steps"
+    },
+    {
+      "path": "docs/status/history.md",
+      "provenance": "Project documentation; dated history of results and decisions (no game content)"
+    },
+    {
+      "path": "docs/status/history-performance.md",
+      "provenance": "Project documentation; dated performance measurements (no game content)"
+    },
+    {
+      "path": "docs/e2e/README.md",
+      "provenance": "Project documentation; e2e harness guide (original test tooling, no game content)"
+    },
+    {
+      "path": "docs/e2e/traces.md",
+      "provenance": "Project documentation; debug and performance trace variables (no game content)"
+    },
+    {
+      "path": "docs/e2e/experiments.md",
+      "provenance": "Project documentation; A/B switches and experiment diagnostics (no game content)"
+    },
+    {
+      "path": "docs/analysis/gtao-design.md",
+      "provenance": "Project documentation; design and research note on the GTAO pass (summarized observations, no game content)"
+    },
+    {
+      "path": "docs/analysis/b4-shader-research.md",
+      "provenance": "Project documentation; research notes on the B4 shader path (summarized observations, no game content)"
+    },
+    {
+      "path": "docs/analysis/visual-style.md",
+      "provenance": "Project documentation; research notes on FM4 visual style (summarized observations, no game content)"
+    },
+    {
+      "path": "docs/analysis/material-atlas.md",
+      "provenance": "Project documentation; summary of the material atlas (names and registers of the game constant tables, no game code)"
+    },
+    {
       "path": "outputs/FM4-analysis/gpu-integer-formats.patch",
       "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
     },
@@ -45,36 +105,12 @@
       "provenance": "ReXGlue/Xenia SDK source patch; BSD notice included"
     },
     {
-      "path": "outputs/FM4-analysis/VISUAL-STYLE.txt",
-      "provenance": "Project documentation; research notes on FM4 visual style (summarized observations, no game content)"
-    },
-    {
-      "path": "outputs/FM4-analysis/B4-SHADER-RESEARCH.txt",
-      "provenance": "Project documentation; research notes on the B4 shader path (summarized observations, no game content)"
-    },
-    {
-      "path": "outputs/FM4-analysis/MATERIAL-ATLAS.txt",
-      "provenance": "Project documentation; summary of the material atlas (names and registers of the game's constant tables, no game code)"
-    },
-    {
       "path": "outputs/FM4-build/Build.ps1",
-      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
-    },
-    {
-      "path": "outputs/FM4-build/README.txt",
-      "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
-    },
-    {
-      "path": "outputs/FM4-build/STATUS.txt",
       "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
     },
     {
       "path": "outputs/FM4-build/dump-image.cpp",
       "provenance": "Reviewed bootstrap tooling or documentation; no original game function bodies"
-    },
-    {
-      "path": "outputs/FM4-build/e2e/README.txt",
-      "provenance": "Original test tooling for this project; no game content or original game function bodies"
     },
     {
       "path": "outputs/FM4-build/e2e/compare.py",
@@ -183,10 +219,6 @@
     {
       "path": "outputs/FM4-build/xmedia_bounds.toml",
       "provenance": "Factual integration metadata: addresses, bounds, registers and counts only"
-    },
-    {
-      "path": "outputs/FM4-source-control/README.txt",
-      "provenance": "Repository policy/tooling or upstream license"
     },
     {
       "path": "outputs/FM4-source-control/check-staged-content.py",
@@ -3656,10 +3688,6 @@
     {
       "path": "work/runtime/thirdparty/CMakeLists.txt",
       "provenance": "runtime-fork"
-    },
-    {
-      "path": "outputs/FM4-analysis/GTAO-DESIGN.txt",
-      "provenance": "Project documentation; design of the post_ao (GTAO) pass from frame graph observations (addresses, hashes and registers only, no game code)"
     },
     {
       "path": "work/fm4-rex/tests/post-ao-camera-tests.cpp",

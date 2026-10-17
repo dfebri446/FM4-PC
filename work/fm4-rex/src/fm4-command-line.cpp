@@ -8,7 +8,7 @@
 // through the title's own parse methods, as a cmdline.txt line would. A bare
 // name means name=1 (the parser toggles a bare switch, and some switches are
 // parsed by two methods). Which options the retail code still reads, and which
-// fm4-dev-features.cpp rebuilds, is in STATUS.txt.
+// fm4-dev-features.cpp rebuilds, is in docs/status/history.md.
 #include <rex/hook.h>
 #include <rex/memory.h>
 #include <rex/ppc/stack.h>

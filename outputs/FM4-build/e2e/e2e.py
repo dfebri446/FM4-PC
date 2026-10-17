@@ -919,7 +919,7 @@ def main():
                         help='build directory under BuildRoot, e.g. game-build-thinlto (pipeline.py --flavor)')
     parser.add_argument('--out', required=True, help='result directory, outside the repository')
     parser.add_argument('--scenario', default='boot', choices=sorted(SCENARIOS),
-                        help='fixed timeline (README.txt, "Gameplay scenarios")')
+                        help='fixed timeline (docs/e2e/README.md, "Gameplay scenarios")')
     parser.add_argument('--profile', help="copy this user-data root to <out>/user-data for the run "
                                           "('copy': the BuildRoot one); the BuildRoot profile stays as it is")
     parser.add_argument('--goal', choices=sorted(GOALS), help='navigate with Jev instead of a timeline')

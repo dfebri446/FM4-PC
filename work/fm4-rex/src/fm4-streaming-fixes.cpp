@@ -4,7 +4,7 @@
 // thread scheduling, and at the race start the heap can be fragmented: about
 // 18 MB free, but no block for a 1.8 MB section. The loader then drops the
 // whole section and only streams it again much later, so the road is missing
-// (STATUS.txt, RTV missing road). The title's other GPU heaps ("nGPU" and the
+// (docs/status/current.md, RTV missing road). The title's other GPU heaps ("nGPU" and the
 // front-end "pGPU") fall back to the "fGPU" heap when full, and fGPU had about
 // 33 MB free at such a failure; sGPU has no fallback. When a loader section
 // allocation fails, give sGPU the same fallback and allocate again.
