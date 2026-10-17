@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include <rex/cvar.h>
 #include <rex/graphics/d3d12/command_processor.h>
@@ -60,10 +61,20 @@ REXCVAR_DEFINE_INT32(post_ao_ab_ms, 0, "GPU/D3D12",
                      "the steady clock (0: always occlusion), to compare both in one scene")
     .range(0, 3600000);
 
+REXCVAR_DEFINE_STRING(post_ao_variants, "", "GPU/D3D12",
+                      "Diagnostic: settings cycled every post_ao_variant_ms of the steady clock, "
+                      "to compare them in one frozen scene, separated by ';': "
+                      "<radius>,<occlusion scale>[,<post_ao_debug view>] or off");
+
+REXCVAR_DEFINE_INT32(post_ao_variant_ms, 0, "GPU/D3D12",
+                     "Period of each post_ao_variants entry in milliseconds (0: not cycled)")
+    .range(0, 3600000);
+
 REXCVAR_DEFINE_INT32(post_ao_debug, 0, "GPU/D3D12",
                      "post_ao output: 0 occlusion, 1 view W over 0-100 units, 2 occlusion "
-                     "before denoising")
-    .range(0, 2);
+                     "before denoising, 3 depth discontinuities (the denoise edges), 4 view W "
+                     "over 0-2 units")
+    .range(0, 4);
 
 REXCVAR_DEFINE_INT32(post_ao_log_every, 0, "GPU/D3D12",
                      "Log the scene depth and camera of every N-th post_ao run (0: only the "
@@ -107,8 +118,9 @@ struct Constants {
   float power;
   float denoise_center;
   uint32_t debug;
+  float occlusion_scale;
 };
-static_assert(sizeof(Constants) == 21 * sizeof(uint32_t), "post_ao constants are 4-byte fields");
+static_assert(sizeof(Constants) == 22 * sizeof(uint32_t), "post_ao constants are 4-byte fields");
 // The constants of the latest run (one PostAo per command processor).
 Constants post_ao_constants;
 
@@ -129,6 +141,39 @@ bool IsAbOffPhase() {
                           std::chrono::steady_clock::now().time_since_epoch())
                           .count();
   return ((milliseconds / period) & 1) != 0;
+}
+
+// The post_ao_variants entry of the current period: radius, occlusion scale and
+// debug view; false for an "off" entry.
+struct Variant {
+  float radius;
+  float occlusion_scale;
+  float debug;
+};
+bool CurrentVariant(Variant& variant, int32_t& index_out) {
+  variant = {float(REXCVAR_GET(post_ao_radius)), 1.0f, float(REXCVAR_GET(post_ao_debug))};
+  index_out = -1;
+  int32_t period = REXCVAR_GET(post_ao_variant_ms);
+  const std::string& list = REXCVAR_GET(post_ao_variants);
+  if (period <= 0 || list.empty()) return true;
+  std::vector<std::string> entries;
+  std::istringstream stream(list);
+  for (std::string entry; std::getline(stream, entry, ';');) {
+    if (!entry.empty()) entries.push_back(entry);
+  }
+  if (entries.empty()) return true;
+  index_out = int32_t((SteadyMilliseconds() / period) % int64_t(entries.size()));
+  const std::string& entry = entries[size_t(index_out)];
+  if (entry == "off") return false;
+  float values[3] = {variant.radius, variant.occlusion_scale, variant.debug};
+  std::istringstream fields(entry);
+  std::string field;
+  for (float& value : values) {
+    if (!std::getline(fields, field, ',')) break;
+    value = std::strtof(field.c_str(), nullptr);
+  }
+  variant = {values[0], values[1], values[2]};
+  return true;
 }
 
 }  // namespace
@@ -438,7 +483,9 @@ void PostAo::OnResolve(const RegisterFile& regs, uint32_t address, uint32_t leng
   group_.done = true;
   group_.depth_format = depth_info.depth_format;
   group_.endianness = regs.Get<reg::RB_COPY_DEST_INFO>().copy_dest_endian;
-  if (last_run_frame_ == frame || IsAbOffPhase()) {
+  Variant variant;
+  int32_t variant_index;
+  if (last_run_frame_ == frame || IsAbOffPhase() || !CurrentVariant(variant, variant_index)) {
     return;
   }
   last_run_frame_ = frame;
@@ -492,12 +539,16 @@ void PostAo::Run(const DepthGroup& group) {
   post_ao_constants.w_depth_add = unpack.w_depth_add;
   post_ao_constants.z_from_w = unpack.z_from_w;
   post_ao_constants.w_far = unpack.w_far;
-  post_ao_constants.radius = float(REXCVAR_GET(post_ao_radius));
+  Variant variant;
+  int32_t variant_index;
+  CurrentVariant(variant, variant_index);
+  post_ao_constants.radius = std::max(variant.radius, 1.0e-3f);
   post_ao_constants.radius_pixels = post_ao_constants.radius * unpack.pixels_per_unit_x / post_ao_constants.guest_per_host[0];
   post_ao_constants.falloff = std::clamp(float(REXCVAR_GET(post_ao_falloff)), 0.01f, 1.0f);
   post_ao_constants.power = std::max(float(REXCVAR_GET(post_ao_power)), 0.01f);
   post_ao_constants.denoise_center = 2.0f;
-  post_ao_constants.debug = uint32_t(REXCVAR_GET(post_ao_debug));
+  post_ao_constants.debug = uint32_t(std::clamp(variant.debug, 0.0f, 4.0f));
+  post_ao_constants.occlusion_scale = std::clamp(variant.occlusion_scale, 0.0f, 1.0f);
 
   // Prefilter: depth -> W mips.
   Transition(w_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -517,7 +568,8 @@ void PostAo::Run(const DepthGroup& group) {
   Transition(edges_, kShaderResource);
   D3D12_GPU_DESCRIPTOR_HANDLE edges_srv = Gpu(edges_.srv);
   Texture* input = &visibility_[0];
-  if (two_denoise_passes_) {
+  // Debug view 2 shows the GTAO output before any denoising.
+  if (two_denoise_passes_ && post_ao_constants.debug != 2) {
     Transition(visibility_[1], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     D3D12_GPU_DESCRIPTOR_HANDLE out = Gpu(visibility_[1].uavs[0]);
     Dispatch(Pass::kDenoise, {Gpu(visibility_[0].srv), edges_srv, w_srv},
@@ -550,14 +602,16 @@ void PostAo::Run(const DepthGroup& group) {
         "post_ao run {} frame {} ms {} (camera frame {}): scene depth 0x{:08X}-0x{:08X} {}x{} (EDRAM {}), "
         "host {}x{}; camera Q {:.7g} Q*near {:.6g} (near {:.4g}), W(d=0) {:.4g} W(d=1) {:.4g}, "
         "far W {:.4g}, depth mul {:.6g} add {:.6g}, x {:.6g} {:.6g}, y {:.6g} {:.6g}, z/W {:.3g}, "
-        "focal {:.1f} px (FOV x {:.1f} deg over {} px), origin {}",
+        "focal {:.1f} px (FOV x {:.1f} deg over {} px), origin {}; variant {} (radius {:.3g}, "
+        "occlusion x{:.3g}, debug {})",
         runs_, group.frame, SteadyMilliseconds(), camera_.frame, group.base, group.end, group.pitch,
         group.height,
         group.depth_edram_base, width, height, camera_.q, camera_.q_near,
         camera_.q != 0.0f ? camera_.q_near / camera_.q : 0.0f, w_depth_0, w_depth_1, unpack.w_far,
         unpack.w_depth_mul, unpack.w_depth_add, unpack.x_mul, unpack.x_add, unpack.y_mul,
         unpack.y_add, unpack.z_from_w, unpack.pixels_per_unit_x, fov_x, group.pitch,
-        camera_.guest_origin);
+        camera_.guest_origin, variant_index, post_ao_constants.radius,
+        post_ao_constants.occlusion_scale, post_ao_constants.debug);
   }
   ++runs_;
 }

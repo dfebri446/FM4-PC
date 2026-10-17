@@ -58,6 +58,7 @@ struct Constants {
   float w_numerator, w_depth_mul, w_depth_add, z_from_w, w_far;
   float radius, radius_pixels, falloff, power, denoise_center;
   uint32_t debug;
+  float occlusion_scale;
 };
 
 // The scene, in view space (left-handed, +Z forward, +Y up): ground at y =
@@ -367,6 +368,7 @@ int main(int argc, char** argv) {
   constants.falloff = 0.6f;
   constants.power = 1.5f;
   constants.denoise_center = 2.0f;
+  constants.occlusion_scale = 1.0f;
 
   ID3D12DescriptorHeap* heaps[] = {heap.Get()};
   list->SetDescriptorHeaps(1, heaps);

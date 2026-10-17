@@ -14,6 +14,11 @@
 //   FM4_LOOK_TONEMAP      0...3  tone curve before the color grading LUT: 0 the game's
 //                                filmic curve, 1 GT (Uchimura), 2 ACES (Narkowicz fit),
 //                                3 neutral (Khronos PBR Neutral)
+//   FM4_LOOK_AO           0...1  ambient occlusion of the runtime's post_ao pass on the scene
+//                                (0: off; needs post_ao=true)
+//   FM4_LOOK_AO_DEBUG     0, 1   1: the final combine shaders show the runtime's post_ao
+//                                texture as it is (xe_post_ao; post_ao_debug picks its
+//                                view) instead of the scene (0: off)
 
 #ifndef FM4_LOOK_SHARPEN
 #define FM4_LOOK_SHARPEN 0.0
@@ -38,6 +43,12 @@
 #endif
 #ifndef FM4_LOOK_TONEMAP
 #define FM4_LOOK_TONEMAP 0.0
+#endif
+#ifndef FM4_LOOK_AO
+#define FM4_LOOK_AO 0.0
+#endif
+#ifndef FM4_LOOK_AO_DEBUG
+#define FM4_LOOK_AO_DEBUG 0.0
 #endif
 
 #ifdef XE_TEXTURE0_2D_U
@@ -95,6 +106,24 @@ float4 fm4_bloom(float4 bloom) {
 
 // F at white, interpolator 1 Z of the final combine shaders (fm4_combine_input).
 static float fm4_white_filmic = 1.0;
+// The scene coordinate of the pixel, fetch 0 of the final combine shaders.
+static float2 fm4_scene_uv = 0.0;
+// Their exposure, 2 to the power of interpolator 1 W (fm4_combine_input).
+static float fm4_exposure_scale = 1.0;
+
+// Ambient occlusion of the runtime's post_ao pass on the scene (gamma 2) at the
+// pixel. The scene does not separate ambient light from sunlight, so it fades
+// out on bright pixels: from an exposed luminance of 0.2 to 0.8 (middle gray is
+// 0.18).
+float4 fm4_ambient_occlusion(float4 scene, float2 uv) {
+  if (FM4_LOOK_AO <= 0.0) {
+    return scene;
+  }
+  float3 linear_scene = scene.rgb * scene.rgb;
+  float luminance = dot(linear_scene, float3(0.2126, 0.7152, 0.0722)) * fm4_exposure_scale;
+  float weight = saturate(FM4_LOOK_AO) * (1.0 - smoothstep(0.2, 0.8, luminance));
+  return float4(scene.rgb * sqrt(saturate(1.0 - weight * xe_post_ao(uv))), scene.a);
+}
 
 // x for which the game's filmic curve gives y (the positive root of the
 // quadratic, in the form that stays precise for either sign of its B term).
@@ -166,7 +195,8 @@ float4 fm4_combine_fetch(uint fetch, float4 value, float4 coord, float4 filmic_a
                          float4 filmic_cdef, float lut_scale, float lut_offset) {
 #ifdef XE_TEXTURE0_2D_U
   if (fetch == 0u) {
-    return fm4_sharpen_scene(value, coord.xy);
+    fm4_scene_uv = coord.xy;
+    return fm4_ambient_occlusion(fm4_sharpen_scene(value, coord.xy), coord.xy);
   }
 #endif
   if (fetch == 2u) {
@@ -193,6 +223,7 @@ void fm4_exposure(inout XePixel p) {
 void fm4_combine_input(inout XePixel p) {
   fm4_exposure(p);
   fm4_white_filmic = p.r[1].z;
+  fm4_exposure_scale = exp2(p.r[1].w);
 }
 
 // Saturation and contrast of the final image (gamma 2, 0...1).
@@ -206,6 +237,9 @@ void fm4_grade(inout XePixel p) {
   if (FM4_LOOK_CONTRAST != 0.0) {
     float3 s_curve = color * color * (3.0 - 2.0 * color);
     color = lerp(color, s_curve, saturate(FM4_LOOK_CONTRAST));
+  }
+  if (FM4_LOOK_AO_DEBUG != 0.0) {
+    color = xe_post_ao(fm4_scene_uv).xxx;
   }
   p.color[0].rgb = color;
 }

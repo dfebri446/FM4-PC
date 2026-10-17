@@ -21,3 +21,8 @@ add_executable(fm4_post_ao_shader_tests post-ao-shader-tests.cpp)
 target_include_directories(fm4_post_ao_shader_tests SYSTEM PRIVATE "${REX_HEADER_ROOT}")
 target_compile_definitions(fm4_post_ao_shader_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fm4_post_ao_shader_tests PRIVATE d3d12 dxgi d3dcompiler)
+# FXC compiles of the shader override library and the look mods on a synthetic
+# contract; arguments: shader_override.hlsli, the look directory.
+add_executable(fm4_shader_mod_tests shader-mod-tests.cpp)
+target_compile_definitions(fm4_shader_mod_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(fm4_shader_mod_tests PRIVATE d3dcompiler)

@@ -103,5 +103,6 @@
 !/work/fm4-rex/tests/make-vector-vectors.py
 !/work/fm4-rex/tests/post-ao-camera-tests.cpp
 !/work/fm4-rex/tests/post-ao-shader-tests.cpp
+!/work/fm4-rex/tests/shader-mod-tests.cpp
 !/work/fm4-rex/tests/texture-integer.cpp
 !/work/fm4-rex/tests/vector-vectors.h

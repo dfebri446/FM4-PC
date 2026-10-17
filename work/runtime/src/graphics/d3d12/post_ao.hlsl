@@ -56,6 +56,8 @@ cbuffer post_ao_constants : register(b0) {
   float post_ao_power;
   float post_ao_denoise_center;
   uint post_ao_debug;
+  // Factor of the final occlusion.
+  float post_ao_occlusion_scale;
 };
 
 // Bilinear within one mip, clamped.
@@ -325,12 +327,18 @@ void post_ao_denoise(uint3 id : SV_DispatchThreadID) {
   }
   float visibility = sum / weight;
 #ifdef POST_AO_FINAL
-  float occlusion = 1.0 - saturate(visibility * kWorkingScale);
+  float occlusion = (1.0 - saturate(visibility * kWorkingScale)) * post_ao_occlusion_scale;
   if (post_ao_debug == 1u) {
     // View W over 0-100 units, for checking the depth and its alignment.
     occlusion = saturate(0.01 / post_ao_inverse_w_debug.Load(int3(pixel, 0)));
   } else if (post_ao_debug == 2u) {
     occlusion = 1.0 - saturate(LoadVisibility(pixel) * kWorkingScale);  // Before denoising.
+  } else if (post_ao_debug == 3u) {
+    // 1 across a depth discontinuity on any side (the edges of the denoise).
+    occlusion = 1.0 - min(min(edges.x, edges.y), min(edges.z, edges.w));
+  } else if (post_ao_debug == 4u) {
+    // View W over 0-2 units, for close surfaces.
+    occlusion = saturate(0.5 / post_ao_inverse_w_debug.Load(int3(pixel, 0)));
   }
   post_ao_denoised_out[id.xy] = occlusion;
 #else

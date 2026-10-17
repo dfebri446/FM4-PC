@@ -3668,6 +3668,10 @@
     {
       "path": "work/fm4-rex/tests/post-ao-shader-tests.cpp",
       "provenance": "Synthetic tests/oracle; no game input data"
+    },
+    {
+      "path": "work/fm4-rex/tests/shader-mod-tests.cpp",
+      "provenance": "Synthetic tests/oracle; no game input data"
     }
   ]
 }

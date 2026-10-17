@@ -273,18 +273,28 @@ def build_game(root,fxc,jobs,flavor=()):
     print('Build and instruction tests passed. Run with Build.ps1 -Action run using the same -BuildRoot.')
 
 def post_ao_tests(root,jobs):
-    """CPU tests of the runtime's post_ao pass (GTAO-DESIGN.txt): its camera math, and its
-    compute shaders on WARP (Direct3D 12 on the CPU, no GPU). work/fm4-rex/tests, built against
-    the installed runtime headers."""
+    """CPU tests of the runtime's post_ao pass (GTAO-DESIGN.txt) and of the shader mods, no GPU:
+    the camera math, the compute shaders on WARP (Direct3D 12 on the CPU), and FXC compiles of
+    the override library and the look mods with and without XE_POST_AO_VIEW (the library's
+    post_ao code is only compiled with it). work/fm4-rex/tests, synced here like the runtime,
+    built against the installed runtime headers."""
     source,build=root/'project/tests',root/'tests-build'
+    inventory=json.loads((REPO/'outputs/FM4-source-control/tracked-files.json').read_text())
+    for entry in inventory['files']:
+        if entry['path'].startswith('work/fm4-rex/tests/'):
+            destination=source/Path(entry['path']).relative_to('work/fm4-rex/tests')
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            copy_source(REPO/entry['path'],destination)
     run(['cmake','-S',source,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
          '-DCMAKE_CXX_COMPILER=clang++',f'-DREX_HEADER_ROOT={root/"runtime-install/include"}'],
         log=root/'logs/tests-configure.log')
     run(['cmake','--build',build,'--parallel',jobs,'--target','fm4_post_ao_camera_tests',
-         'fm4_post_ao_shader_tests'],log=root/'logs/tests-build.log')
+         'fm4_post_ao_shader_tests','fm4_shader_mod_tests'],log=root/'logs/tests-build.log')
     run([build/'fm4_post_ao_camera_tests.exe'],cwd=build,log=root/'logs/post-ao-camera-tests.log')
     run([build/'fm4_post_ao_shader_tests.exe',root/'runtime-source/src/graphics/d3d12/post_ao.hlsl'],
         cwd=build,log=root/'logs/post-ao-shader-tests.log')
+    run([build/'fm4_shader_mod_tests.exe',root/'runtime-source/src/graphics/d3d12/shader_override.hlsli',
+         REPO/'work/fm4-rex/look'],cwd=build,log=root/'logs/shader-mod-tests.log')
 
 def build_profiling(root,fxc,jobs):
     """game-build-prof: game-build with a runtime that has line tables and PDBs, for the

@@ -188,10 +188,14 @@ h. Batas v1:
   post_ao.cpp: kelas PostAo.
   - cvar: post_ao, post_ao_quality, post_ao_radius, post_ao_falloff,
     post_ao_power, post_ao_camera, post_ao_min_width, post_ao_ab_ms,
-    post_ao_debug (1: W 0-100, 2: sebelum denoise) dan post_ao_log_every.
+    post_ao_debug (1: W 0-100, 2: sebelum denoise, 3: diskontinuitas depth,
+    yaitu tepi denoise, 4: W 0-2), post_ao_log_every, dan untuk penyetelan
+    post_ao_variants dengan post_ao_variant_ms (radius, skala oklusi dan
+    tampilan debug bergantian menurut jam steady, untuk membandingkan
+    pengaturan pada satu scene beku).
   - OnDraw (tangkap kamera), OnResolve (grup depth, pemicu pass), OnSwap
     (kosongkan).
-  - root signature sendiri (konstanta b0 21 dword, tabel SRV t0-t2, tabel
+  - root signature sendiri (konstanta b0 22 dword, tabel SRV t0-t2, tabel
     UAV u0-u4, sampler point clamp), pola dispatch resolve_downscale,
     SetExternalPipeline supaya draw guest berikutnya memasang ulang PSO.
   - Tekstur berganti ukuran: resource lama ke resources_for_deletion_,
@@ -284,12 +288,55 @@ M1  Selesai 17 Oktober 2026: satu Quick Race siklus kamera (e2e --ao,
       GetDimensions dengan 4 argumen, sehingga semua mod gagal dikompilasi
       dan jatuh ke DXBC. Sudah diperbaiki; override_fxc.py dengan
       XE_POST_AO_VIEW 418/418 (pustaka lama 0/1).
-M2  post_ao_debug=1 dilihat lewat kenop debug FinalCombine (mod menampilkan
-    xe_post_ao langsung). Tepi W harus berimpit dengan tepi scene di
-    -ResolutionScale 1 dan 2. Bila format atau endian depth salah, beralih
-    ke opsi B.
-M3  GTAO dan denoise. A/B post_ao_ab_ms=4000 di run siklus kamera,
-    pasangan gambar per kamera, waktu GPU pass dari frame graph.
+M2  Selesai 17 Oktober 2026. Kenop mod FM4_LOOK_AO_DEBUG=1 (bawaan 0):
+    keempat FinalCombine menampilkan xe_post_ao apa adanya di koordinat
+    fetch 0. Run Quick Race (AI driver) dengan post_ao_debug=1 dan
+    shader_override_ab_ms=2000: setiap kamera dibekukan dengan Y (rewind,
+    scene tetap dirender) selama 20 s, jadi tampilan W dan scene asli
+    tersedia dari frame beku yang sama. Tepi Sobel terkuat W dicocokkan
+    dengan gradien scene pada geser +-6 px (1x) dan +-12 px (2x), per tile
+    3x3, tanpa HUD. Hasil:
+    - 1x (40 pasangan) dan 2x (36 pasangan, render dan depth host
+      2560x1440): geser terbaik (0, 0) untuk seluruh gambar di keenam kamera
+      (kokpit, kap, bumper, chase dekat, chase jauh). 85-98% tepi W punya
+      tepi scene dalam 1 px.
+    - Tile yang menyimpang hanya tile dengan sedikit tepi W di atas tekstur
+      berulang (aspal, teks papan iklan; skor pada 0 tetap 73-99% dari
+      puncak), atau mobil pemain di kamera chase, tempat tepi warna terkuat
+      adalah batas atap dan kaca, bukan siluet. Profil kolom: lompatan W
+      0-1 piksel render sebelum tepi warna, sesuai resolve depth satu sampel
+      MSAA terhadap warna yang dirata-rata.
+    - Tidak ada tanda salah format, endian, tiling, atau 736 vs 720. Opsi B
+      tidak diperlukan.
+M3  Sebagian (17 Oktober 2026). Kenop mod FM4_LOOK_AO (bawaan 0) menerapkan
+    bagian g dengan bobot terang smoothstep(0,2; 0,8) dari luminans
+    terekspos (2^r1.w x scene^2). Run A/B post_ao_ab_ms=4000 dengan look pc
+    dan freeze per kamera di 1x dan 2x, plus REX_FRAME_GRAPH:
+    - Waktu GPU pass (median selisih resolve tile depth terakhir antara
+      frame on dan off, preset high): 0,176 ms di 1x (GPU frame 3,00 ->
+      3,10 ms), 0,684 ms di 2x (5,28 -> 5,91 ms).
+    - Di 2x ada garis oklusi selebar layar di baris host 925-928. Sebabnya
+      cacat runtime yang sudah ada sebelum post_ao: di 2x dan 3x, sub-baris
+      terakhir baris guest lokal 207 setiap tile scene (host 415, 927, 1439
+      di 2x) serta kolom kanan adalah salinan persis tetangganya, di warna
+      dan depth (post_ao_debug=3). Akar masalahnya hack Xenia
+      resolve_resolution_scale_fill_half_pixel_offset, yang mengisi baris
+      dan kolom pertama setiap region resolve: FM4 menggambar scene terputar
+      180 derajat dalam tile, jadi baris pertama tiap tile tampil di baris
+      lokal 207 dan berisi konten nyata. Perbaikannya di GetResolveInfo
+      (draw.cpp): tanpa fill untuk permukaan MSAA (scene 3D, tanpa celah);
+      resolve 1x tetap diisi (layar boot tanpa fill punya baris dan kolom 0
+      hitam). Diverifikasi dengan A/B fill pada frame beku, run 1x/2x/3x,
+      waktu GPU tidak berubah, dan di jalur MSAA lain di 2x: photo mode,
+      replay (MSAA 2x), layar mobil dan pra-balapan, tanpa celah hitam di tepi
+      dan tanpa baris duplikat.
+    - Sesudah perbaikan, A/B 2x per kamera (render 2560x1440, look pc,
+      FM4_LOOK_AO=1, radius 1, pangkat 1,5): AO jelas di kontak dan bawah
+      mobil, kaki pembatas, ceruk lampu dan pelat, lipatan kap; tanpa noise
+      atau halo denoise yang terlihat di oklusi mentah. Untuk M4: panel bodi
+      yang hampir datar ikut gelap merata (oklusi sekitar 0,2), halo di aspal
+      sekitar mobil selebar radius, sisi tonjolan kap kuat, dan interior
+      kokpit tanpa AO sama sekali (W sangat kecil).
 M4  Penyetelan (radius, kekuatan, bobot terang, bayangan jatuh mobil),
     kenop -Look ao=..., gate matrix.py smoke dan perf, dokumen (README,
     STATUS, VISUAL-STYLE), lalu commit.
