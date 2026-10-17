@@ -13,6 +13,7 @@ Results go to `--out`, which must be outside this repository: captures and logs 
 
 Related pages:
 
+- [architecture.md](architecture.md): how the harness and its game-side hooks are built, every Windows and D3D12 dependency, and a checklist for porting it to another platform or backend.
 - [traces.md](traces.md): debug trace and diagnostic environment variables and what each writes.
 - [experiments.md](experiments.md): A/B overrides, shader override diagnostics, FXC notes and other experiment-only switches.
 - [setup.md](../setup.md): prerequisites, setup, generate, build and the BuildRoot layout.

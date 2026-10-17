@@ -95,6 +95,7 @@ The next validation priorities are a second computer, Disc 2 car races on the la
 | [docs/status/current.md](docs/status/current.md) | Current state, what is verified on the latest build, open gaps, and next validation |
 | [docs/status/history.md](docs/status/history.md) | Dated history, past results, and dated test runs |
 | [docs/e2e/README.md](docs/e2e/README.md) | End-to-end harness overview, usage, gates, and scenarios |
+| [docs/e2e/architecture.md](docs/e2e/architecture.md) | How the e2e harness and its game-side hooks are built, platform and backend dependencies, and a porting checklist |
 | [docs/e2e/traces.md](docs/e2e/traces.md) | Debug trace environment variables |
 | [docs/e2e/experiments.md](docs/e2e/experiments.md) | A/B overrides and shader override diagnostics |
 | [docs/analysis/gtao-design.md](docs/analysis/gtao-design.md) | Design of the GTAO (post_ao) ambient occlusion pass, from frame graph observations |

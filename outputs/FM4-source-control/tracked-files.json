@@ -53,6 +53,10 @@
       "provenance": "Project documentation; e2e harness guide (original test tooling, no game content)"
     },
     {
+      "path": "docs/e2e/architecture.md",
+      "provenance": "Project documentation; e2e harness internals, platform dependencies and porting checklist (no game content)"
+    },
+    {
       "path": "docs/e2e/traces.md",
       "provenance": "Project documentation; debug and performance trace variables (no game content)"
     },

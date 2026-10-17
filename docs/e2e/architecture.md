@@ -77,7 +77,7 @@ The file holds one line of seven integers:
 - `buttons` is the XInput bit mask: up `0x1`, down `0x2`, left `0x4`, right `0x8`, start `0x10`, back `0x20`, LB `0x100`, RB `0x200`, A `0x1000`, B `0x2000`, X `0x4000`, Y `0x8000` (`BUTTONS` in `e2e.py`).
 - Triggers are 0 to 255. Sticks are -32,768 to 32,767.
 - The driver reads the file at most every 50 ms. A missing, partial or out-of-range file means all controls are released.
-- It also produces keystroke events (`GetDeviceKeystroke`) from button changes, which some FM4 menus read instead of the pad state.
+- It also produces keystroke events (`GetDeviceKeystroke`) from button changes, for callers that read keystrokes instead of the pad state.
 - Every button change is logged to stderr as `FM4 test input: buttons=...`. `fm4-ui-diagnostics.cpp` logs the game's own reads (`FM4 guest input`, `FM4 converted input`).
 
 The harness writes the file through a temporary file and `os.replace`, retrying for up to 0.5 s while the game holds the file open (Windows refuses the replace then). A press is: write the state, hold (0.12 s by default), write all released, wait 0.5 s. A hold shorter than the 50 ms read interval can be missed.
@@ -105,8 +105,10 @@ The harness treats a capture as complete only when its size matches the PPM head
 | `src/graphics/command_processor.cpp` | 17 | guest idle and `WAIT_REG_MEM` waits, predication, bin selects, viz queries |
 | `src/graphics/graphics_system.cpp` | 4 | vblanks |
 | `src/graphics/shared_memory.cpp` | 4 | invalidations and uploads |
-| `src/graphics/d3d12/command_processor.cpp` | 51 | fence waits (frame latency, readbacks, occlusion), CPU zones, draws, resolves, readbacks, submissions, the swap (`OnSwap`, which also closes the frame time), GPU timestamps (`AddGpuFrame`) and occlusion samples |
+| `src/graphics/d3d12/command_processor.cpp` | 51 | the swap (`OnSwap`), fence waits (frame latency, readbacks, occlusion), CPU zones, draws, resolves, readbacks, submissions, GPU timestamps (`AddGpuFrame`) and occlusion samples |
 | `src/graphics/d3d12/shared_memory.cpp` | 5 | upload zones |
+
+`OnSwap` is the only writer: at each guest swap it records the frame time, and once a window of at least one second has passed it writes the line and starts the next window. Its only caller is the D3D12 command processor, so a backend that does not call it writes no perf trace at all.
 
 `summarize` in `e2e.py` needs `fps`, `window_ms`, `wait_ms`, `readbacks` and `draws` in every line. `frame_ms`, `cpu_ms`, `counts`, `occlusion_samples` and `gpu` are optional: without them the matching `summary.json` keys are missing, and `compare.py` shows them as `-`.
 
@@ -221,7 +223,7 @@ These launcher cvars are backend-neutral: `edram_single_rt_no_wrap`, `readback_r
 Other backend parts the harness relies on:
 
 - `Presenter::CaptureGuestOutput`: without it the capture thread writes nothing, and every checked step times out.
-- The D3D12 hooks of the perf trace (table above): without them `summary.json` lacks frame latency and readback waits, CPU zones and GPU times, and `frame_ms` (frame times) unless the swap calls `OnSwap`.
+- `perf_trace::OnSwap` at the swap: without it `perf.jsonl` stays empty, and `summary.json` has no FPS or frame times. The other D3D12 hooks of the perf trace (table above) supply the frame latency and readback waits, CPU zones and GPU times.
 - The default look `pc` uses HLSL shader mods compiled with FXC, and the gates run with it.
 
 ## Porting checklist
@@ -231,7 +233,7 @@ The steps below are the work a port needs, in dependency order. None of them has
 ### 1. Runtime backend
 
 1. Implement `CaptureGuestOutput` in the new presenter. It must return the guest output before the overlay as RGBA8 rows (`RawImage`: `width`, `height`, `stride`, `data`).
-2. Call the `perf_trace` helpers at the matching points of the new command processor and shared memory: `OnSwap` at the swap, `AddFenceWait` and `CauseScope` around GPU waits, `ZoneStart`/`ZoneEnd` around the same zones, `CountDraw`, `CountCopy`, `CountReadback`, `CountResolve`, `Increment(Count::kSubmissions)`, and `AddGpuFrame` from GPU timestamps. Use the same causes and zones, so `compare.py` compares like with like.
+2. Call the `perf_trace` helpers at the matching points of the new command processor and shared memory: `OnSwap` at the swap (first, since it writes the trace), `AddFenceWait` and `CauseScope` around GPU waits, `ZoneStart`/`ZoneEnd` around the same zones, `CountDraw`, `CountCopy`, `CountReadback`, `CountResolve`, `Increment(Count::kSubmissions)`, and `AddGpuFrame` from GPU timestamps. Use the same causes and zones, so `compare.py` compares like with like.
 3. Decide for each D3D12-only cvar of `launch_cvars` whether the backend gets an equivalent, and give the equivalent its own name. Then make `pipeline.launch_cvars` choose the cvars by backend, so neither backend gets cvars that it would ignore.
 4. Until the shader mods and `post_ao` exist for the backend, run the harness with `--look original` and without `--ao`.
 
