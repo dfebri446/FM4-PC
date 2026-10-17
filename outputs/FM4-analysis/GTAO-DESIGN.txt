@@ -1,8 +1,8 @@
 DESAIN GTAO: INJEKSI PASS AMBIENT OCCLUSION - 16-17 Oktober 2026
 ================================================================
 Rancangan pass ambient occlusion layar (GTAO) yang disuntikkan runtime ke
-frame FM4, beserta data frame graph yang menentukannya. M0 sudah
-diimplementasikan (bagian 6) tetapi belum dijalankan di game. Tidak ada kode,
+frame FM4, beserta data frame graph yang menentukannya. M0-M4 selesai
+(bagian 6): look bawaan pc memakai AO sejak M4. Tidak ada kode,
 shader, atau ucode game di sini; alamat, hash dan register hanya hasil
 pengamatan.
 Sumber: trace REX_FRAME_GRAPH balapan di BuildRoot (q-high: -Quality high,
@@ -22,13 +22,16 @@ RINGKASAN
   sebelum seluruh rantai post. Empat compute pass (prefilter depth, GTAO,
   denoise 1-2 kali) menghasilkan tekstur oklusi R8, dikosongkan lagi saat
   swap.
-- Pemakaian: mod membaca xe_post_ao(uv). Rencana v1: mod FinalCombine
-  (fm4-look.hlsli) menggelapkan scene sebelum tonemap, lebih lemah di piksel
-  terang.
-- Bawaan mati: cvar runtime post_ao*, kenop look -Look ao=... (M4).
-- Di v1, bloom dan auto-exposure tidak melihat AO. Menu dan showroom tanpa
-  AO karena game tidak me-resolve depth di sana. Hanya jalur RTV (override
-  shader, sebagai konsumen, butuh render target host).
+- Pemakaian: mod membaca xe_post_ao(uv). Mod FinalCombine (fm4-look.hlsli)
+  menggelapkan scene sebelum tonemap, lebih lemah di piksel terang.
+- Di runtime bawaan mati (cvar post_ao*). Launcher menyalakannya lewat kenop
+  look -Look ao=<kekuatan>: preset pc, aces, gt dan neutral memakai ao=0.6
+  dengan radius 0,75 m (M4); original dan ao=0 tanpa pass.
+- Di v1, bloom dan auto-exposure tidak melihat AO. Menu tanpa AO (tanpa
+  depth scene), garasi dan showroom juga (tidak menggambar VS kamera, M1),
+  interior kokpit juga (rentang depth dipadatkan, M3-M4). Balapan, replay
+  dan photo mode mendapat AO. Hanya jalur RTV (override shader, sebagai
+  konsumen, butuh render target host).
 
 1. TUJUAN DAN BATASAN
 ---------------------
@@ -36,8 +39,8 @@ RINGKASAN
   gril dan ventilasi, kaki pembatas dan tribun, bangunan, dan pohon.
 - Lightmap lintasan sudah memuat oklusi statis skala besar, dan mobil punya
   bayangan jatuh (255C1BF932417B16, c_dropShadow). Karena itu radius dibuat
-  kecil (bawaan 1 m) dan kekuatan sedang; yang dicari kontak, bukan
-  kegelapan merata.
+  kecil (bawaan cvar 1 m, launcher 0,75 m sejak M4) dan kekuatan sedang;
+  yang dicari kontak, bukan kegelapan merata.
 - Kode game tidak diubah. Shader GTAO ditulis sendiri dari makalah
   (Jimenez, Wu, Pesce, Jarabo 2016), bukan salinan XeGTAO.
 - Bawaan mati, diuji dengan A/B (post_ao_ab_ms).
@@ -210,11 +213,15 @@ h. Batas v1:
   dari fetch constant buatan, dalam state SRV yang sama dengan draw guest.
 - shader_override.cpp/.hlsli: XE_POST_AO_VIEW dan xe_post_ao(uv).
 - work/fm4-rex/tests/post-ao-camera-tests.cpp (target
-  fm4_post_ao_camera_tests): uji CPU matematika kamera.
-- Konfigurasi FM4 untuk M1 (launcher, setelah perubahan sesi utama di
-  pipeline.py di-commit):
+  fm4_post_ao_camera_tests): uji CPU matematika kamera;
+  post-ao-shader-tests.cpp (fm4_post_ao_shader_tests): keempat pass di WARP;
+  shader-mod-tests.cpp (fm4_shader_mod_tests): semua mod look dikompilasi
+  FXC dengan kontrak sintetis, dengan dan tanpa kenop AO.
+- Konfigurasi FM4 di launcher (pipeline.py ao_cvars, dipakai kenop ao dan
+  --ao):
     post_ao=true
     post_ao_camera=8D05A46C3584CA9E:rows:0:4;C81F8D92FF6529EB:world:128:140:243
+    post_ao_radius=0.75
 
 5. PARAMETER GTAO
 -----------------
@@ -226,7 +233,8 @@ h. Batas v1:
   makalah), ditambah falloff di ujung radius.
 - Preset post_ao_quality (resolusi penuh, irisan x langkah per sisi):
   0 2x2, 1 2x4 (denoise sekali), 2 3x6 (bawaan), 3 4x8 (denoise dua kali).
-- Bawaan: radius 1 m, falloff 0,6, pangkat 1,5, bobot pusat denoise 2.
+- Bawaan cvar: radius 1 m, falloff 0,6, pangkat 1,5, bobot pusat denoise 2.
+  Launcher (M4): radius 0,75 m, kekuatan look 0,6.
 - Ukuran shader (FXC /O3): prefilter 193 instruksi, GTAO 457 / 614 / 1094
   / 1725 per preset (loop di-unroll), denoise 74 dan 88 (akhir), clear 6.
 - Perkiraan biaya di 2x (2560x1440, 3,7 juta piksel), high: sekitar 55
@@ -308,7 +316,7 @@ M2  Selesai 17 Oktober 2026. Kenop mod FM4_LOOK_AO_DEBUG=1 (bawaan 0):
       MSAA terhadap warna yang dirata-rata.
     - Tidak ada tanda salah format, endian, tiling, atau 736 vs 720. Opsi B
       tidak diperlukan.
-M3  Sebagian (17 Oktober 2026). Kenop mod FM4_LOOK_AO (bawaan 0) menerapkan
+M3  Selesai 17 Oktober 2026. Kenop mod FM4_LOOK_AO (bawaan 0) menerapkan
     bagian g dengan bobot terang smoothstep(0,2; 0,8) dari luminans
     terekspos (2^r1.w x scene^2). Run A/B post_ao_ab_ms=4000 dengan look pc
     dan freeze per kamera di 1x dan 2x, plus REX_FRAME_GRAPH:
@@ -337,11 +345,45 @@ M3  Sebagian (17 Oktober 2026). Kenop mod FM4_LOOK_AO (bawaan 0) menerapkan
       yang hampir datar ikut gelap merata (oklusi sekitar 0,2), halo di aspal
       sekitar mobil selebar radius, sisi tonjolan kap kuat, dan interior
       kokpit tanpa AO sama sekali (W sangat kecil).
-M4  Penyetelan (radius, kekuatan, bobot terang, bayangan jatuh mobil),
-    kenop -Look ao=..., gate matrix.py smoke dan perf, dokumen (README,
-    STATUS, VISUAL-STYLE), lalu commit.
+M4  Selesai 17 Oktober 2026 (belum di-commit saat ditulis). Look bawaan pc
+    memakai AO.
+    - Penyetelan dari grid 2x (render 2560x1440, frame beku, look pc,
+      post_ao_variants radius 0,5/0,75/1 x skala oklusi 0,6/1): kekuatan
+      mengatur gelap panel dan tonjolan kap (panel datar 82,0 -> 78,1-78,4
+      di 0,6 dan 74,4-75,2 di 1; tonjolan 44,2 -> sekitar 39,4 dan 35,9),
+      radius mengatur halo di aspal sekitar mobil (bawah mobil 46,5 -> 45,1 /
+      43,3 / 41,0 untuk 0,5 / 0,75 / 1). Dipilih radius 0,75 m dan kekuatan
+      0,6. Panel datar tanpa bias: oklusinya 0,00-0,01, gelapnya datang dari
+      fitur di dekatnya. Kokpit tidak berubah di varian mana pun.
+    - pipeline.py: kenop look ao (FM4_LOOK_AO) di atas 0 sekaligus
+      menyalakan pass (ao_cvars: post_ao, post_ao_camera, post_ao_radius
+      0.75); preset pc, aces, gt dan neutral memakai ao=0.6, original tanpa
+      mod; overlay -Info menulis "Ambient occlusion: GTAO, strength 0.6,
+      radius 0.75 m, high". --ao tetap menjalankan pass tanpa look.
+    - Gate di BuildRoot cabang ini, 240 Hz, banding look pc tanpa AO
+      (post_ao=false, define pc tanpa FM4_LOOK_AO): smoke 1x 3/3 dan 3/3
+      (photo_view dan karier PASS, photo WARN hanya statistik capture),
+      replay dan photo mode 30 fps, tanpa frame warna clear. Perf (photo
+      3 run, fase race 12 mobil): 1x GPU 2,82 -> 3,01 ms (+0,19), race
+      196 -> 200 fps (dibatasi CP, selisihnya noise); 2x GPU 5,32 -> 6,09 ms
+      (+0,77), race 174 -> 162 fps (di 2x 240 Hz GPU yang membatasi). Photo
+      mode 2x 7,74 -> 8,16 ms, replay 1x 3,90 -> 4,05 ms. WARN black_pct
+      capture akhir (dialog SAVE SUCCESSFUL di atas foto yang diredupkan)
+      konsisten naik: AO yang benar ditambah scene balapan yang berbeda.
+    - Run visual 2x dengan launcher sendiri (look pc, 60 Hz, median 60,0
+      fps, GPU 5,82 ms), post_ao_ab_ms=4000, enam kamera dibekukan dan photo
+      mode: 27 pasangan on/off. AO di kontak dan bawah mobil, ceruk lampu,
+      lekuk bemper dan knalpot, sisi tonjolan kap, kaki dinding; aspal
+      terbuka dan langit tidak berubah. Interior kokpit tetap tanpa AO
+      (dunia di luar kaca mendapatnya). Photo mode juga mendapat AO, baik
+      tampilan langsung maupun foto hasil render yang ditampilkan: depth
+      di-resolve ulang di sana dan kameranya tertangkap.
 Nanti:
-- opsi B untuk menu, showroom dan photo mode;
+- AO di interior kokpit: interior digambar dengan rentang depth yang
+  dipadatkan (W sekitar 0,024 m hampir konstan), jadi perlu ZSCALE/ZOFFSET
+  viewport interior ditangkap terpisah;
+- garasi dan showroom: VS kamera tambahan (M1);
+- opsi B untuk menu dan showroom;
 - AO sebelum bloom (konsumen pertama di rantai post);
 - AO khusus ambient lewat mask visibilitas matahari dari shader material
   (MRT host);
@@ -361,8 +403,9 @@ Nanti:
 - Frame pertama yang punya depth scene belum tahu basis EDRAM-nya. Kamera
   bisa tertangkap dari buffer lain, dan pass dilewati sekali (peringatan di
   log).
-- Photo mode menampilkan scene yang disimpan. Belum diketahui apakah depth
-  di-resolve ulang di sana; tanpa itu oklusi kosong.
+- Photo mode menampilkan scene yang disimpan. Ternyata depth di-resolve
+  ulang dan kamera tertangkap di sana (M4): live view dan foto hasil render
+  mendapat AO.
 - Split screen punya dua tampilan scene. Belum ditangani: grup kedua di
   frame yang sama dilewati.
 - MSAA: resolve depth mengambil satu sampel (copy_sample_select),
@@ -372,9 +415,10 @@ Nanti:
   menembus asap. Kaca yang menulis depth berbentuk datar dan hampir tanpa
   AO.
 - Bayangan jatuh mobil ditambah AO bisa terlalu gelap di bawah mobil;
-  disetel di M4.
+  di M4 radius 0,75 m dan kekuatan 0,6 menjaga halo di bawah mobil tetap
+  sedang (grid 2x).
 - FXC di start menambah waktu muat (perkiraan ratusan ms, hanya dengan
   post_ao=true; dicatat di log).
 - State D3D12 sesudah dispatch (PSO, viewport tidak berubah, heap
-  bersama) mengikuti pola resolve_downscale; gate M4 menangkap
-  regresinya.
+  bersama) mengikuti pola resolve_downscale; gate M4 (smoke dan perf)
+  tidak menemukan regresi.

@@ -424,12 +424,25 @@ the sun, soft limited by clearcoat_glint (in units of the sun's diffuse
 light; default 4, roughness 0.3), and the environment cube at grazing
 angles, in the paint's own shadow; flakes=0...1 adds metallic flakes
 (flake_scale cells per unit of the paint UV; no preset uses them, as in races
-they do not show, see fm4-paint.hlsli). Presets name sets of knobs and mix
-with them, later items winning: pc (tonemap=aces, saturation=1.1,
-bloom=0.7, sharpen=0.4, clearcoat=1), aces, gt and neutral (the tone curve
-and clearcoat=1), and original, which runs without mods. The launcher and e2e.py use pc unless
--Look/--look says otherwise, so the gates run with it; --look original
-compares with the game's own look.
+they do not show, see fm4-paint.hlsli). ao=<strength> applies the runtime's
+GTAO pass (post_ao, outputs/FM4-analysis/GTAO-DESIGN.txt) in the final combine
+shaders and, above 0, turns the pass on with post_ao_camera and a 0.75 m
+radius (pipeline.py ao_cvars); --ao runs the pass alone. Presets name sets of
+knobs and mix with them, later items winning: pc (tonemap=aces,
+saturation=1.1, bloom=0.7, sharpen=0.4, clearcoat=1, ao=0.6), aces, gt and
+neutral (the tone curve, clearcoat=1 and ao=0.6), and original, which runs
+without mods. The launcher and e2e.py use pc unless -Look/--look says
+otherwise, so the gates run with it; --look original compares with the
+game's own look.
+
+The post_ao pass has diagnostics of its own (GTAO-DESIGN.txt): with
+FM4_LOOK_AO_DEBUG=1 in shader_mod_defines the final combine shaders show its
+texture as it is, and --arg post_ao_debug=1|2|3|4 makes that texture view W
+over 0-100 units, the occlusion before denoising, the depth discontinuities
+or view W over 0-2 units. --arg post_ao_ab_ms=<N> skips the pass in every
+other period of N ms; post_ao_variants="<radius>,<occlusion scale>[,<debug
+view>];...;off" with post_ao_variant_ms=<N> cycles settings, to compare them in
+one frozen frame (Y rewinds a race and freezes it on the camera).
 
 --arg shader_override_ab_ms=<N> draws with the DXBC translations instead of the
 overrides in every other period of N ms of the steady clock, so one static scene

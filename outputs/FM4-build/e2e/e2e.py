@@ -932,7 +932,8 @@ def main():
     parser.add_argument('--quality', help='race render quality like Build.ps1 -Quality '
                                           '(default: the launcher\'s), e.g. xbox')
     parser.add_argument('--ao', action='store_true',
-                        help="the runtime's ambient occlusion pass (post_ao) like pipeline.py --ao")
+                        help="the runtime's ambient occlusion pass (post_ao) like pipeline.py --ao, "
+                             'also without the ao look knob (which turns it on and applies it)')
     parser.add_argument('--tail', type=float, default=10, help='seconds to keep running after the last step')
     parser.add_argument('--keep-ppm', action='store_true', help='keep full-resolution captures')
     parser.add_argument('--measure', type=int, default=0, help='summarize only the last N perf seconds')

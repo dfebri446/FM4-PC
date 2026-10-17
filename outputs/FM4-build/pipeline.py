@@ -345,14 +345,18 @@ LOOK_KNOBS={'sharpen':'FM4_LOOK_SHARPEN','bloom':'FM4_LOOK_BLOOM','exposure':'FM
             # Car paint (work/fm4-rex/look/fm4-paint.hlsli).
             'clearcoat':'FM4_LOOK_CLEARCOAT','clearcoat_roughness':'FM4_LOOK_CLEARCOAT_ROUGHNESS',
             'clearcoat_glint':'FM4_LOOK_CLEARCOAT_GLINT','flakes':'FM4_LOOK_FLAKES',
-            'flake_scale':'FM4_LOOK_FLAKE_SCALE'}
+            'flake_scale':'FM4_LOOK_FLAKE_SCALE',
+            # Ambient occlusion of the runtime's GTAO pass on the scene; above 0 it also
+            # turns the pass on (ao_cvars).
+            'ao':'FM4_LOOK_AO'}
 # Knobs that take a name instead of a number.
 LOOK_NAMES={'tonemap':{'filmic':0,'gt':1,'aces':2,'neutral':3}}
 # Named looks; a -Look value may mix them with knobs ('pc,sharpen=0.6': later items win).
-# Every look but original has the car paint clear coat; original runs without any shader mod.
-LOOK_PRESETS={'pc':'tonemap=aces,saturation=1.1,bloom=0.7,sharpen=0.4,clearcoat=1',
-              'aces':'tonemap=aces,clearcoat=1','gt':'tonemap=gt,clearcoat=1',
-              'neutral':'tonemap=neutral,clearcoat=1','original':''}
+# Every look but original has the car paint clear coat and ambient occlusion; original runs
+# without any shader mod.
+LOOK_PRESETS={'pc':'tonemap=aces,saturation=1.1,bloom=0.7,sharpen=0.4,clearcoat=1,ao=0.6',
+              'aces':'tonemap=aces,clearcoat=1,ao=0.6','gt':'tonemap=gt,clearcoat=1,ao=0.6',
+              'neutral':'tonemap=neutral,clearcoat=1,ao=0.6','original':''}
 DEFAULT_LOOK='pc'
 
 # Render quality of races (FM4_RACE_SETTINGS, fm4-render-overrides.cpp: controls of the race
@@ -409,7 +413,10 @@ def look_cvars(root,look):
     directory.mkdir()
     for path in (REPO/'work/fm4-rex/look').glob('*.hlsli'):
         shutil.copyfile(path,directory/path.name)
-    return {'shader_mod_path':directory,'shader_mod_defines':';'.join(defines)}
+    cvars={'shader_mod_path':directory,'shader_mod_defines':';'.join(defines)}
+    # The ao knob needs the runtime's GTAO pass.
+    cvars.update(ao_cvars(float(knobs.get('ao','0'))>0))
+    return cvars
 
 # Screens of -Display (16:9, as FM4's 1280x720); native is the primary monitor.
 DISPLAYS={'720p':(1280,720),'1080p':(1920,1080),'1440p':(2560,1440),'4k':(3840,2160)}
@@ -489,8 +496,11 @@ def info_overlay(cvars,env,look,quality,display=None):
     path=cvars.get('render_target_path_d3d12','rtv').upper()
     lines.append(f'Races: {rate} fps, {pacing}; mirror {mirror}; {path} render targets')
     if cvars.get('post_ao')=='true':
-        lines.append(f"Ambient occlusion: GTAO pass, quality {cvars.get('post_ao_quality','2')}, "
-                     f"radius {cvars.get('post_ao_radius','1')} m")
+        strength=dict(defines).get('FM4_LOOK_AO')
+        applied=f'strength {float(strength):g}' if strength else 'pass only (no look applies it)'
+        quality={'0':'low','1':'medium','2':'high','3':'ultra'}.get(cvars.get('post_ao_quality','2'),'high')
+        lines.append(f"Ambient occlusion: GTAO, {applied}, radius {cvars.get('post_ao_radius','1')} m, "
+                     f'{quality}')
     if cvars.get('shader_override_ab_ms','0') not in ('','0'):
         lines.append(f'Shader A/B: game shaders every other {cvars["shader_override_ab_ms"]} ms')
     return '|'.join(lines)
@@ -498,11 +508,14 @@ def info_overlay(cvars,env,look,quality,display=None):
 # Screen-space ambient occlusion of the scene depth (the runtime's post_ao pass,
 # outputs/FM4-analysis/GTAO-DESIGN.txt): the vertex shaders that carry the scene camera, the car
 # body paint (WVP and WV rows from c0 and c4) and the road (WVP from c128, world c140, view
-# inverse c243). Until a look mod reads it (xe_post_ao), the pass only runs and logs.
+# inverse c243), and the radius in meters picked with the user from a 2x variant grid. The look
+# knob ao applies it in the final combine shaders (xe_post_ao); --ao alone only runs the pass.
 POST_AO_CAMERA='8D05A46C3584CA9E:rows:0:4;C81F8D92FF6529EB:world:128:140:243'
+POST_AO_RADIUS='0.75'
 
 def ao_cvars(enabled):
-    return {'post_ao':'true','post_ao_camera':POST_AO_CAMERA} if enabled else {}
+    return ({'post_ao':'true','post_ao_camera':POST_AO_CAMERA,'post_ao_radius':POST_AO_RADIUS}
+            if enabled else {})
 
 def launch(root,single_tile=False,fixed_vblank=False,frame_rate=None,rov=False,
            resolution_scale=None,full_rate_mirror=False,look=None,shadow_workaround=False,
@@ -644,7 +657,9 @@ def main():
                              '"pc,sharpen=0.6" (knobs: '+', '.join(LOOK_KNOBS)+
                              '; work/fm4-rex/look/fm4-look.hlsli)')
     parser.add_argument('--ao',action='store_true',
-                        help="run: the runtime's screen-space ambient occlusion pass (post_ao, GTAO)")
+                        help="run: the runtime's screen-space ambient occlusion pass (post_ao, GTAO) "
+                             'even without the ao look knob, which also applies it (on in every '
+                             'look but original)')
     parser.add_argument('--flavor',default='',help='opt-in compiler experiment for build: comma list of '+','.join(FLAVORS))
     args=parser.parse_args()
     root=args.build_root.resolve()

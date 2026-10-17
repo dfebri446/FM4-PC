@@ -879,6 +879,29 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
   Quick Race di jendela 1920x1080 render 2x: 1920x1080 -> 2560x1600 ->
   1920x1080, dan cek OCR sesudahnya hanya melihat HUD balapan (timer
   berjalan, tanpa menu pause).
+- Ambient occlusion layar (17 Oktober 2026; desain dan hasil di
+  outputs/FM4-analysis/GTAO-DESIGN.txt): runtime menjalankan pass GTAO
+  (post_ao) pada tekstur depth scene yang di-resolve game sendiri, tepat
+  sesudah resolve depth tile terakhir. Kamera diambil dari konstanta VS cat
+  mobil dan jalan. Hasilnya dibaca mod FinalCombine lewat xe_post_ao dan
+  menggelapkan scene sebelum tonemap, lebih lemah di piksel terang. -Look
+  ao=<kekuatan> menyalakan pass dan menerapkannya; preset pc, aces, gt dan
+  neutral memakai ao=0.6 dengan radius 0,75 m (dipilih dari grid 2x pada
+  frame beku), original tanpa AO. Sebelumnya: kedalaman dan kamera
+  dicocokkan dengan tepi scene di keenam kamera (geser 0 di 1x dan 2x), dan
+  cacat runtime lama ikut diperbaiki: baris dan kolom duplikat di batas
+  tile scene pada skala 2x/3x (fill setengah piksel resolve kini hanya untuk
+  permukaan 1x MSAA). Uji baru tanpa game: fm4_post_ao_camera_tests,
+  fm4_post_ao_shader_tests (WARP) dan fm4_shader_mod_tests (semua mod look
+  dikompilasi FXC). Gate 240 Hz di BuildRoot terpisah, banding look pc tanpa
+  AO: smoke 1x 3/3 (photo_view dan karier PASS, photo WARN statistik
+  capture), replay dan photo mode 30 fps, tanpa frame warna clear. Perf 3
+  run fase race: 1x GPU 2,82 -> 3,01 ms, 196 -> 200 fps (dibatasi CP); 2x
+  GPU 5,32 -> 6,09 ms, 174 -> 162 fps (dibatasi GPU). Run 2x 60 Hz dengan
+  launcher: 60,0 fps. AO tampak di kontak dan bawah mobil, ceruk lampu,
+  lekuk bemper, kaki dinding; aspal terbuka dan langit tidak berubah. Juga
+  di replay dan photo mode. Belum: interior kokpit (rentang depth
+  dipadatkan), garasi dan showroom (tanpa VS kamera).
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 

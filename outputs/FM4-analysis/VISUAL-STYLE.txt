@@ -102,6 +102,13 @@ Bukan sumber gaya FM4, tetapi bisa membuat tampilan menyimpang dari Xbox asli:
   matahari.
 - FXAA swap hanya pada mode single-tile; konversi format 7e3 di host; skala
   resolusi (pipeline.py).
+- Look bawaan pc (-Look di pipeline.py) memang mengubah gaya: mod shader
+  buatan proyek di work/fm4-rex/look (tonemap, saturasi, bloom, penajaman,
+  clearcoat cat mobil) dan, sejak 17 Oktober 2026, ambient occlusion layar.
+  AO berasal dari pass GTAO runtime pada depth scene (radius 0,75 m) dan
+  diterapkan di FinalCombine dengan kekuatan 0,6 (kenop ao), dilemahkan pada
+  piksel terang. Kokpit, garasi dan showroom belum mendapat AO. -Look
+  original mematikan semuanya.
 
 ARAH PENGUBAHAN
 ---------------

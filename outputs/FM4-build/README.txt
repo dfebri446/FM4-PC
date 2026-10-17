@@ -150,15 +150,23 @@ Optional actions for performance work:
   original code hooked into the HLSL that the runtime generates from the
   game's post-processing and car body paint shaders; e2e/README.txt, "Shader
   overrides"). The default is the pc preset: tonemap=aces, saturation=1.1,
-  bloom=0.7, sharpen=0.4, clearcoat=1. aces, gt and neutral set the tone
-  curve alone with the clear coat, original runs without mods (the game's
-  own look), and knobs after a preset change it, for example -Look
-  "pc,sharpen=0.6" or "aces,clearcoat=0".
+  bloom=0.7, sharpen=0.4, clearcoat=1, ao=0.6. aces, gt and neutral set the
+  tone curve alone with the clear coat and the ambient occlusion, original
+  runs without mods (the game's own look), and knobs after a preset change
+  it, for example -Look "pc,sharpen=0.6" or "aces,clearcoat=0,ao=0".
   Knobs: tonemap (filmic, gt, aces, neutral), sharpen, bloom, exposure,
   contrast, saturation, vignette, motion_blur; car paint (fm4-paint.hlsli):
   clearcoat, clearcoat_roughness (0.3), clearcoat_glint (4), flakes,
-  flake_scale (1200). The six shaders compile with FXC when first drawn
-  (80-940 ms each, the paint 2.4 s).
+  flake_scale (1200); ao, the strength of the screen-space ambient occlusion.
+  ao above 0 turns on the runtime's GTAO pass on the scene depth (post_ao,
+  outputs/FM4-analysis/GTAO-DESIGN.txt) with a 0.75 m radius, and the final
+  combine shaders darken the scene by it, less on bright pixels. pipeline.py
+  --ao (and e2e.py --ao) runs the pass without a look applying it. The pass costs
+  about 0.2 ms of GPU time a race frame at 1x and 0.7-0.8 ms at 2x
+  (2560x1440); races stay at 60 fps, and at 240 Hz 2x races drop from about
+  174 to 162 fps. Replays and photo mode have it too; the cockpit interior,
+  the garage and the showroom get no occlusion. The six shaders
+  compile with FXC when first drawn (80-940 ms each, the paint 2.4 s).
 - run -Rov uses the earlier pixel shader interlock render target path
   (render_target_path_d3d12=rov, rov_occlusion_async=all) for comparisons:
   Quick Race 60.0 fps, GPU about 7.1 ms a frame (2.5 on the default path).
@@ -203,7 +211,7 @@ What happens
    the cockpit (SkipShadowMapUnlessCockpit, as the title's split screen does),
    the xenia-canary/game-patches#398 workaround this runtime no longer needs.
    Races render at the high quality (see -Quality) and the post-processing
-   uses the pc look (see -Look).
+   uses the pc look (see -Look), with screen-space ambient occlusion.
    Rendering uses the host render target path (render_target_path_d3d12=rtv with
    edram_single_rt_no_wrap=true): GPU about 2.5 ms a race frame instead of
    about 7 on the pixel shader interlock path, a stable 60 fps in Quick Race. Guest
