@@ -1,9 +1,12 @@
-STATUS FM4 RECOMPILATION - 16 Oktober 2026
+STATUS FM4 RECOMPILATION - 17 Oktober 2026
 ========================================
-Kode terakhir: 06ddcd6 (kurva tonemap B4). Default launcher baru (tanpa
-workaround bayangan, anisotropic 16x, look pc) lolos gate smoke 16 Oktober
-2026. Verifikasi build bersih: d1fa29a (13 Oktober 2026, verification.json)
-dan runtime milik proyek (14 Oktober 2026, di bawah).
+Kode terakhir: 48ed669 (ambient occlusion GTAO, -Look ao). Default launcher
+(look pc dengan clearcoat dan AO) lolos gate smoke 17 Oktober 2026. Tambahan
+sejak 16 Oktober (clearcoat, -Display, overlay setelan, Alt+Enter, GTAO,
+perbaikan baris duplikat di skala 2x/3x) tercatat di akhir SKENARIO E2E
+GAMEPLAY; yang masih terbuka di GAP SAAT INI di akhir berkas. Verifikasi
+build bersih: d1fa29a (13 Oktober 2026, verification.json) dan runtime milik
+proyek (14 Oktober 2026, di bawah).
 
 Tahap saat ini: build eksperimental yang menjalankan Quick Race, mode foto dan
 balapan karier sampai hadiah pada binary terbaru (diuji otomatis lewat e2e).
@@ -905,17 +908,63 @@ SKENARIO E2E GAMEPLAY (16 OKTOBER 2026)
 - Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
   Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
 
-VALIDASI BERIKUTNYA YANG DIPERLUKAN
-----------------------------------
-1. Clone dan jalankan seluruh workflow pada komputer Windows kedua.
-2. Ulangi balapan mobil Disc 2 pada binary portable baru. (Balapan karier
-   sampai hadiah, restart dan pemeriksaan progres kini dicakup tier career:
-   career_finish dan career_progress dengan pengemudi AI.)
-3. Ulangi overwrite foto dan simpan/muat foto dengan cache shader kosong.
-   (Simpan foto baru lalu muat setelah restart sudah dicakup e2e photo dan
-   photo_view, di 60, 120 dan 240 Hz.)
-4. Perluas pengujian tampilan, input, mode, perangkat GPU dan sesi panjang;
-   ukur performa serta selidiki cahaya berlebihan tanpa menganggapnya sudah beres.
+GAP SAAT INI (17 OKTOBER 2026)
+-----------------------------
+Semua yang masih terbuka, dikelompokkan. Rincian ada di KETERBATASAN,
+PENGUKURAN PERFORMA dan SKENARIO E2E GAMEPLAY; rencana jangka panjang di
+PLAN.txt.
+
+Tampilan
+- Silau matahari di jalur RTV (bawaan) belum dikalibrasi: pembagi query
+  matahari hanya berlaku di ROV. Butuh adegan yang bisa diulang dengan
+  matahari di pandangan, misalnya frame yang dibekukan dengan rewind (Y).
+- AO belum ada di interior kokpit (rentang depth dipadatkan sendiri) dan di
+  garasi/showroom (tanpa VS kamera); GTAO-DESIGN.txt bagian "Nanti".
+- Kesetaraan dengan Xbox asli (bayangan, warna, refleksi, noise, tepi objek)
+  belum dibandingkan, dan seluruh kombinasi MSAA dan skala resolusi belum
+  diverifikasi.
+- Belum dikerjakan: AA modern di atas MSAA (SMAA/FXAA), keluaran HDR10,
+  pencahayaan lintasan, material selain cat mobil, dan flake cat (sel UV
+  tetap terlalu kecil dari kamera balapan; butuh model LOD).
+- Widescreen dan ultrawide (PLAN 4.1): butuh hook FOV dan proyeksi, culling,
+  dan HUD. Sekarang gambar selalu 16:9, dengan bar di layar lain.
+
+Performa
+- 240 Hz: balapan sekitar 200-230 fps di 1x, dibatasi command processor
+  (pacing, sinkronisasi swap dengan thread submit, biaya per draw). Di 2x
+  dengan AO sekitar 162 fps, dibatasi GPU.
+- Frame rate di atas 60: jam balapan terbukti tidak berjalan lebih cepat
+  (rasio 1,001), tetapi kesamaan waktu lap dan handling antara 60 dan 240 fps
+  belum diuji (PLAN 4.2).
+
+Cakupan gameplay
+- Belum dicakup e2e: overwrite foto, foto dengan cache shader kosong,
+  Autovista, mobil Disc 2, dan peluncuran langsung ke balapan (launch).
+- Belum divalidasi: semua mobil dan lintasan, satu musim karier penuh,
+  Rivals, Hot Lap, split screen, audio (XMA, 5.1, sinkronisasi intro),
+  Kinect, multiplayer/online, dan DLC di luar Disc 2.
+
+Pengaturan dan input
+- Pengaturan PC di dalam game (settings overlay yang tersimpan ke TOML),
+  rebinding tombol, dan controller penuh (rumble, trigger, setir) belum
+  dikerjakan atau diverifikasi (PLAN 4.4).
+
+Stabilitas dan runtime
+- Soak test 2 jam (memori, handle, VRAM) belum pernah dijalankan.
+- Stub layanan XAM/kernel yang terpanggil belum diinventaris dari runtime.log
+  seluruh skenario.
+- Kompatibilitas save antar-build dan migrasi profil antarkomputer belum
+  dijamin.
+
+Platform dan distribusi
+- Clone dan seluruh workflow belum dijalankan di komputer Windows kedua.
+- GPU AMD dan Intel, serta CPU kelas bawah, belum diuji.
+- Hanya tiga XEX Japan/Asia; US/EU dan title update belum (PLAN 5.5).
+- Belum ada CI, wizard setup, maupun tinjauan lisensi dan provenance untuk
+  rilis (termasuk XenonRecomp-FM4-fixes.patch yang masih tertunda).
+
+Usulan urutan berikutnya: kalibrasi silau matahari RTV; soak 2 jam dan uji
+fisika 60 vs 240 fps; komputer kedua; lalu cakupan e2e yang belum ada.
 
 Catatan ini merupakan dokumentasi status, bukan laporan bahwa seluruh pengujian
 lanjutan sudah dilakukan atau instruksi untuk melanjutkannya secara otomatis.
